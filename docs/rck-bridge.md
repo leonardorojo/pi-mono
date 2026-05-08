@@ -67,6 +67,41 @@ Still mock:
 - the injected context is a safe summary, not raw operational evidence
 - no real Hermes execution happens
 
+### `/rck anchor <name>`
+
+Registers a formal semantic anchor for the current bridge context.
+
+What it does:
+- creates a formal anchor artifact in `.pi/rck/anchors/`
+- writes an `AnchorRegistered` event in `.pi/rck/events/`
+- updates `indexes/latest-anchor.json`
+- appends a Pi custom entry for UX/session traceability
+- emits a visible safe message for the session
+
+What it writes in Pi:
+- a custom entry describing that the anchor was registered
+- a safe status message that references the anchor name
+
+What it writes in `.pi/rck/`:
+- `anchors/<timestamp>_anchor_<id>.json`
+- `events/<timestamp>_evt_<id>.json`
+- `indexes/latest-anchor.json`
+
+Behavior with latest state:
+- if `indexes/latest-state.json` exists, the anchor links to the current state
+- the anchor payload includes `stateId` and `statePath`
+- the event correlation references the latest state event
+
+Behavior without latest state:
+- the anchor still registers successfully
+- `stateId` and `statePath` stay absent
+- no context-pack is created
+- the anchor remains a semantic reference only
+
+Still mock:
+- `/rck anchor` is a bridge-level RCK operation, not a real Hermes run
+- no real Hermes execution happens
+
 ### `/hermes <prompt>`
 
 Records a mock Hermes request and mock Hermes result.
@@ -94,9 +129,11 @@ Still mock:
   events/
   states/
   context-packs/
+  anchors/
   indexes/
     latest-state.json
     latest-context-pack.json
+    latest-anchor.json
 ```
 
 Notes:
@@ -128,6 +165,7 @@ printf '%s\n' \
   '{"id":"3","type":"prompt","message":"/state"}' \
   '{"id":"4","type":"prompt","message":"/rck inject"}' \
   '{"id":"5","type":"prompt","message":"/hermes inspect mock bridge"}' \
+  '{"id":"6","type":"prompt","message":"/rck anchor fase-3b-anchor-test"}' \
 | timeout 20 ./pi-test.sh --offline --mode rpc --no-tools --no-extensions --extension .pi/extensions/rck-bridge/index.ts
 ```
 
@@ -154,6 +192,8 @@ Recommended shape:
 - only safe context packs are eligible for injection
 - `allowedToInject = true` is required for `/rck inject`
 - raw operational evidence stays out of the injected prompt by design
+- anchors are semantic references, not context packs
+- anchors do not inject raw content into the LLM
 
 ## Current limits
 
@@ -163,6 +203,8 @@ Recommended shape:
 - no Codex usage
 - storage v0.1 has no locks or retention policy
 - `piEntryId` is optional and may be incomplete during early correlation
+- Pi visual labels are not integrated yet
+- `anchor-index.json` is not implemented yet; `latest-anchor.json` is the only anchor index
 
 ## Cleanup
 

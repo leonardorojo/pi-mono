@@ -4,7 +4,8 @@ export type RckEventType =
 	| "HermesRunRequested"
 	| "HermesRunRecorded"
 	| "StatePackCreated"
-	| "ContextPackInjected";
+	| "ContextPackInjected"
+	| "AnchorRegistered";
 
 export type RckActor = "user" | "pi" | "extension";
 export type RckLlmInjectionPolicy = "none" | "safe-summary" | "safe-context";
@@ -133,11 +134,20 @@ export interface ContextPackInjectedEvent extends RckEventBase {
 	allowedToInject: true;
 }
 
+export interface AnchorRegisteredEvent extends RckEventBase {
+	eventType: "AnchorRegistered";
+	anchorId: string;
+	anchorName: string;
+	stateId?: string;
+	statePath?: string;
+}
+
 export type RckOperationalEvent =
 	| HermesRunRequestedEvent
 	| HermesRunRecordedEvent
 	| StatePackCreatedEvent
-	| ContextPackInjectedEvent;
+	| ContextPackInjectedEvent
+	| AnchorRegisteredEvent;
 
 export function getPiWriteTarget(event: RckOperationalEvent): RckPiWriteTarget {
 	switch (event.eventType) {
@@ -148,6 +158,8 @@ export function getPiWriteTarget(event: RckOperationalEvent): RckPiWriteTarget {
 			return "entry";
 		case "ContextPackInjected":
 			return "custom_message";
+		case "AnchorRegistered":
+			return "entry";
 	}
 }
 
@@ -160,6 +172,8 @@ export function getRckWriteTarget(event: RckOperationalEvent): RckWriteTarget {
 			return "pi";
 		case "ContextPackInjected":
 			return "llm";
+		case "AnchorRegistered":
+			return "rck";
 	}
 }
 
@@ -173,6 +187,8 @@ export function getLlmInjectionPolicy(event: RckOperationalEvent): RckLlmInjecti
 			return "safe-summary";
 		case "ContextPackInjected":
 			return "safe-context";
+		case "AnchorRegistered":
+			return "none";
 	}
 }
 
@@ -214,5 +230,9 @@ export function validateEventSpecificFields(event: Partial<RckOperationalEvent>)
 			return typeof event.stateId === "string" && typeof event.stateSummary === "string";
 		case "ContextPackInjected":
 			return typeof event.contextPackId === "string" && typeof event.contextSummary === "string";
+		case "AnchorRegistered": {
+			const anchorEvent = event as Partial<AnchorRegisteredEvent>;
+			return typeof anchorEvent.anchorId === "string" && typeof anchorEvent.anchorName === "string";
+		}
 	}
 }

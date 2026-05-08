@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type {
+	AnchorRegisteredEvent,
 	ContextPackInjectedEvent,
 	HermesRunRecordedEvent,
 	HermesRunRequestedEvent,
@@ -15,12 +16,15 @@ import {
 	getRckRoot,
 	readJson,
 	readLatestRckState,
+	updateLatestAnchorIndex,
 	updateLatestContextPackIndex,
 	updateLatestStateIndex,
+	writeRckAnchor,
 	writeRckContextPack,
 	writeRckEvent,
 	writeRckState,
 	type LatestStateIndexPayload,
+	type RckAnchorPayload,
 	type RckContextPackPayload,
 	type RckEventPayload,
 	type RckStatePayload,
@@ -264,146 +268,268 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 		description: "Mock RCK bridge commands (POC only)",
 		handler: async (args, ctx) => {
 			const { command, payload } = parseArgs(args);
-			if (command !== "inject") {
-				notify(pi, "Usage: /rck inject <context summary>", "warning");
-				return;
-			}
-
 			const cwd = ctx.cwd;
 			const root = getRckRoot(cwd);
 			ensureRckStorage(root);
 
-			const latestIndex = readJson<LatestStateIndexPayload>(`${root}/indexes/latest-state.json`);
-			const latestState = readLatestRckState(root);
-			if (!latestIndex || !latestState) {
-				appendCustomMessage(
-					pi,
-					"rck-bridge.context.missing",
-					"No RCK state available for /rck inject. Run /state first.",
-					{ eventType: "ContextPackInjected", mock: true, allowedToInject: false },
-				);
-				notify(pi, "No RCK state available for /rck inject. Run /state first.", "warning");
-				return;
-			}
+			if (command === "inject") {
+				const latestIndex = readJson<LatestStateIndexPayload>(`${root}/indexes/latest-state.json`);
+				const latestState = readLatestRckState(root);
+				if (!latestIndex || !latestState) {
+					appendCustomMessage(
+						pi,
+						"rck-bridge.context.missing",
+						"No RCK state available for /rck inject. Run /state first.",
+						{ eventType: "ContextPackInjected", mock: true, allowedToInject: false },
+					);
+					notify(pi, "No RCK state available for /rck inject. Run /state first.", "warning");
+					return;
+				}
 
-			const contextPackId = createContextPackId();
-			const contextEventId = createEventId();
-			const traceId = latestState.traceId;
-			const sessionId = ctx.sessionManager.getSessionId();
-			const safeSummaryText = stateSummaryToSafeText(latestState);
-			const contextSummary = {
-				title: latestState.stateSummary.title,
-				objective: latestState.stateSummary.objective,
-				scope: latestState.stateSummary.scope,
-				nextAction: latestState.stateSummary.nextAction,
-			};
+				const contextPackId = createContextPackId();
+				const contextEventId = createEventId();
+				const traceId = latestState.traceId;
+				const sessionId = ctx.sessionManager.getSessionId();
+				const safeSummaryText = stateSummaryToSafeText(latestState);
+				const contextSummary = {
+					title: latestState.stateSummary.title,
+					objective: latestState.stateSummary.objective,
+					scope: latestState.stateSummary.scope,
+					nextAction: latestState.stateSummary.nextAction,
+				};
 
-			const contextPack: RckContextPackPayload = {
-				schemaVersion: STORAGE_SCHEMA_VERSION,
-				artifactType: "rck.context-pack",
-				id: contextPackId,
-				contextPackId,
-				contextPackType: "safe-summary",
-				traceId,
-				createdAt: nowUtc(),
-				repoPath: cwd,
-				cwd,
-				piSessionId: sessionId,
-				piEntryId: null,
-				parentPiEntryId: null,
-				branchId: latestState.branchId,
-				summary: "Safe RCK context pack synthesized from latest state",
-				actor: "extension",
-				tags: ["rck-bridge", "context", "safe-summary"],
-				correlation: {
+				const contextPack: RckContextPackPayload = {
+					schemaVersion: STORAGE_SCHEMA_VERSION,
+					artifactType: "rck.context-pack",
+					id: contextPackId,
+					contextPackId,
+					contextPackType: "safe-summary",
 					traceId,
-					requestEventId: latestIndex.currentEventId,
-					parentEventId: latestIndex.currentEventId,
-				},
-				piWriteTarget: "custom_message",
-				rckWriteTarget: "llm",
-				llmInjectionPolicy: "safe-context",
-				allowedToInject: true,
-				stateId: latestState.stateId,
-				statePath: latestIndex.currentStatePath,
-				stateSummary: contextSummary,
-				contextSummary,
-			};
-
-			const packRef = writeRckContextPack(root, contextPack);
-			const contextEvent: ContextPackInjectedEvent = {
-				...createBaseEvent("ContextPackInjected", "Safe RCK context pack created from latest state", "extension", {
-					traceId,
+					createdAt: nowUtc(),
+					repoPath: cwd,
+					cwd,
 					piSessionId: sessionId,
-					piWriteTarget: "custom_message",
-					rckWriteTarget: "llm",
-					llmInjectionPolicy: "safe-context",
+					piEntryId: null,
+					parentPiEntryId: null,
+					branchId: latestState.branchId,
+					summary: "Safe RCK context pack synthesized from latest state",
+					actor: "extension",
 					tags: ["rck-bridge", "context", "safe-summary"],
 					correlation: {
 						traceId,
 						requestEventId: latestIndex.currentEventId,
 						parentEventId: latestIndex.currentEventId,
 					},
-				}),
-				eventType: "ContextPackInjected",
-				contextPackId,
-				contextSummary: safeSummaryText,
-				stateId: latestState.stateId,
-				statePath: latestIndex.currentStatePath,
-				allowedToInject: true,
-			};
-			const eventPayload: RckEventPayload = {
-				schemaVersion: STORAGE_SCHEMA_VERSION,
-				artifactType: "rck.event",
-				id: contextEventId,
-				eventId: contextEventId,
-				eventType: "ContextPackInjected",
-				traceId,
-				createdAt: contextPack.createdAt,
-				repoPath: cwd,
-				cwd,
-				piSessionId: sessionId,
-				piEntryId: null,
-				parentPiEntryId: null,
-				branchId: latestState.branchId,
-				summary: "Safe RCK context pack created from latest state",
-				actor: "extension",
-				tags: ["rck-bridge", "context", "safe-summary"],
-				correlation: {
-					traceId,
-					requestEventId: latestIndex.currentEventId,
-					parentEventId: latestIndex.currentEventId,
-				},
-				piWriteTarget: "custom_message",
-				rckWriteTarget: "llm",
-				llmInjectionPolicy: "safe-context",
-				payload: {
+					piWriteTarget: "custom_message",
+					rckWriteTarget: "llm",
+					llmInjectionPolicy: "safe-context",
+					allowedToInject: true,
 					stateId: latestState.stateId,
 					statePath: latestIndex.currentStatePath,
-					contextPackId,
-					contextPackPath: packRef.path,
-					contextEventId,
-				},
-			};
-			const eventRef = writeRckEvent(root, eventPayload);
-			updateLatestContextPackIndex(root, packRef, eventRef, traceId, latestState.stateId, latestIndex.currentStatePath);
+					stateSummary: contextSummary,
+					contextSummary,
+				};
 
-			appendMockEvent(pi, "rck-bridge.context.injected.record", {
-				...contextEvent,
-				artifacts: [{ kind: "file", reference: packRef.path }],
-			});
-			appendCustomMessage(
-				pi,
-				"rck-bridge.context.injected",
-				`RCK context pack ready: ${safeSummaryText}`,
-				{
+				const packRef = writeRckContextPack(root, contextPack);
+				const contextEvent: ContextPackInjectedEvent = {
+					...createBaseEvent("ContextPackInjected", "Safe RCK context pack created from latest state", "extension", {
+						traceId,
+						piSessionId: sessionId,
+						piWriteTarget: "custom_message",
+						rckWriteTarget: "llm",
+						llmInjectionPolicy: "safe-context",
+						tags: ["rck-bridge", "context", "safe-summary"],
+						correlation: {
+							traceId,
+							requestEventId: latestIndex.currentEventId,
+							parentEventId: latestIndex.currentEventId,
+						},
+					}),
 					eventType: "ContextPackInjected",
+					contextPackId,
+					contextSummary: safeSummaryText,
+					stateId: latestState.stateId,
+					statePath: latestIndex.currentStatePath,
 					allowedToInject: true,
-					contextPackPath: packRef.path,
-					latestContextPackIndexPath: "./.pi/rck/indexes/latest-context-pack.json",
-				},
-			);
-			notify(pi, "RCK /rck inject wrote context pack, event, and latest-context-pack index", "info");
+				};
+				const eventPayload: RckEventPayload = {
+					schemaVersion: STORAGE_SCHEMA_VERSION,
+					artifactType: "rck.event",
+					id: contextEventId,
+					eventId: contextEventId,
+					eventType: "ContextPackInjected",
+					traceId,
+					createdAt: contextPack.createdAt,
+					repoPath: cwd,
+					cwd,
+					piSessionId: sessionId,
+					piEntryId: null,
+					parentPiEntryId: null,
+					branchId: latestState.branchId,
+					summary: "Safe RCK context pack created from latest state",
+					actor: "extension",
+					tags: ["rck-bridge", "context", "safe-summary"],
+					correlation: {
+						traceId,
+						requestEventId: latestIndex.currentEventId,
+						parentEventId: latestIndex.currentEventId,
+					},
+					piWriteTarget: "custom_message",
+					rckWriteTarget: "llm",
+					llmInjectionPolicy: "safe-context",
+					payload: {
+						stateId: latestState.stateId,
+						statePath: latestIndex.currentStatePath,
+						contextPackId,
+						contextPackPath: packRef.path,
+						contextEventId,
+					},
+				};
+				const eventRef = writeRckEvent(root, eventPayload);
+				updateLatestContextPackIndex(root, packRef, eventRef, traceId, latestState.stateId, latestIndex.currentStatePath);
+
+				appendMockEvent(pi, "rck-bridge.context.injected.record", {
+					...contextEvent,
+					artifacts: [{ kind: "file", reference: packRef.path }],
+				});
+				appendCustomMessage(
+					pi,
+					"rck-bridge.context.injected",
+					`RCK context pack ready: ${safeSummaryText}`,
+					{
+						eventType: "ContextPackInjected",
+						allowedToInject: true,
+						contextPackPath: packRef.path,
+						latestContextPackIndexPath: "./.pi/rck/indexes/latest-context-pack.json",
+					},
+				);
+				notify(pi, "RCK /rck inject wrote context pack, event, and latest-context-pack index", "info");
+				return;
+			}
+
+			if (command === "anchor") {
+				const anchorName = payload.trim();
+				if (!anchorName) {
+					notify(pi, "Usage: /rck anchor <name>", "warning");
+					return;
+				}
+
+				const latestIndex = readJson<LatestStateIndexPayload>(`${root}/indexes/latest-state.json`);
+				const latestState = readLatestRckState(root);
+				const anchorId = createId("anchor");
+				const eventId = createEventId();
+				const traceId = latestState?.traceId ?? createId("trace");
+				const sessionId = ctx.sessionManager.getSessionId();
+				const hasState = Boolean(latestIndex && latestState);
+				const stateId = hasState ? latestState!.stateId : undefined;
+				const statePath = hasState ? latestIndex!.currentStatePath : undefined;
+				const anchorSummary = hasState
+					? `Anchor registered: ${anchorName} (state=${latestState!.stateSummary.title})`
+					: `Anchor registered: ${anchorName}`;
+
+				const anchorPayload: RckAnchorPayload = {
+					schemaVersion: STORAGE_SCHEMA_VERSION,
+					artifactType: "rck.anchor",
+					id: anchorId,
+					anchorId,
+					anchorName,
+					traceId,
+					createdAt: nowUtc(),
+					repoPath: cwd,
+					cwd,
+					piSessionId: sessionId,
+					piEntryId: null,
+					parentPiEntryId: null,
+					branchId: latestState?.branchId ?? null,
+					summary: anchorSummary,
+					actor: "pi",
+					tags: ["rck-bridge", "anchor"],
+					correlation: hasState
+						? {
+							traceId,
+							requestEventId: latestIndex!.currentEventId,
+							parentEventId: latestIndex!.currentEventId,
+						}
+						: { traceId },
+					piWriteTarget: "entry",
+					rckWriteTarget: "rck",
+					llmInjectionPolicy: "none",
+					stateId,
+					statePath,
+				};
+
+				const anchorRef = writeRckAnchor(root, anchorPayload);
+				const anchorEvent: { anchorId: string; anchorName: string; stateId?: string; statePath?: string } = {
+					anchorId,
+					anchorName,
+					stateId,
+					statePath,
+				};
+				const anchorEventPayload: RckEventPayload = {
+					schemaVersion: STORAGE_SCHEMA_VERSION,
+					artifactType: "rck.event",
+					id: eventId,
+					eventId,
+					eventType: "AnchorRegistered",
+					traceId,
+					createdAt: anchorPayload.createdAt,
+					repoPath: cwd,
+					cwd,
+					piSessionId: sessionId,
+					piEntryId: null,
+					parentPiEntryId: null,
+					branchId: latestState?.branchId ?? null,
+					summary: anchorSummary,
+					actor: "pi",
+					tags: ["rck-bridge", "anchor"],
+					correlation: hasState
+						? {
+							traceId,
+							requestEventId: latestIndex!.currentEventId,
+							parentEventId: latestIndex!.currentEventId,
+						}
+						: { traceId },
+					piWriteTarget: "entry",
+					rckWriteTarget: "rck",
+					llmInjectionPolicy: "none",
+					payload: {
+						anchorId,
+						anchorPath: anchorRef.path,
+						anchorEventId: eventId,
+						stateId,
+						statePath,
+					},
+				};
+				const eventRef = writeRckEvent(root, anchorEventPayload);
+				updateLatestAnchorIndex(root, anchorRef, eventRef, traceId);
+
+				appendMockEvent(pi, "rck-bridge.anchor.registered", {
+					eventType: "AnchorRegistered",
+					traceId,
+					anchorId,
+					anchorName,
+					stateId,
+					statePath,
+					artifacts: [{ kind: "file", reference: anchorRef.path }],
+				});
+				appendCustomMessage(
+					pi,
+					"rck-bridge.anchor.registered",
+					hasState
+						? `RCK anchor ready: ${anchorName} (linked to latest state)`
+						: `RCK anchor ready: ${anchorName}`,
+					{
+						eventType: "AnchorRegistered",
+						anchorPath: anchorRef.path,
+						latestAnchorIndexPath: "./.pi/rck/indexes/latest-anchor.json",
+						statePath,
+					},
+				);
+				notify(pi, `RCK /rck anchor wrote anchor and latest-anchor index`, "info");
+				return;
+			}
+
+			notify(pi, "Usage: /rck inject <context summary> | /rck anchor <name>", "warning");
 		},
 	});
 }

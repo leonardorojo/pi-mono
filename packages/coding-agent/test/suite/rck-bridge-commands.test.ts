@@ -174,6 +174,123 @@ describe("RCK bridge commands", () => {
 		expect((injectedMessage?.details as { allowedToInject?: boolean } | undefined)?.allowedToInject).toBe(true);
 	});
 
+	it("executes /rck anchor without state and records a formal anchor", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("rck")!.handler("anchor phase-3b-started", runner!.createCommandContext());
+
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(existsSync(join(rckRoot, "anchors"))).toBe(true);
+		expect(existsSync(join(rckRoot, "indexes", "latest-anchor.json"))).toBe(true);
+		expect(existsSync(join(rckRoot, "indexes", "latest-state.json"))).toBe(false);
+		expect(existsSync(join(rckRoot, "indexes", "latest-context-pack.json"))).toBe(false);
+
+		const anchorFiles = readdirSync(join(rckRoot, "anchors"));
+		const eventFiles = readdirSync(join(rckRoot, "events"));
+		expect(anchorFiles).toHaveLength(1);
+		expect(eventFiles).toHaveLength(1);
+
+		const latestAnchor = JSON.parse(readFileSync(join(rckRoot, "indexes", "latest-anchor.json"), "utf-8")) as {
+			currentAnchorId: string;
+			currentAnchorPath: string;
+			currentEventId: string;
+			traceId: string;
+		};
+		expect(latestAnchor.currentAnchorId).toContain("anchor_");
+		expect(latestAnchor.currentAnchorPath).toMatch(/^\.pi\/rck\/anchors\//);
+		expect(latestAnchor.currentEventId).toContain("evt_");
+
+		const anchorJson = JSON.parse(readFileSync(join(rckRoot, "anchors", anchorFiles[0]), "utf-8")) as {
+			artifactType: string;
+			anchorId: string;
+			anchorName: string;
+			stateId?: string;
+			statePath?: string;
+		};
+		expect(anchorJson.artifactType).toBe("rck.anchor");
+		expect(anchorJson.anchorName).toBe("phase-3b-started");
+		expect(anchorJson.stateId).toBeUndefined();
+		expect(anchorJson.statePath).toBeUndefined();
+
+		const anchorEventJson = JSON.parse(readFileSync(join(rckRoot, "events", eventFiles[0]), "utf-8")) as {
+			eventType: string;
+			payload: { anchorId: string; stateId?: string };
+		};
+		expect(anchorEventJson.eventType).toBe("AnchorRegistered");
+		expect(anchorEventJson.payload.anchorId).toBe(anchorJson.anchorId);
+		expect(anchorEventJson.payload.stateId).toBeUndefined();
+
+		const customEntries = getCustomEntries(harness);
+		expect(customEntries.some((entry) => entry.customType === "rck-bridge.anchor.registered")).toBe(true);
+		const customMessages = getCustomMessages(harness);
+		expect(customMessages.some((message) => message.customType === "rck-bridge.anchor.registered" && String(message.content).includes("RCK anchor ready: phase-3b-started"))).toBe(true);
+	});
+
+	it("executes /state then /rck anchor and links to the latest state", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("state")!.handler("phase 3b anchor linkage", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("anchor phase-3b-linked", runner!.createCommandContext());
+
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(existsSync(join(rckRoot, "indexes", "latest-state.json"))).toBe(true);
+		expect(existsSync(join(rckRoot, "indexes", "latest-anchor.json"))).toBe(true);
+
+		const latestState = JSON.parse(readFileSync(join(rckRoot, "indexes", "latest-state.json"), "utf-8")) as {
+			currentStateId: string;
+			currentStatePath: string;
+			currentEventId: string;
+			traceId: string;
+		};
+		const latestAnchor = JSON.parse(readFileSync(join(rckRoot, "indexes", "latest-anchor.json"), "utf-8")) as {
+			currentAnchorId: string;
+			currentAnchorPath: string;
+			currentEventId: string;
+			traceId: string;
+		};
+		expect(latestAnchor.traceId).toBeDefined();
+		expect(latestAnchor.currentAnchorPath).toMatch(/^\.pi\/rck\/anchors\//);
+		expect(latestAnchor.currentEventId).toContain("evt_");
+
+		const anchorFiles = readdirSync(join(rckRoot, "anchors"));
+		expect(anchorFiles).toHaveLength(1);
+		const anchorJson = JSON.parse(readFileSync(join(rckRoot, "anchors", anchorFiles[0]), "utf-8")) as {
+			artifactType: string;
+			anchorName: string;
+			stateId?: string;
+			statePath?: string;
+		};
+		expect(anchorJson.artifactType).toBe("rck.anchor");
+		expect(anchorJson.anchorName).toBe("phase-3b-linked");
+		expect(anchorJson.stateId).toBe(latestState.currentStateId);
+		expect(anchorJson.statePath).toBe(latestState.currentStatePath);
+
+		const eventFiles = readdirSync(join(rckRoot, "events"));
+		const anchorEventFile = eventFiles.find((file) => {
+			const parsed = JSON.parse(readFileSync(join(rckRoot, "events", file), "utf-8")) as { eventType?: string };
+			return parsed.eventType === "AnchorRegistered";
+		});
+		expect(anchorEventFile).toBeDefined();
+		const anchorEventJson = JSON.parse(readFileSync(join(rckRoot, "events", anchorEventFile as string), "utf-8")) as {
+			eventType: string;
+			payload: { anchorId: string; stateId?: string; statePath?: string };
+		};
+		expect(anchorEventJson.eventType).toBe("AnchorRegistered");
+		expect(anchorEventJson.payload.stateId).toBe(latestState.currentStateId);
+		expect(anchorEventJson.payload.statePath).toBe(latestState.currentStatePath);
+
+		const customMessages = getCustomMessages(harness);
+		expect(customMessages.some((message) => message.customType === "rck-bridge.anchor.registered" && String(message.content).includes("linked to latest state"))).toBe(true);
+	});
+
 	it("executes /hermes inspect mock bridge and records both mock Hermes events", async () => {
 		harness = await createHarnessWithExtensions({
 			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],

@@ -57,14 +57,17 @@ export interface RckStatePayload extends RckStorageBase {
 export interface RckEventPayload extends RckStorageBase {
 	artifactType: "rck.event";
 	eventId: string;
-	eventType: "StatePackCreated" | "ContextPackInjected";
+	eventType: "StatePackCreated" | "ContextPackInjected" | "AnchorRegistered";
 	payload: {
-		stateId: string;
-		statePath: string;
+		stateId?: string;
+		statePath?: string;
 		stateEventId?: string;
 		contextPackId?: string;
 		contextPackPath?: string;
 		contextEventId?: string;
+		anchorId?: string;
+		anchorPath?: string;
+		anchorEventId?: string;
 	};
 }
 
@@ -77,6 +80,26 @@ export interface RckContextPackPayload extends RckStorageBase {
 	allowedToInject: true;
 	stateSummary: RckStatePayload["stateSummary"];
 	contextSummary: RckStatePayload["stateSummary"];
+}
+
+export interface RckAnchorPayload extends RckStorageBase {
+	artifactType: "rck.anchor";
+	anchorId: string;
+	anchorName: string;
+	stateId?: string;
+	statePath?: string;
+}
+
+export interface LatestAnchorIndexPayload {
+	schemaVersion: "0.1";
+	artifactType: "rck.index.latest-anchor";
+	currentAnchorId: string;
+	currentAnchorPath: string;
+	currentEventId: string;
+	currentEventPath: string;
+	traceId: string;
+	updatedAt: string;
+	updatedByEventId: string;
 }
 
 export interface LatestStateIndexPayload {
@@ -110,7 +133,7 @@ export function getRckRoot(cwd: string): string {
 }
 
 export function ensureRckStorage(root: string): void {
-	for (const dir of ["events", "states", "context-packs", "indexes"]) {
+	for (const dir of ["events", "states", "context-packs", "anchors", "indexes"]) {
 		mkdirSync(join(root, dir), { recursive: true });
 	}
 }
@@ -181,6 +204,34 @@ export function writeRckContextPack(root: string, pack: RckContextPackPayload): 
 	const filePath = join(root, "context-packs", makeArtifactFileName(artifactTimestamp(pack.createdAt), pack.contextPackId));
 	writeJsonAtomic(filePath, pack);
 	return buildArtifactRef("file", pack.contextPackId, pack.createdAt, pack.cwd, filePath);
+}
+
+export function writeRckAnchor(root: string, anchor: RckAnchorPayload): RckArtifactRef {
+	const filePath = join(root, "anchors", makeArtifactFileName(artifactTimestamp(anchor.createdAt), anchor.anchorId));
+	writeJsonAtomic(filePath, anchor);
+	return buildArtifactRef("file", anchor.anchorId, anchor.createdAt, anchor.cwd, filePath);
+}
+
+export function updateLatestAnchorIndex(
+	root: string,
+	anchorRef: RckArtifactRef,
+	eventRef: RckArtifactRef,
+	traceId: string,
+): void {
+	const indexPath = join(root, "indexes", "latest-anchor.json");
+	const updatedAt = new Date().toISOString();
+	const payload: LatestAnchorIndexPayload = {
+		schemaVersion: "0.1",
+		artifactType: "rck.index.latest-anchor",
+		currentAnchorId: anchorRef.id,
+		currentAnchorPath: anchorRef.path,
+		currentEventId: eventRef.id,
+		currentEventPath: eventRef.path,
+		traceId,
+		updatedAt,
+		updatedByEventId: eventRef.id,
+	};
+	writeJsonAtomic(indexPath, payload);
 }
 
 export function updateLatestStateIndex(root: string, stateRef: RckArtifactRef, eventRef: RckArtifactRef, traceId: string): void {

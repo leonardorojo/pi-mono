@@ -135,8 +135,8 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 			appendCustomMessage(
 				pi,
 				"rck-bridge-status",
-				`Mock Hermes accepted: ${promptSummary.slice(0, 80) || "inspection request"}`,
-				{ eventType: requested.eventType, mock: true },
+				`Mock Hermes completed: emitted HermesRunRequested and HermesRunRecorded`,
+				{ eventType: recorded.eventType, mock: true, requestEventId: requested.eventId },
 			);
 
 			ctx.ui.notify("Mock /hermes recorded in Pi custom entries", "info");

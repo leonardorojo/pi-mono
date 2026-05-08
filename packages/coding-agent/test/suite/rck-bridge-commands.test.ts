@@ -89,29 +89,89 @@ describe("RCK bridge commands", () => {
 		).toBe(true);
 	});
 
-	it("executes /rck inject and records a safe mock context pack", async () => {
+	it("executes /rck inject without state and fails safely", async () => {
 		harness = await createHarnessWithExtensions({
 			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
 		});
 
 		const runner = harness.session.extensionRunner;
 		expect(runner).toBeDefined();
-		expect(runner!.getCommand("rck")).toBeDefined();
-
 		await runner!.getCommand("rck")!.handler("inject", runner!.createCommandContext());
 
-		const customEntries = getCustomEntries(harness);
-		const contextEntry = customEntries.find((entry) => entry.customType === "rck-bridge.context.injected.record");
-		expect(contextEntry).toBeDefined();
-		expect((contextEntry?.data as { eventType?: string } | undefined)?.eventType).toBe("ContextPackInjected");
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(readdirSync(join(rckRoot, "context-packs"))).toHaveLength(0);
+		expect(readdirSync(join(rckRoot, "events"))).toHaveLength(0);
+		expect(existsSync(join(rckRoot, "indexes", "latest-context-pack.json"))).toBe(false);
 
+		const customMessages = getCustomMessages(harness);
+		const missingStateMessage = customMessages.find((message) => message.customType === "rck-bridge.context.missing");
+		expect(missingStateMessage).toBeDefined();
+		expect(String(missingStateMessage?.content)).toContain("No RCK state available for /rck inject. Run /state first.");
+	});
+
+	it("executes /state then /rck inject and records a safe context pack", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("state")!.handler("design bridge state", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("inject", runner!.createCommandContext());
+
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		const contextPackFiles = readdirSync(join(rckRoot, "context-packs"));
+		const eventFiles = readdirSync(join(rckRoot, "events"));
+		expect(contextPackFiles.length).toBe(1);
+		expect(eventFiles.length).toBe(2);
+		expect(existsSync(join(rckRoot, "indexes", "latest-context-pack.json"))).toBe(true);
+
+		const latestContext = JSON.parse(readFileSync(join(rckRoot, "indexes", "latest-context-pack.json"), "utf-8")) as {
+			currentContextPackId: string;
+			currentContextPackPath: string;
+			currentEventId: string;
+			stateId: string;
+			statePath: string;
+		};
+		expect(latestContext.currentContextPackId).toContain("pack_");
+		expect(latestContext.currentContextPackPath).toMatch(/^\.pi\/rck\/context-packs\//);
+		expect(latestContext.currentEventId).toContain("evt_");
+		expect(latestContext.statePath).toMatch(/^\.pi\/rck\/states\//);
+
+		const contextPackJson = JSON.parse(readFileSync(join(rckRoot, "context-packs", contextPackFiles[0]), "utf-8")) as {
+			artifactType: string;
+			allowedToInject: boolean;
+			contextPackId: string;
+			stateId: string;
+			statePath: string;
+			contextSummary: { objective: string };
+		};
+		expect(contextPackJson.artifactType).toBe("rck.context-pack");
+		expect(contextPackJson.allowedToInject).toBe(true);
+		expect(contextPackJson.stateId).toBe(latestContext.stateId);
+		expect(contextPackJson.statePath).toBe(latestContext.statePath);
+
+		const injectEventFile = eventFiles.find((file) => {
+			const parsed = JSON.parse(readFileSync(join(rckRoot, "events", file), "utf-8")) as { eventType?: string };
+			return parsed.eventType === "ContextPackInjected";
+		});
+		expect(injectEventFile).toBeDefined();
+		const injectEventJson = JSON.parse(readFileSync(join(rckRoot, "events", injectEventFile as string), "utf-8")) as {
+			eventType: string;
+			payload: { contextPackId: string; contextPackPath: string; stateId: string };
+		};
+		expect(injectEventJson.eventType).toBe("ContextPackInjected");
+		expect(injectEventJson.payload.contextPackId).toBe(contextPackJson.contextPackId);
+		expect(injectEventJson.payload.stateId).toBe(latestContext.stateId);
+
+		const customEntries = getCustomEntries(harness);
+		expect(customEntries.some((entry) => entry.customType === "rck-bridge.context.injected.record")).toBe(true);
 		const customMessages = getCustomMessages(harness);
 		const injectedMessage = customMessages.find((message) => message.customType === "rck-bridge.context.injected");
 		expect(injectedMessage).toBeDefined();
-		expect(typeof injectedMessage?.content === "string").toBe(true);
-		expect(String(injectedMessage?.content)).toContain("MOCK CONTEXT PACK:");
+		expect(String(injectedMessage?.content)).toContain("RCK context pack ready:");
 		expect(String(injectedMessage?.content)).not.toMatch(/stdout|stderr|diff|log/i);
-		expect((injectedMessage?.details as { mock?: boolean } | undefined)?.mock).toBe(true);
+		expect((injectedMessage?.details as { allowedToInject?: boolean } | undefined)?.allowedToInject).toBe(true);
 	});
 
 	it("executes /hermes inspect mock bridge and records both mock Hermes events", async () => {

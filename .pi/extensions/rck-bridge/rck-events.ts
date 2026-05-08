@@ -87,10 +87,50 @@ export interface StatePackCreatedEvent extends RckEventBase {
 	stateSummary: string;
 }
 
+export interface RckContextPackPayload {
+	schemaVersion: RckSchemaVersion;
+	artifactType: "rck.context-pack";
+	id: string;
+	contextPackId: string;
+	traceId: string;
+	createdAt: string;
+	repoPath: string;
+	cwd: string;
+	piSessionId: string;
+	piEntryId: string | null;
+	parentPiEntryId: string | null;
+	branchId: string | null;
+	summary: string;
+	actor: RckActor;
+	tags?: string[];
+	correlation: RckCorrelationRef;
+	piWriteTarget: RckPiWriteTarget;
+	rckWriteTarget: RckWriteTarget;
+	llmInjectionPolicy: RckLlmInjectionPolicy;
+	allowedToInject: true;
+	stateId: string;
+	statePath: string;
+	stateSummary: {
+		title: string;
+		objective: string;
+		scope: string;
+		nextAction: string;
+	};
+	contextSummary: {
+		title: string;
+		objective: string;
+		scope: string;
+		nextAction: string;
+	};
+}
+
 export interface ContextPackInjectedEvent extends RckEventBase {
 	eventType: "ContextPackInjected";
 	contextPackId: string;
 	contextSummary: string;
+	stateId: string;
+	statePath: string;
+	allowedToInject: true;
 }
 
 export type RckOperationalEvent =

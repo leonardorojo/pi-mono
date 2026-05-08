@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
 
 export type RckActor = "user" | "pi" | "extension";
@@ -57,12 +57,26 @@ export interface RckStatePayload extends RckStorageBase {
 export interface RckEventPayload extends RckStorageBase {
 	artifactType: "rck.event";
 	eventId: string;
-	eventType: "StatePackCreated";
+	eventType: "StatePackCreated" | "ContextPackInjected";
 	payload: {
 		stateId: string;
 		statePath: string;
-		stateEventId: string;
+		stateEventId?: string;
+		contextPackId?: string;
+		contextPackPath?: string;
+		contextEventId?: string;
 	};
+}
+
+export interface RckContextPackPayload extends RckStorageBase {
+	artifactType: "rck.context-pack";
+	contextPackId: string;
+	contextPackType: "safe-summary";
+	stateId: string;
+	statePath: string;
+	allowedToInject: true;
+	stateSummary: RckStatePayload["stateSummary"];
+	contextSummary: RckStatePayload["stateSummary"];
 }
 
 export interface LatestStateIndexPayload {
@@ -72,6 +86,20 @@ export interface LatestStateIndexPayload {
 	currentStatePath: string;
 	currentEventId: string;
 	currentEventPath: string;
+	traceId: string;
+	updatedAt: string;
+	updatedByEventId: string;
+}
+
+export interface LatestContextPackIndexPayload {
+	schemaVersion: "0.1";
+	artifactType: "rck.index.latest-context-pack";
+	currentContextPackId: string;
+	currentContextPackPath: string;
+	currentEventId: string;
+	currentEventPath: string;
+	stateId: string;
+	statePath: string;
 	traceId: string;
 	updatedAt: string;
 	updatedByEventId: string;
@@ -108,6 +136,14 @@ export function writeJsonAtomic(filePath: string, data: unknown): void {
 	renameSync(tempPath, filePath);
 }
 
+export function readJson<T>(filePath: string): T | undefined {
+	try {
+		return JSON.parse(readFileSync(filePath, "utf-8")) as T;
+	} catch {
+		return undefined;
+	}
+}
+
 function toArtifactPath(cwd: string, absolutePath: string): string {
 	return relative(cwd, absolutePath).split(sep).join("/");
 }
@@ -136,9 +172,15 @@ export function writeRckState(root: string, state: RckStatePayload): RckArtifact
 }
 
 export function writeRckEvent(root: string, event: RckEventPayload): RckArtifactRef {
-	const filePath = join(root, "events", makeArtifactFileName(artifactTimestamp(event.createdAt), event.eventId));
+	const filePath = join(root, "events", makeArtifactFileName(artifactTimestamp(event.createdAt), event.id));
 	writeJsonAtomic(filePath, event);
-	return buildArtifactRef("file", event.eventId, event.createdAt, event.cwd, filePath);
+	return buildArtifactRef("file", event.id, event.createdAt, event.cwd, filePath);
+}
+
+export function writeRckContextPack(root: string, pack: RckContextPackPayload): RckArtifactRef {
+	const filePath = join(root, "context-packs", makeArtifactFileName(artifactTimestamp(pack.createdAt), pack.contextPackId));
+	writeJsonAtomic(filePath, pack);
+	return buildArtifactRef("file", pack.contextPackId, pack.createdAt, pack.cwd, filePath);
 }
 
 export function updateLatestStateIndex(root: string, stateRef: RckArtifactRef, eventRef: RckArtifactRef, traceId: string): void {
@@ -158,10 +200,47 @@ export function updateLatestStateIndex(root: string, stateRef: RckArtifactRef, e
 	writeJsonAtomic(indexPath, payload);
 }
 
+export function updateLatestContextPackIndex(
+	root: string,
+	packRef: RckArtifactRef,
+	eventRef: RckArtifactRef,
+	traceId: string,
+	stateId: string,
+	statePath: string,
+): void {
+	const indexPath = join(root, "indexes", "latest-context-pack.json");
+	const updatedAt = new Date().toISOString();
+	const payload: LatestContextPackIndexPayload = {
+		schemaVersion: "0.1",
+		artifactType: "rck.index.latest-context-pack",
+		currentContextPackId: packRef.id,
+		currentContextPackPath: packRef.path,
+		currentEventId: eventRef.id,
+		currentEventPath: eventRef.path,
+		stateId,
+		statePath,
+		traceId,
+		updatedAt,
+		updatedByEventId: eventRef.id,
+	};
+	writeJsonAtomic(indexPath, payload);
+}
+
+export function readLatestRckState(root: string): RckStatePayload | undefined {
+	const index = readJson<LatestStateIndexPayload>(join(root, "indexes", "latest-state.json"));
+	if (!index) return undefined;
+	const repoRoot = dirname(dirname(root));
+	return readJson<RckStatePayload>(join(repoRoot, index.currentStatePath));
+}
+
 export function createStateId(): string {
 	return `state_${randomUUID().replace(/-/g, "")}`;
 }
 
 export function createEventId(): string {
 	return `evt_${randomUUID().replace(/-/g, "")}`;
+}
+
+export function createContextPackId(): string {
+	return `pack_${randomUUID().replace(/-/g, "")}`;
 }

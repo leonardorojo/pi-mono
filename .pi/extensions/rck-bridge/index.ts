@@ -8,13 +8,20 @@ import type {
 	StatePackCreatedEvent,
 } from "./rck-events.js";
 import {
+	createContextPackId,
 	createEventId,
 	createStateId,
 	ensureRckStorage,
 	getRckRoot,
+	readJson,
+	readLatestRckState,
+	updateLatestContextPackIndex,
 	updateLatestStateIndex,
+	writeRckContextPack,
 	writeRckEvent,
 	writeRckState,
+	type LatestStateIndexPayload,
+	type RckContextPackPayload,
 	type RckEventPayload,
 	type RckStatePayload,
 } from "./rck-storage.js";
@@ -87,6 +94,12 @@ function parseArgs(args: string): { command: string; payload: string } {
 
 function safeContextSummary(summary: string): string {
 	return summary.replace(/\b(stdout|stderr|diff|log|logs)\b/gi, "[redacted]");
+}
+
+function stateSummaryToSafeText(state: RckStatePayload): string {
+	return safeContextSummary(
+		`${state.stateSummary.title}: ${state.stateSummary.objective} | scope=${state.stateSummary.scope} | next=${state.stateSummary.nextAction}`,
+	);
 }
 
 export default function registerRckBridge(pi: ExtensionAPI) {
@@ -256,28 +269,141 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				return;
 			}
 
-			const contextSummary = payload || "Mock safe context pack for the next turn";
-			const event: ContextPackInjectedEvent = {
-				...createBaseEvent("ContextPackInjected", contextSummary, "extension", {
-					tags: ["rck-bridge", "mock", "context"],
-					piSessionId: ctx.sessionManager.getSessionId(),
-					llmInjectionPolicy: "safe-context",
-					piWriteTarget: "custom_message",
-					rckWriteTarget: "llm",
-				}),
-				eventType: "ContextPackInjected",
-				contextPackId: createId("pack"),
+			const cwd = ctx.cwd;
+			const root = getRckRoot(cwd);
+			ensureRckStorage(root);
+
+			const latestIndex = readJson<LatestStateIndexPayload>(`${root}/indexes/latest-state.json`);
+			const latestState = readLatestRckState(root);
+			if (!latestIndex || !latestState) {
+				appendCustomMessage(
+					pi,
+					"rck-bridge.context.missing",
+					"No RCK state available for /rck inject. Run /state first.",
+					{ eventType: "ContextPackInjected", mock: true, allowedToInject: false },
+				);
+				notify(pi, "No RCK state available for /rck inject. Run /state first.", "warning");
+				return;
+			}
+
+			const contextPackId = createContextPackId();
+			const contextEventId = createEventId();
+			const traceId = latestState.traceId;
+			const sessionId = ctx.sessionManager.getSessionId();
+			const safeSummaryText = stateSummaryToSafeText(latestState);
+			const contextSummary = {
+				title: latestState.stateSummary.title,
+				objective: latestState.stateSummary.objective,
+				scope: latestState.stateSummary.scope,
+				nextAction: latestState.stateSummary.nextAction,
+			};
+
+			const contextPack: RckContextPackPayload = {
+				schemaVersion: STORAGE_SCHEMA_VERSION,
+				artifactType: "rck.context-pack",
+				id: contextPackId,
+				contextPackId,
+				contextPackType: "safe-summary",
+				traceId,
+				createdAt: nowUtc(),
+				repoPath: cwd,
+				cwd,
+				piSessionId: sessionId,
+				piEntryId: null,
+				parentPiEntryId: null,
+				branchId: latestState.branchId,
+				summary: "Safe RCK context pack synthesized from latest state",
+				actor: "extension",
+				tags: ["rck-bridge", "context", "safe-summary"],
+				correlation: {
+					traceId,
+					requestEventId: latestIndex.currentEventId,
+					parentEventId: latestIndex.currentEventId,
+				},
+				piWriteTarget: "custom_message",
+				rckWriteTarget: "llm",
+				llmInjectionPolicy: "safe-context",
+				allowedToInject: true,
+				stateId: latestState.stateId,
+				statePath: latestIndex.currentStatePath,
+				stateSummary: contextSummary,
 				contextSummary,
 			};
 
+			const packRef = writeRckContextPack(root, contextPack);
+			const contextEvent: ContextPackInjectedEvent = {
+				...createBaseEvent("ContextPackInjected", "Safe RCK context pack created from latest state", "extension", {
+					traceId,
+					piSessionId: sessionId,
+					piWriteTarget: "custom_message",
+					rckWriteTarget: "llm",
+					llmInjectionPolicy: "safe-context",
+					tags: ["rck-bridge", "context", "safe-summary"],
+					correlation: {
+						traceId,
+						requestEventId: latestIndex.currentEventId,
+						parentEventId: latestIndex.currentEventId,
+					},
+				}),
+				eventType: "ContextPackInjected",
+				contextPackId,
+				contextSummary: safeSummaryText,
+				stateId: latestState.stateId,
+				statePath: latestIndex.currentStatePath,
+				allowedToInject: true,
+			};
+			const eventPayload: RckEventPayload = {
+				schemaVersion: STORAGE_SCHEMA_VERSION,
+				artifactType: "rck.event",
+				id: contextEventId,
+				eventId: contextEventId,
+				eventType: "ContextPackInjected",
+				traceId,
+				createdAt: contextPack.createdAt,
+				repoPath: cwd,
+				cwd,
+				piSessionId: sessionId,
+				piEntryId: null,
+				parentPiEntryId: null,
+				branchId: latestState.branchId,
+				summary: "Safe RCK context pack created from latest state",
+				actor: "extension",
+				tags: ["rck-bridge", "context", "safe-summary"],
+				correlation: {
+					traceId,
+					requestEventId: latestIndex.currentEventId,
+					parentEventId: latestIndex.currentEventId,
+				},
+				piWriteTarget: "custom_message",
+				rckWriteTarget: "llm",
+				llmInjectionPolicy: "safe-context",
+				payload: {
+					stateId: latestState.stateId,
+					statePath: latestIndex.currentStatePath,
+					contextPackId,
+					contextPackPath: packRef.path,
+					contextEventId,
+				},
+			};
+			const eventRef = writeRckEvent(root, eventPayload);
+			updateLatestContextPackIndex(root, packRef, eventRef, traceId, latestState.stateId, latestIndex.currentStatePath);
+
+			appendMockEvent(pi, "rck-bridge.context.injected.record", {
+				...contextEvent,
+				artifacts: [{ kind: "file", reference: packRef.path }],
+			});
 			appendCustomMessage(
 				pi,
 				"rck-bridge.context.injected",
-				`MOCK CONTEXT PACK: ${contextSummary.slice(0, 140)}`,
-				{ eventType: event.eventType, mock: true },
+				`RCK context pack ready: ${safeSummaryText}`,
+				{
+					eventType: "ContextPackInjected",
+					allowedToInject: true,
+					contextPackPath: packRef.path,
+					latestContextPackIndexPath: "./.pi/rck/indexes/latest-context-pack.json",
+				},
 			);
-			appendMockEvent(pi, "rck-bridge.context.injected.record", event);
-			notify(pi, "Mock /rck inject written as custom_message", "info");
+			notify(pi, "RCK /rck inject wrote context pack, event, and latest-context-pack index", "info");
 		},
 	});
 }

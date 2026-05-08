@@ -1,3 +1,6 @@
+import type { HermesEvidenceRef } from "./rck-storage.js";
+import type { HermesRunMode, HermesRunStatus } from "./rck-hermes.js";
+
 export type RckSchemaVersion = 1;
 
 export type RckEventType =
@@ -56,7 +59,7 @@ export interface RckEventBase {
 	git?: RckGitRef;
 	requestEventId?: string;
 	resultSummary?: string;
-	exitCode?: 0;
+	exitCode?: number;
 	stdout?: string;
 	stderr?: string;
 	promptSummary?: string;
@@ -77,9 +80,17 @@ export interface HermesRunRecordedEvent extends RckEventBase {
 	requestEventId: string;
 	command: RckCommandRef;
 	resultSummary: string;
-	exitCode: 0;
+	exitCode: number;
 	stdout?: string;
 	stderr?: string;
+	stdoutRef?: HermesEvidenceRef;
+	stderrRef?: HermesEvidenceRef;
+	mode?: HermesRunMode;
+	status?: HermesRunStatus;
+	timedOut?: boolean;
+	durationMs?: number;
+	blockedReason?: string;
+	safeSummary?: string;
 }
 
 export interface StatePackCreatedEvent extends RckEventBase {
@@ -223,9 +234,9 @@ export function validateEventSpecificFields(event: Partial<RckOperationalEvent>)
 			return (
 				typeof event.requestEventId === "string"
 				&& typeof event.resultSummary === "string"
-				&& event.exitCode === 0
+				&& typeof event.exitCode === "number"
 				&& typeof event.command?.name === "string"
-			);
+				);
 		case "StatePackCreated":
 			return typeof event.stateId === "string" && typeof event.stateSummary === "string";
 		case "ContextPackInjected":

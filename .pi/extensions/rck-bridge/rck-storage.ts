@@ -17,6 +17,18 @@ export interface RckArtifactRef {
 	createdAt: string;
 }
 
+export interface HermesEvidenceRef {
+	artifactId: string;
+	kind: "stdout" | "stderr";
+	path: string;
+	byteLength: number;
+}
+
+export interface HermesEvidenceWriteResult {
+	stdoutRef?: HermesEvidenceRef;
+	stderrRef?: HermesEvidenceRef;
+}
+
 export interface RckStorageBase {
 	schemaVersion: "0.1";
 	artifactType: string;
@@ -157,6 +169,50 @@ export function writeJsonAtomic(filePath: string, data: unknown): void {
 	writeFileSync(tempPath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
 	rmSync(filePath, { force: true });
 	renameSync(tempPath, filePath);
+}
+
+export function writeTextAtomic(filePath: string, data: string): void {
+	const dir = dirname(filePath);
+	mkdirSync(dir, { recursive: true });
+
+	const tempPath = join(dir, `.${basename(filePath)}.${process.pid}.${randomUUID().replace(/-/g, "")}.tmp`);
+	writeFileSync(tempPath, `${data}`, "utf-8");
+	rmSync(filePath, { force: true });
+	renameSync(tempPath, filePath);
+}
+
+export function writeHermesEvidence(
+	root: string,
+	runId: string,
+	recordedAt: string,
+	stdout: string,
+	stderr: string,
+): HermesEvidenceWriteResult {
+	const cwd = dirname(dirname(root));
+	const timestamp = safeFileTimestamp(new Date(recordedAt));
+	const result: HermesEvidenceWriteResult = {};
+
+	const writeEvidence = (kind: "stdout" | "stderr", content: string): HermesEvidenceRef | undefined => {
+		if (content.length === 0) {
+			return undefined;
+		}
+
+		const dir = join(root, "evidence", "hermes", kind);
+		mkdirSync(dir, { recursive: true });
+		const artifactId = `${timestamp}_hermes_${runId}_${kind}`;
+		const filePath = join(dir, `${artifactId}.log`);
+		writeTextAtomic(filePath, content);
+		return {
+			artifactId,
+			kind,
+			path: toArtifactPath(cwd, filePath),
+			byteLength: Buffer.byteLength(content, "utf8"),
+		};
+	};
+
+	result.stdoutRef = writeEvidence("stdout", stdout);
+	result.stderrRef = writeEvidence("stderr", stderr);
+	return result;
 }
 
 export function readJson<T>(filePath: string): T | undefined {

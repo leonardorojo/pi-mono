@@ -19,6 +19,7 @@ import {
 	updateLatestAnchorIndex,
 	updateLatestContextPackIndex,
 	updateLatestStateIndex,
+	writeHermesEvidence,
 	writeRckAnchor,
 	writeRckContextPack,
 	writeRckEvent,
@@ -110,82 +111,111 @@ function stateSummaryToSafeText(state: RckStatePayload): string {
 export default function registerRckBridge(pi: ExtensionAPI) {
 	pi.registerCommand("hermes", {
 		description: "Mock Hermes bridge (POC only)",
-		handler: async (args, ctx) => {
-			const request = parseHermesArgs(args);
-			const promptSummary = request.prompt || "Mock Hermes inspection request";
-			const requestEvent: HermesRunRequestedEvent = {
-				...createBaseEvent("HermesRunRequested", promptSummary, "user", {
-					tags: ["rck-bridge", "mock", "hermes"],
-					piSessionId: ctx.sessionManager.getSessionId(),
-				}),
-				eventType: "HermesRunRequested",
-				command: { name: "/hermes", args: request.rawArgs || undefined },
-				promptSummary,
-			};
+			handler: async (args, ctx) => {
+				const cwd = ctx.cwd;
+				const root = getRckRoot(cwd);
+				ensureRckStorage(root);
 
-			appendMockEvent(pi, "rck-bridge.hermes.requested", requestEvent);
-
-			const result = await runHermesExecution(request, async (runRequest) => {
-				const preview = runRequest.prompt.slice(0, 120) || "inspection requested";
-				return {
-					exitCode: 0,
-					timedOut: false,
-					stdout: `mock-hermes-stdout: ${preview}`,
-					stderr: `mock-hermes-stderr: ${preview}`,
-					durationMs: 0,
+				const request = parseHermesArgs(args);
+				const promptSummary = request.prompt || "Mock Hermes inspection request";
+				const requestEvent: HermesRunRequestedEvent = {
+					...createBaseEvent("HermesRunRequested", promptSummary, "user", {
+						tags: ["rck-bridge", "mock", "hermes"],
+						piSessionId: ctx.sessionManager.getSessionId(),
+					}),
+					eventType: "HermesRunRequested",
+					command: { name: "/hermes", args: request.rawArgs || undefined },
+					promptSummary,
 				};
-			});
 
-			const recorded = {
-				...createBaseEvent("HermesRunRecorded", result.safeSummary, "extension", {
-					traceId: requestEvent.traceId,
-					branchId: requestEvent.branchId,
-					piSessionId: requestEvent.piSessionId,
-					piEntryId: requestEvent.piEntryId,
-					parentPiEntryId: requestEvent.parentPiEntryId,
-					tags: ["rck-bridge", "mock", "hermes", "recorded"],
-					correlation: {
+				appendMockEvent(pi, "rck-bridge.hermes.requested", requestEvent);
+
+				const result = await runHermesExecution(request, async (runRequest) => {
+					const preview = runRequest.prompt.slice(0, 120) || "inspection requested";
+					const failed = /\b(fail|error|stderr)\b/i.test(runRequest.prompt);
+					if (failed) {
+						return {
+							exitCode: 1,
+							timedOut: false,
+							stdout: "",
+							stderr: `mock-hermes-stderr: ${preview}`,
+							durationMs: 0,
+						};
+					}
+
+					return {
+						exitCode: 0,
+						timedOut: false,
+						stdout: `mock-hermes-stdout: ${preview}`,
+						stderr: "",
+						durationMs: 0,
+					};
+				});
+
+				const recordedAt = nowUtc();
+				const evidence = writeHermesEvidence(
+					root,
+					requestEvent.eventId,
+					recordedAt,
+					result.stdout ?? "",
+					result.stderr ?? "",
+				);
+
+				const recorded: HermesRunRecordedEvent = {
+					...createBaseEvent("HermesRunRecorded", result.safeSummary, "extension", {
 						traceId: requestEvent.traceId,
-						requestEventId: requestEvent.eventId,
-						parentEventId: requestEvent.eventId,
-					},
-					piWriteTarget: "entry",
-					rckWriteTarget: "rck",
-					llmInjectionPolicy: "none",
-				}),
-				eventType: "HermesRunRecorded",
-				requestEventId: requestEvent.eventId,
-				command: { name: "/hermes", args: request.rawArgs || undefined },
-				resultSummary: result.safeSummary,
-				exitCode: result.exitCode,
-				mode: result.mode,
-				status: result.status,
-				timedOut: result.timedOut,
-				durationMs: result.durationMs,
-				blockedReason: result.blockedReason,
-				safeSummary: result.safeSummary,
-				stdout: undefined,
-				stderr: undefined,
-			};
-			appendMockEvent(pi, "rck-bridge.hermes.recorded", recorded);
-			appendCustomMessage(
-				pi,
-				"rck-bridge-status",
-				result.safeSummary,
-				{
-					eventType: recorded.eventType,
-					mock: true,
+						branchId: requestEvent.branchId,
+						piSessionId: requestEvent.piSessionId,
+						piEntryId: requestEvent.piEntryId,
+						parentPiEntryId: requestEvent.parentPiEntryId,
+						tags: ["rck-bridge", "mock", "hermes", "recorded"],
+						correlation: {
+							traceId: requestEvent.traceId,
+							requestEventId: requestEvent.eventId,
+							parentEventId: requestEvent.eventId,
+						},
+						piWriteTarget: "entry",
+						rckWriteTarget: "rck",
+						llmInjectionPolicy: "none",
+					}),
+					eventType: "HermesRunRecorded",
 					requestEventId: requestEvent.eventId,
+					command: { name: "/hermes", args: request.rawArgs || undefined },
+					resultSummary: result.safeSummary,
+					exitCode: result.exitCode,
 					mode: result.mode,
 					status: result.status,
+					timedOut: result.timedOut,
+					durationMs: result.durationMs,
 					blockedReason: result.blockedReason,
 					safeSummary: result.safeSummary,
-				},
-			);
+					stdout: undefined,
+					stderr: undefined,
+					stdoutRef: evidence.stdoutRef,
+					stderrRef: evidence.stderrRef,
+				};
+				appendMockEvent(pi, "rck-bridge.hermes.recorded", recorded);
+				appendCustomMessage(
+					pi,
+					"rck-bridge-status",
+					result.safeSummary,
+					{
+						eventType: recorded.eventType,
+						mock: true,
+						requestEventId: requestEvent.eventId,
+						mode: result.mode,
+						status: result.status,
+						blockedReason: result.blockedReason,
+						safeSummary: result.safeSummary,
+						stdoutRef: evidence.stdoutRef,
+						stderrRef: evidence.stderrRef,
+						recordedAt,
+					},
+				);
 
-			notify(pi, "Mock /hermes recorded in Pi custom entries", "info");
-		},
-	});
+				notify(pi, "Mock /hermes recorded in Pi custom entries", "info");
+			},
+});
 
 	pi.registerCommand("state", {
 		description: "Mock state pack creation (POC only)",

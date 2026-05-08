@@ -1,52 +1,14 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type {
+	ContextPackInjectedEvent,
+	HermesRunRecordedEvent,
+	HermesRunRequestedEvent,
+	RckOperationalEvent,
+	RckEventBase,
+	StatePackCreatedEvent,
+} from "./rck-events.js";
 
-type RckEventType =
-	| "HermesRunRequested"
-	| "HermesRunRecorded"
-	| "StatePackCreated"
-	| "ContextPackInjected";
-
-type RckActor = "user" | "pi" | "extension";
-
-type BaseEvent = {
-	eventId: string;
-	eventType: RckEventType;
-	schemaVersion: 1;
-	timestamp: string;
-	actor: RckActor;
-	summary: string;
-	tags?: string[];
-	traceId: string;
-	branchId?: string;
-	piSessionId?: string;
-	piEntryId?: string;
-	parentPiEntryId?: string;
-};
-
-type HermesRunRequestedEvent = BaseEvent & {
-	eventType: "HermesRunRequested";
-	command: string;
-	promptSummary: string;
-};
-
-type HermesRunRecordedEvent = BaseEvent & {
-	eventType: "HermesRunRecorded";
-	requestEventId: string;
-	command: string;
-	resultSummary: string;
-};
-
-type StatePackCreatedEvent = BaseEvent & {
-	eventType: "StatePackCreated";
-	stateId: string;
-	stateSummary: string;
-};
-
-type ContextPackInjectedEvent = BaseEvent & {
-	eventType: "ContextPackInjected";
-	contextPackId: string;
-	contextSummary: string;
-};
+const SCHEMA_VERSION = 1 as const;
 
 function createId(prefix: string): string {
 	return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -57,15 +19,15 @@ function nowUtc(): string {
 }
 
 function createBaseEvent(
-	eventType: RckEventType,
+	eventType: RckOperationalEvent["eventType"],
 	summary: string,
-	actor: RckActor,
-	overrides: Partial<BaseEvent> = {},
-): BaseEvent {
+	actor: RckEventBase["actor"],
+	overrides: Partial<RckEventBase> = {},
+): RckEventBase {
 	return {
 		eventId: createId("evt"),
 		eventType,
-		schemaVersion: 1,
+		schemaVersion: SCHEMA_VERSION,
 		timestamp: nowUtc(),
 		actor,
 		summary,
@@ -75,11 +37,15 @@ function createBaseEvent(
 		piEntryId: overrides.piEntryId,
 		parentPiEntryId: overrides.parentPiEntryId,
 		tags: overrides.tags,
+		correlation: overrides.correlation ?? { traceId: overrides.traceId ?? createId("trace") },
+		piWriteTarget: overrides.piWriteTarget ?? "entry",
+		rckWriteTarget: overrides.rckWriteTarget ?? "rck",
+		llmInjectionPolicy: overrides.llmInjectionPolicy ?? "safe-summary",
 	};
 }
 
-function appendCustom(pi: ExtensionAPI, customType: string, data: unknown): void {
-	pi.appendEntry(customType, data);
+function appendMockEvent(pi: ExtensionAPI, customType: string, event: unknown): void {
+	pi.appendEntry(customType, event);
 }
 
 function appendCustomMessage(pi: ExtensionAPI, customType: string, content: string, details?: unknown): void {
@@ -88,6 +54,15 @@ function appendCustomMessage(pi: ExtensionAPI, customType: string, content: stri
 		content,
 		display: true,
 		details,
+	});
+}
+
+function notify(pi: ExtensionAPI, message: string, type: "info" | "warning" | "error" = "info"): void {
+	pi.sendMessage({
+		customType: "rck-bridge-status",
+		content: message,
+		display: true,
+		details: { mock: true, notifyType: type },
 	});
 }
 
@@ -104,42 +79,50 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const { payload } = parseArgs(args);
 			const promptSummary = payload || "Mock Hermes inspection request";
-			const requestEvent = createBaseEvent("HermesRunRequested", promptSummary, "user", {
-				tags: ["rck-bridge", "mock", "hermes"],
-				piSessionId: ctx.sessionManager.getSessionId(),
-			});
-
-			const requested: HermesRunRequestedEvent = {
-				...requestEvent,
+			const requestEvent: HermesRunRequestedEvent = {
+				...createBaseEvent("HermesRunRequested", promptSummary, "user", {
+					tags: ["rck-bridge", "mock", "hermes"],
+					piSessionId: ctx.sessionManager.getSessionId(),
+				}),
 				eventType: "HermesRunRequested",
-				command: "/hermes",
+				command: { name: "/hermes", args: payload || undefined },
 				promptSummary,
 			};
-			appendCustom(pi, "rck-bridge.hermes.requested", requested);
+
+			appendMockEvent(pi, "rck-bridge.hermes.requested", requestEvent);
 
 			const recorded: HermesRunRecordedEvent = {
 				...createBaseEvent("HermesRunRecorded", "Mock Hermes run recorded", "extension", {
-					traceId: requested.traceId,
-					branchId: requested.branchId,
-					piSessionId: requested.piSessionId,
-					piEntryId: requested.piEntryId,
-					parentPiEntryId: requested.parentPiEntryId,
+					traceId: requestEvent.traceId,
+					branchId: requestEvent.branchId,
+					piSessionId: requestEvent.piSessionId,
+					piEntryId: requestEvent.piEntryId,
+					parentPiEntryId: requestEvent.parentPiEntryId,
 					tags: ["rck-bridge", "mock", "hermes", "recorded"],
+					correlation: {
+						traceId: requestEvent.traceId,
+						requestEventId: requestEvent.eventId,
+						parentEventId: requestEvent.eventId,
+					},
+					piWriteTarget: "entry",
+					rckWriteTarget: "rck",
+					llmInjectionPolicy: "none",
 				}),
 				eventType: "HermesRunRecorded",
-				requestEventId: requested.eventId,
-				command: "/hermes",
+				requestEventId: requestEvent.eventId,
+				command: { name: "/hermes", args: payload || undefined },
 				resultSummary: `Mock Hermes completed: ${promptSummary.slice(0, 120) || "inspection requested"}`,
+				exitCode: 0,
 			};
-			appendCustom(pi, "rck-bridge.hermes.recorded", recorded);
+			appendMockEvent(pi, "rck-bridge.hermes.recorded", recorded);
 			appendCustomMessage(
 				pi,
 				"rck-bridge-status",
 				`Mock Hermes completed: emitted HermesRunRequested and HermesRunRecorded`,
-				{ eventType: recorded.eventType, mock: true, requestEventId: requested.eventId },
+				{ eventType: recorded.eventType, mock: true, requestEventId: requestEvent.eventId },
 			);
 
-			ctx.ui.notify("Mock /hermes recorded in Pi custom entries", "info");
+			notify(pi, "Mock /hermes recorded in Pi custom entries", "info");
 		},
 	});
 
@@ -151,18 +134,21 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 			const stateEvent: StatePackCreatedEvent = {
 				...createBaseEvent("StatePackCreated", summary, "pi", {
 					tags: ["rck-bridge", "mock", "state"],
-					piSessionId: (ctx as { sessionManager?: { getSessionId?: () => string } }).sessionManager?.getSessionId?.(),
+					piSessionId: ctx.sessionManager.getSessionId(),
+					llmInjectionPolicy: "safe-summary",
+					piWriteTarget: "entry",
+					rckWriteTarget: "pi",
 				}),
 				eventType: "StatePackCreated",
 				stateId: createId("state"),
 				stateSummary: summary,
 			};
-			appendCustom(pi, "rck-bridge.state.created", stateEvent);
+			appendMockEvent(pi, "rck-bridge.state.created", stateEvent);
 			appendCustomMessage(pi, "rck-bridge-status", `Mock state created: ${summary.slice(0, 100)}`, {
 				eventType: stateEvent.eventType,
 				mock: true,
 			});
-			ctx.ui.notify("Mock /state recorded in Pi custom entries", "info");
+			notify(pi, "Mock /state recorded in Pi custom entries", "info");
 		},
 	});
 
@@ -171,7 +157,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const { command, payload } = parseArgs(args);
 			if (command !== "inject") {
-				ctx.ui.notify("Usage: /rck inject <context summary>", "warning");
+				notify(pi, "Usage: /rck inject <context summary>", "warning");
 				return;
 			}
 
@@ -179,7 +165,10 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 			const event: ContextPackInjectedEvent = {
 				...createBaseEvent("ContextPackInjected", contextSummary, "extension", {
 					tags: ["rck-bridge", "mock", "context"],
-					piSessionId: (ctx as { sessionManager?: { getSessionId?: () => string } }).sessionManager?.getSessionId?.(),
+					piSessionId: ctx.sessionManager.getSessionId(),
+					llmInjectionPolicy: "safe-context",
+					piWriteTarget: "custom_message",
+					rckWriteTarget: "llm",
 				}),
 				eventType: "ContextPackInjected",
 				contextPackId: createId("pack"),
@@ -192,8 +181,8 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				`MOCK CONTEXT PACK: ${contextSummary.slice(0, 140)}`,
 				{ eventType: event.eventType, mock: true },
 			);
-			appendCustom(pi, "rck-bridge.context.injected.record", event);
-			ctx.ui.notify("Mock /rck inject written as custom_message", "info");
+			appendMockEvent(pi, "rck-bridge.context.injected.record", event);
+			notify(pi, "Mock /rck inject written as custom_message", "info");
 		},
 	});
 }

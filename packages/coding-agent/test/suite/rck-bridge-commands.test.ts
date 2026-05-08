@@ -1,5 +1,7 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import registerRckBridge from "../../../../.pi/extensions/rck-bridge/index.ts";
+import registerRckBridge from "../../../../.pi/extensions/rck-bridge/index.js";
 import { createHarnessWithExtensions, type Harness } from "../test-harness.js";
 
 function getCustomEntries(harness: Harness) {
@@ -29,6 +31,45 @@ describe("RCK bridge commands", () => {
 
 		await runner!.getCommand("state")!.handler("", runner!.createCommandContext());
 
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(existsSync(rckRoot)).toBe(true);
+
+		const stateFiles = readdirSync(join(rckRoot, "states"));
+		const eventFiles = readdirSync(join(rckRoot, "events"));
+		expect(stateFiles.length).toBe(1);
+		expect(eventFiles.length).toBe(1);
+		expect(readdirSync(join(rckRoot, "context-packs"))).toHaveLength(0);
+
+		const latestState = JSON.parse(readFileSync(join(rckRoot, "indexes", "latest-state.json"), "utf-8")) as {
+			currentStateId: string;
+			currentStatePath: string;
+			currentEventId: string;
+			traceId: string;
+		};
+		expect(latestState.currentStateId).toContain("state_");
+		expect(latestState.currentStatePath).toMatch(/^\.pi\/rck\/states\//);
+		expect(latestState.currentEventId).toContain("evt_");
+		expect(latestState.traceId).toContain("trace_");
+
+		const stateJson = JSON.parse(readFileSync(join(rckRoot, "states", stateFiles[0]), "utf-8")) as {
+			artifactType: string;
+			stateId: string;
+			traceId: string;
+			summary: { objective: string };
+		};
+		const eventJson = JSON.parse(readFileSync(join(rckRoot, "events", eventFiles[0]), "utf-8")) as {
+			artifactType: string;
+			eventType: string;
+			payload: { stateId: string; statePath: string };
+			traceId: string;
+		};
+		expect(stateJson.artifactType).toBe("rck.state");
+		expect(eventJson.artifactType).toBe("rck.event");
+		expect(eventJson.eventType).toBe("StatePackCreated");
+		expect(eventJson.payload.stateId).toBe(stateJson.stateId);
+		expect(eventJson.payload.statePath).toBe(latestState.currentStatePath);
+		expect(eventJson.traceId).toBe(stateJson.traceId);
+
 		const customEntries = getCustomEntries(harness);
 		expect(
 			customEntries.some(
@@ -43,7 +84,7 @@ describe("RCK bridge commands", () => {
 				(message) =>
 					message.customType === "rck-bridge-status" &&
 					typeof message.content === "string" &&
-					message.content.includes("Mock state created: Mock state snapshot for current branch"),
+					message.content.includes("RCK /state wrote local state, event, and latest-state index"),
 			),
 		).toBe(true);
 	});

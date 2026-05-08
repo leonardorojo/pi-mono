@@ -42,12 +42,27 @@ export interface RckEventBase {
 	summary: string;
 	tags?: string[];
 	correlation: RckCorrelationRef;
+	traceId?: string;
+	branchId?: string | null;
+	piSessionId?: string | null;
+	piEntryId?: string | null;
+	parentPiEntryId?: string | null;
 	piWriteTarget: RckPiWriteTarget;
 	rckWriteTarget: RckWriteTarget;
 	llmInjectionPolicy: RckLlmInjectionPolicy;
 	artifacts?: RckArtifactRef[];
 	command?: RckCommandRef;
 	git?: RckGitRef;
+	requestEventId?: string;
+	resultSummary?: string;
+	exitCode?: 0;
+	stdout?: string;
+	stderr?: string;
+	promptSummary?: string;
+	stateId?: string;
+	stateSummary?: string;
+	contextPackId?: string;
+	contextSummary?: string;
 }
 
 export interface HermesRunRequestedEvent extends RckEventBase {

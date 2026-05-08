@@ -7,8 +7,20 @@ import type {
 	RckEventBase,
 	StatePackCreatedEvent,
 } from "./rck-events.js";
+import {
+	createEventId,
+	createStateId,
+	ensureRckStorage,
+	getRckRoot,
+	updateLatestStateIndex,
+	writeRckEvent,
+	writeRckState,
+	type RckEventPayload,
+	type RckStatePayload,
+} from "./rck-storage.js";
 
 const SCHEMA_VERSION = 1 as const;
+const STORAGE_SCHEMA_VERSION = "0.1" as const;
 
 function createId(prefix: string): string {
 	return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -73,6 +85,10 @@ function parseArgs(args: string): { command: string; payload: string } {
 	return { command, payload: rest.join(" ").trim() };
 }
 
+function safeContextSummary(summary: string): string {
+	return summary.replace(/\b(stdout|stderr|diff|log|logs)\b/gi, "[redacted]");
+}
+
 export default function registerRckBridge(pi: ExtensionAPI) {
 	pi.registerCommand("hermes", {
 		description: "Mock Hermes bridge (POC only)",
@@ -130,25 +146,104 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 		description: "Mock state pack creation (POC only)",
 		handler: async (args, ctx) => {
 			const payload = args.trim();
+			const stateId = createStateId();
+			const eventId = createEventId();
+			const traceId = createId("trace");
+			const cwd = ctx.cwd;
+			const repoPath = cwd;
+			const root = getRckRoot(cwd);
+			ensureRckStorage(root);
+
 			const summary = payload || "Mock state snapshot for current branch";
+			const sessionId = ctx.sessionManager.getSessionId();
 			const stateEvent: StatePackCreatedEvent = {
 				...createBaseEvent("StatePackCreated", summary, "pi", {
 					tags: ["rck-bridge", "mock", "state"],
-					piSessionId: ctx.sessionManager.getSessionId(),
+					traceId,
+					piSessionId: sessionId,
 					llmInjectionPolicy: "safe-summary",
 					piWriteTarget: "entry",
 					rckWriteTarget: "pi",
 				}),
 				eventType: "StatePackCreated",
-				stateId: createId("state"),
+				stateId,
 				stateSummary: summary,
 			};
-			appendMockEvent(pi, "rck-bridge.state.created", stateEvent);
-			appendCustomMessage(pi, "rck-bridge-status", `Mock state created: ${summary.slice(0, 100)}`, {
-				eventType: stateEvent.eventType,
-				mock: true,
+			const statePayload: RckStatePayload = {
+				schemaVersion: STORAGE_SCHEMA_VERSION,
+				artifactType: "rck.state",
+				id: stateId,
+				stateId,
+				stateType: "operational",
+				traceId,
+				createdAt: stateEvent.timestamp,
+				repoPath,
+				cwd,
+				piSessionId: sessionId,
+				piEntryId: null,
+				parentPiEntryId: null,
+				branchId: null,
+				summary,
+				actor: "pi",
+				tags: ["rck-bridge", "mock", "state"],
+				correlation: { traceId },
+				piWriteTarget: "entry",
+				rckWriteTarget: "rck",
+				llmInjectionPolicy: "safe-summary",
+				stateSummary: {
+					title: "State snapshot",
+					objective: summary,
+					scope: "local bridge state",
+					nextAction: "Review latest-state index",
+				},
+				source: {
+					eventId,
+					command: "/state",
+				},
+			};
+			const stateRef = writeRckState(root, statePayload);
+			const eventPayload: RckEventPayload = {
+				schemaVersion: STORAGE_SCHEMA_VERSION,
+				artifactType: "rck.event",
+				id: eventId,
+				eventId,
+				eventType: "StatePackCreated",
+				traceId,
+				createdAt: stateEvent.timestamp,
+				repoPath,
+				cwd,
+				piSessionId: sessionId,
+				piEntryId: null,
+				parentPiEntryId: null,
+				branchId: null,
+				summary,
+				actor: "pi",
+				tags: ["rck-bridge", "mock", "state"],
+				correlation: { traceId },
+				piWriteTarget: "entry",
+				rckWriteTarget: "rck",
+				llmInjectionPolicy: "safe-summary",
+				payload: {
+					stateId,
+					statePath: stateRef.path,
+					stateEventId: eventId,
+				},
+			};
+			const eventRef = writeRckEvent(root, eventPayload);
+			updateLatestStateIndex(root, stateRef, eventRef, traceId);
+			appendMockEvent(pi, "rck-bridge.state.created", {
+				...stateEvent,
+				traceId,
+				piSessionId: sessionId,
+				artifacts: [{ kind: "file", reference: stateRef.path }],
 			});
-			notify(pi, "Mock /state recorded in Pi custom entries", "info");
+			appendCustomMessage(pi, "rck-bridge-status", `State stored: ${summary.slice(0, 100)}`, {
+				eventType: stateEvent.eventType,
+				mock: false,
+				statePath: stateRef.path,
+				latestStateIndexPath: "./.pi/rck/indexes/latest-state.json",
+			});
+			notify(pi, "RCK /state wrote local state, event, and latest-state index", "info");
 		},
 	});
 

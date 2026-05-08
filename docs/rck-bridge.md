@@ -104,23 +104,29 @@ Still mock:
 
 ### `/hermes <prompt>`
 
-Records a mock Hermes request and mock Hermes result.
+Records a fake-first Hermes request and a fake Hermes result.
 
 What it does:
-- captures the prompt as a mock Hermes request event
-- records a mock Hermes completion event
+- captures the prompt as a Hermes request event
+- routes execution through the pure `rck-hermes.ts` contract
+- records a Hermes completion event
 - appends Pi custom entries for traceability
+- persists fake `stdout`/`stderr` as local evidence refs
 
 What it writes in Pi:
-- custom entries describing the mock Hermes request/result
+- custom entries describing the Hermes request/result
+- safe summary text only; no raw execution output
 
 What it writes in `.pi/rck/`:
-- currently no real Hermes artifact stream
-- only the bridge-level mock event trail used by the POC
+- `events/<timestamp>_evt_<id>.json`
+- `evidence/hermes/stdout/`
+- `evidence/hermes/stderr/`
+- evidence refs for the stored fake output
 
-Still mock:
-- Hermes is not executed for real
-- this command is only a POC bridge placeholder
+Still mock / fake-first:
+- Hermes is not executed for real yet
+- `--mode real` is blocked by default
+- this command remains a bridge placeholder until a later explicit phase enables real execution
 
 ## Storage layout
 
@@ -130,6 +136,10 @@ Still mock:
   states/
   context-packs/
   anchors/
+  evidence/
+    hermes/
+      stdout/
+      stderr/
   indexes/
     latest-state.json
     latest-context-pack.json
@@ -140,11 +150,17 @@ Notes:
 - `events/` stores RCK event records
 - `states/` stores state snapshots
 - `context-packs/` stores safe injection payloads
+- `evidence/hermes/stdout/` stores fake Hermes stdout artifacts as refs
+- `evidence/hermes/stderr/` stores fake Hermes stderr artifacts as refs
 - `indexes/` stores the latest pointers for fast lookup
 
 ## Validation: test harness
 
-Canonical test command:
+Canonical test commands:
+
+```bash
+npm exec vitest run .pi/extensions/rck-bridge/rck-hermes.test.ts
+```
 
 ```bash
 cd packages/coding-agent
@@ -152,7 +168,7 @@ npm exec vitest run test/suite/rck-bridge-commands.test.ts
 cd ../..
 ```
 
-This validates the bridge command contract in the test harness.
+These validate the pure Hermes contract and the bridge command contract in the test harness.
 
 ## Validation: RPC JSONL
 
@@ -189,7 +205,8 @@ Recommended shape:
 ## Safety / context rules
 
 - raw `stdout`, `stderr`, diffs, and logs never enter the LLM directly
-- only safe context packs are eligible for injection
+- for `/hermes`, raw `stdout`/`stderr` are persisted only as evidence refs
+- only `safeSummary` plus refs are eligible for `custom_message`
 - `allowedToInject = true` is required for `/rck inject`
 - raw operational evidence stays out of the injected prompt by design
 - anchors are semantic references, not context packs
@@ -197,10 +214,12 @@ Recommended shape:
 
 ## Current limits
 
-- `/hermes` is still mock
-- no real Hermes execution yet
+- `/hermes` is fake-first and still blocked from real execution by default
+- Hermes real is not connected yet
+- `ctx.exec` is not used yet
 - no external RCK CLI yet
 - no Codex usage
+- real mode requires a later explicit phase
 - storage v0.1 has no locks or retention policy
 - `piEntryId` is optional and may be incomplete during early correlation
 - Pi visual labels are not integrated yet

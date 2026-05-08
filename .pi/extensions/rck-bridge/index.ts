@@ -29,6 +29,7 @@ import {
 	type RckEventPayload,
 	type RckStatePayload,
 } from "./rck-storage.js";
+import { parseHermesArgs, runHermesExecution } from "./rck-hermes.js";
 
 const SCHEMA_VERSION = 1 as const;
 const STORAGE_SCHEMA_VERSION = "0.1" as const;
@@ -110,22 +111,33 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 	pi.registerCommand("hermes", {
 		description: "Mock Hermes bridge (POC only)",
 		handler: async (args, ctx) => {
-			const { payload } = parseArgs(args);
-			const promptSummary = payload || "Mock Hermes inspection request";
+			const request = parseHermesArgs(args);
+			const promptSummary = request.prompt || "Mock Hermes inspection request";
 			const requestEvent: HermesRunRequestedEvent = {
 				...createBaseEvent("HermesRunRequested", promptSummary, "user", {
 					tags: ["rck-bridge", "mock", "hermes"],
 					piSessionId: ctx.sessionManager.getSessionId(),
 				}),
 				eventType: "HermesRunRequested",
-				command: { name: "/hermes", args: payload || undefined },
+				command: { name: "/hermes", args: request.rawArgs || undefined },
 				promptSummary,
 			};
 
 			appendMockEvent(pi, "rck-bridge.hermes.requested", requestEvent);
 
-			const recorded: HermesRunRecordedEvent = {
-				...createBaseEvent("HermesRunRecorded", "Mock Hermes run recorded", "extension", {
+			const result = await runHermesExecution(request, async (runRequest) => {
+				const preview = runRequest.prompt.slice(0, 120) || "inspection requested";
+				return {
+					exitCode: 0,
+					timedOut: false,
+					stdout: `mock-hermes-stdout: ${preview}`,
+					stderr: `mock-hermes-stderr: ${preview}`,
+					durationMs: 0,
+				};
+			});
+
+			const recorded = {
+				...createBaseEvent("HermesRunRecorded", result.safeSummary, "extension", {
 					traceId: requestEvent.traceId,
 					branchId: requestEvent.branchId,
 					piSessionId: requestEvent.piSessionId,
@@ -143,16 +155,32 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				}),
 				eventType: "HermesRunRecorded",
 				requestEventId: requestEvent.eventId,
-				command: { name: "/hermes", args: payload || undefined },
-				resultSummary: `Mock Hermes completed: ${promptSummary.slice(0, 120) || "inspection requested"}`,
-				exitCode: 0,
+				command: { name: "/hermes", args: request.rawArgs || undefined },
+				resultSummary: result.safeSummary,
+				exitCode: result.exitCode,
+				mode: result.mode,
+				status: result.status,
+				timedOut: result.timedOut,
+				durationMs: result.durationMs,
+				blockedReason: result.blockedReason,
+				safeSummary: result.safeSummary,
+				stdout: undefined,
+				stderr: undefined,
 			};
 			appendMockEvent(pi, "rck-bridge.hermes.recorded", recorded);
 			appendCustomMessage(
 				pi,
 				"rck-bridge-status",
-				`Mock Hermes completed: emitted HermesRunRequested and HermesRunRecorded`,
-				{ eventType: recorded.eventType, mock: true, requestEventId: requestEvent.eventId },
+				result.safeSummary,
+				{
+					eventType: recorded.eventType,
+					mock: true,
+					requestEventId: requestEvent.eventId,
+					mode: result.mode,
+					status: result.status,
+					blockedReason: result.blockedReason,
+					safeSummary: result.safeSummary,
+				},
 			);
 
 			notify(pi, "Mock /hermes recorded in Pi custom entries", "info");

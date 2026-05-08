@@ -291,7 +291,7 @@ describe("RCK bridge commands", () => {
 		expect(customMessages.some((message) => message.customType === "rck-bridge.anchor.registered" && String(message.content).includes("linked to latest state"))).toBe(true);
 	});
 
-	it("executes /hermes inspect mock bridge and records both mock Hermes events", async () => {
+	it("executes /hermes inspect mock bridge and records safe Hermes results", async () => {
 		harness = await createHarnessWithExtensions({
 			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
 		});
@@ -307,16 +307,74 @@ describe("RCK bridge commands", () => {
 		const recordedEntry = customEntries.find((entry) => entry.customType === "rck-bridge.hermes.recorded");
 
 		expect(requestedEntry).toBeDefined();
-		expect((requestedEntry?.data as { eventType?: string } | undefined)?.eventType).toBe("HermesRunRequested");
+		expect((requestedEntry?.data as { eventType?: string; command?: { args?: string } } | undefined)?.eventType).toBe(
+			"HermesRunRequested",
+		);
+		expect((requestedEntry?.data as { command?: { args?: string } } | undefined)?.command?.args).toBe(
+			"inspect mock bridge",
+		);
 		expect(recordedEntry).toBeDefined();
-		expect((recordedEntry?.data as { eventType?: string; exitCode?: number } | undefined)?.eventType).toBe("HermesRunRecorded");
-		expect((recordedEntry?.data as { eventType?: string; exitCode?: number } | undefined)?.exitCode).toBe(0);
+		expect((recordedEntry?.data as { eventType?: string; exitCode?: number } | undefined)?.eventType).toBe(
+			"HermesRunRecorded",
+		);
+		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.mode).toBe("fake");
+		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.status).toBe("succeeded");
+		expect((recordedEntry?.data as { blockedReason?: string } | undefined)?.blockedReason).toBeUndefined();
+		expect((recordedEntry?.data as { safeSummary?: string } | undefined)?.safeSummary).toContain("mode=fake");
+		expect((recordedEntry?.data as { safeSummary?: string } | undefined)?.safeSummary).toContain("status=succeeded");
 
 		const customMessages = getCustomMessages(harness);
-		const statusMessage = customMessages.find((message) => message.customType === "rck-bridge-status");
+		const statusMessage = customMessages.find(
+			(message) =>
+				message.customType === "rck-bridge-status" &&
+				typeof message.content === "string" &&
+				message.content.includes("Hermes run:") &&
+				message.content.includes("mode=fake"),
+		);
 		expect(statusMessage).toBeDefined();
-		expect(String(statusMessage?.content)).toContain("Mock Hermes completed: emitted HermesRunRequested and HermesRunRecorded");
+		expect(String(statusMessage?.content)).toContain("status=succeeded");
+		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr|stdout|stderr/i);
 		expect((statusMessage?.details as { mock?: boolean } | undefined)?.mock).toBe(true);
 		expect((statusMessage?.details as { eventType?: string } | undefined)?.eventType).toBe("HermesRunRecorded");
+	});
+
+	it("executes /hermes --mode real and blocks real execution by default", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+
+		await runner!.getCommand("hermes")!.handler("--mode real inspect mock bridge", runner!.createCommandContext());
+
+		const customEntries = getCustomEntries(harness);
+		const recordedEntry = customEntries.find((entry) => entry.customType === "rck-bridge.hermes.recorded");
+		expect(recordedEntry).toBeDefined();
+		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.mode).toBe("real");
+		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.status).toBe("aborted");
+		expect((recordedEntry?.data as { blockedReason?: string } | undefined)?.blockedReason).toBe("real-mode-disabled");
+		expect((recordedEntry?.data as { safeSummary?: string } | undefined)?.safeSummary).toContain(
+			"blockedReason=real-mode-disabled",
+		);
+
+		const customMessages = getCustomMessages(harness);
+		const statusMessage = customMessages.find(
+			(message) =>
+				message.customType === "rck-bridge-status" &&
+				typeof message.content === "string" &&
+				message.content.includes("blockedReason=real-mode-disabled"),
+		);
+		expect(statusMessage).toBeDefined();
+		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr|stdout|stderr/i);
+		expect((statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.mode).toBe(
+			"real",
+		);
+		expect((statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.status).toBe(
+			"aborted",
+		);
+		expect((statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.blockedReason).toBe(
+			"real-mode-disabled",
+		);
 	});
 });

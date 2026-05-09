@@ -125,7 +125,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				const promptSummary = request.prompt || "Mock Hermes inspection request";
 				const requestEvent: HermesRunRequestedEvent = {
 					...createBaseEvent("HermesRunRequested", promptSummary, "user", {
-						tags: ["rck-bridge", "mock", "hermes"],
+						tags: ["rck-bridge", request.mode, "hermes"],
 						piSessionId: ctx.sessionManager.getSessionId(),
 					}),
 					eventType: "HermesRunRequested",
@@ -134,6 +134,35 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				};
 
 				appendMockEvent(pi, "rck-bridge.hermes.requested", requestEvent);
+				const requestEventRecord: RckEventPayload = {
+					schemaVersion: STORAGE_SCHEMA_VERSION,
+					artifactType: "rck.event",
+					id: requestEvent.eventId,
+					traceId: requestEvent.traceId,
+					createdAt: requestEvent.timestamp,
+					repoPath: cwd,
+					cwd,
+					piSessionId: requestEvent.piSessionId ?? ctx.sessionManager.getSessionId(),
+					piEntryId: requestEvent.piEntryId ?? null,
+					parentPiEntryId: requestEvent.parentPiEntryId ?? null,
+					branchId: requestEvent.branchId ?? null,
+					summary: `Hermes run requested: ${promptSummary}`,
+					actor: "user",
+					tags: requestEvent.tags,
+					correlation: requestEvent.correlation,
+					piWriteTarget: requestEvent.piWriteTarget,
+					rckWriteTarget: requestEvent.rckWriteTarget,
+					llmInjectionPolicy: requestEvent.llmInjectionPolicy,
+					eventId: requestEvent.eventId,
+					eventType: "HermesRunRequested",
+					command: { name: "/hermes", args: request.rawArgs || undefined },
+					payload: {
+						mode: request.mode,
+						promptSummary,
+						timeoutMs: request.timeoutMs,
+					},
+				};
+				const requestEventRef = writeRckEvent(root, requestEventRecord);
 
 				const allowRealExecution = getAllowRealHermesFromEnv();
 				const fakeHermesRunner = async (runRequest: typeof request) => {
@@ -178,7 +207,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 						piSessionId: requestEvent.piSessionId,
 						piEntryId: requestEvent.piEntryId,
 						parentPiEntryId: requestEvent.parentPiEntryId,
-						tags: ["rck-bridge", "mock", "hermes", "recorded"],
+						tags: ["rck-bridge", result.mode, "hermes", "recorded"],
 						correlation: {
 							traceId: requestEvent.traceId,
 							requestEventId: requestEvent.eventId,
@@ -204,15 +233,61 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 					stdoutRef: evidence.stdoutRef,
 					stderrRef: evidence.stderrRef,
 				};
+				const recordedEventRecord: RckEventPayload = {
+					schemaVersion: STORAGE_SCHEMA_VERSION,
+					artifactType: "rck.event",
+					id: recorded.eventId,
+					traceId: recorded.traceId ?? requestEvent.traceId,
+					createdAt: recorded.timestamp,
+					repoPath: cwd,
+					cwd,
+					piSessionId: recorded.piSessionId ?? requestEvent.piSessionId ?? ctx.sessionManager.getSessionId(),
+					piEntryId: recorded.piEntryId ?? null,
+					parentPiEntryId: recorded.parentPiEntryId ?? null,
+					branchId: recorded.branchId ?? null,
+					summary: recorded.summary,
+					actor: recorded.actor,
+					tags: recorded.tags,
+					correlation: recorded.correlation,
+					piWriteTarget: recorded.piWriteTarget,
+					rckWriteTarget: recorded.rckWriteTarget,
+					llmInjectionPolicy: recorded.llmInjectionPolicy,
+					eventId: recorded.eventId,
+					eventType: "HermesRunRecorded",
+					requestEventId: requestEvent.eventId,
+					command: { name: "/hermes", args: request.rawArgs || undefined },
+					resultSummary: recorded.resultSummary,
+					exitCode: recorded.exitCode,
+					stdout: undefined,
+					stderr: undefined,
+					payload: {
+						runId: requestEvent.eventId,
+						requestEventId: requestEvent.eventId,
+						mode: result.mode,
+						status: result.status,
+						exitCode: result.exitCode,
+						timedOut: result.timedOut,
+						durationMs: result.durationMs,
+						blockedReason: result.blockedReason,
+						stdoutRef: evidence.stdoutRef,
+						stderrRef: evidence.stderrRef,
+						safeSummary: result.safeSummary,
+					},
+				};
+				const recordedEventRef = writeRckEvent(root, recordedEventRecord);
+				const visibleLabel = result.mode === "real" ? "Hermes real run recorded" : "Hermes fake run recorded";
 				appendMockEvent(pi, "rck-bridge.hermes.recorded", recorded);
 				appendCustomMessage(
 					pi,
 					"rck-bridge-status",
-					result.safeSummary,
+					`${visibleLabel}: ${result.safeSummary}`,
 					{
 						eventType: recorded.eventType,
-						mock: true,
+						mock: result.mode !== "real",
 						requestEventId: requestEvent.eventId,
+						recordedEventId: recorded.eventId,
+						requestEventRef,
+						recordedEventRef,
 						mode: result.mode,
 						status: result.status,
 						blockedReason: result.blockedReason,
@@ -223,7 +298,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 					},
 				);
 
-				notify(pi, "Mock /hermes recorded in Pi custom entries", "info");
+				notify(pi, result.mode === "real" ? "Hermes real run recorded in Pi custom entries" : "Hermes fake run recorded in Pi custom entries", "info");
 			},
 });
 

@@ -305,10 +305,50 @@ describe("RCK bridge commands", () => {
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
 		const stdoutDir = join(rckRoot, "evidence", "hermes", "stdout");
 		const stderrDir = join(rckRoot, "evidence", "hermes", "stderr");
+		const eventDir = join(rckRoot, "events");
 		const stdoutFiles = existsSync(stdoutDir) ? readdirSync(stdoutDir) : [];
 		const stderrFiles = existsSync(stderrDir) ? readdirSync(stderrDir) : [];
+		const eventFiles = readdirSync(eventDir);
 		expect(stdoutFiles).toHaveLength(1);
 		expect(stderrFiles).toHaveLength(0);
+		expect(eventFiles).toHaveLength(2);
+
+		const eventRecords = eventFiles.map((file) =>
+			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
+				eventType: string;
+				requestEventId?: string;
+				mode?: string;
+				status?: string;
+				blockedReason?: string;
+				stdoutRef?: { kind?: string; path?: string };
+				stderrRef?: { kind?: string; path?: string };
+				payload?: {
+					mode?: string;
+					status?: string;
+					blockedReason?: string;
+					promptSummary?: string;
+					timeoutMs?: number;
+					stdoutRef?: { kind?: string; path?: string };
+					stderrRef?: { kind?: string; path?: string };
+					safeSummary?: string;
+					requestEventId?: string;
+				};
+			},
+		);
+		const requestedEvent = eventRecords.find((event) => event.eventType === "HermesRunRequested");
+		const recordedEvent = eventRecords.find((event) => event.eventType === "HermesRunRecorded");
+		expect(requestedEvent).toBeDefined();
+		expect(recordedEvent).toBeDefined();
+		expect(requestedEvent?.payload?.mode).toBe("fake");
+		expect(requestedEvent?.payload?.promptSummary).toBe("inspect mock bridge");
+		expect(requestedEvent?.payload?.timeoutMs).toBeUndefined();
+		expect(recordedEvent?.payload?.mode).toBe("fake");
+		expect(recordedEvent?.payload?.status).toBe("succeeded");
+		expect(recordedEvent?.payload?.blockedReason).toBeUndefined();
+		expect(recordedEvent?.payload?.stdoutRef?.kind).toBe("stdout");
+		expect(recordedEvent?.payload?.stderrRef).toBeUndefined();
+		expect(recordedEvent?.requestEventId).toBeDefined();
+		expect(recordedEvent?.payload?.requestEventId).toBe(recordedEvent?.requestEventId);
 
 		const customEntries = getCustomEntries(harness);
 		const requestedEntry = customEntries.find((entry) => entry.customType === "rck-bridge.hermes.requested");
@@ -347,8 +387,7 @@ describe("RCK bridge commands", () => {
 			(message) =>
 				message.customType === "rck-bridge-status" &&
 				typeof message.content === "string" &&
-				message.content.includes("Hermes run:") &&
-				message.content.includes("mode=fake"),
+				message.content.includes("Hermes fake run recorded"),
 		);
 		expect(statusMessage).toBeDefined();
 		expect(String(statusMessage?.content)).toContain("status=succeeded");
@@ -373,10 +412,28 @@ describe("RCK bridge commands", () => {
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
 		const stdoutDir = join(rckRoot, "evidence", "hermes", "stdout");
 		const stderrDir = join(rckRoot, "evidence", "hermes", "stderr");
+		const eventDir = join(rckRoot, "events");
 		const stdoutFiles = existsSync(stdoutDir) ? readdirSync(stdoutDir) : [];
 		const stderrFiles = existsSync(stderrDir) ? readdirSync(stderrDir) : [];
+		const eventFiles = readdirSync(eventDir);
 		expect(stdoutFiles).toHaveLength(0);
 		expect(stderrFiles).toHaveLength(1);
+		expect(eventFiles).toHaveLength(2);
+
+		const eventRecords = eventFiles.map((file) =>
+			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
+				eventType: string;
+				requestEventId?: string;
+				payload?: { mode?: string; status?: string; blockedReason?: string; stderrRef?: { kind?: string } };
+			},
+		);
+		const requestedEvent = eventRecords.find((event) => event.eventType === "HermesRunRequested");
+		const recordedEvent = eventRecords.find((event) => event.eventType === "HermesRunRecorded");
+		expect(requestedEvent?.payload?.mode).toBe("fake");
+		expect(recordedEvent?.payload?.mode).toBe("fake");
+		expect(recordedEvent?.payload?.status).toBe("failed");
+		expect(recordedEvent?.payload?.blockedReason).toBeUndefined();
+		expect(recordedEvent?.payload?.stderrRef?.kind).toBe("stderr");
 
 		const customEntries = getCustomEntries(harness);
 		const recordedEntry = customEntries.find((entry) => entry.customType === "rck-bridge.hermes.recorded");
@@ -397,7 +454,7 @@ describe("RCK bridge commands", () => {
 
 		const customMessages = getCustomMessages(harness);
 		const statusMessage = customMessages.find(
-			(message) => message.customType === "rck-bridge-status" && String(message.content).includes("Hermes run:"),
+			(message) => message.customType === "rck-bridge-status" && String(message.content).includes("Hermes fake run recorded"),
 		);
 		expect(statusMessage).toBeDefined();
 		expect(String(statusMessage?.content)).not.toContain(stderrContent);
@@ -417,8 +474,26 @@ describe("RCK bridge commands", () => {
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
 		const stdoutDir = join(rckRoot, "evidence", "hermes", "stdout");
 		const stderrDir = join(rckRoot, "evidence", "hermes", "stderr");
+		const eventDir = join(rckRoot, "events");
 		expect(existsSync(stdoutDir) ? readdirSync(stdoutDir) : []).toHaveLength(0);
 		expect(existsSync(stderrDir) ? readdirSync(stderrDir) : []).toHaveLength(0);
+		expect(readdirSync(eventDir)).toHaveLength(2);
+
+		const eventRecords = readdirSync(eventDir).map((file) =>
+			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
+				eventType: string;
+				requestEventId?: string;
+				payload?: { mode?: string; status?: string; blockedReason?: string; requestEventId?: string };
+			},
+		);
+		const requestedEvent = eventRecords.find((event) => event.eventType === "HermesRunRequested");
+		const recordedEvent = eventRecords.find((event) => event.eventType === "HermesRunRecorded");
+		expect(requestedEvent?.payload?.mode).toBe("real");
+		expect(recordedEvent?.payload?.mode).toBe("real");
+		expect(recordedEvent?.payload?.status).toBe("aborted");
+		expect(recordedEvent?.payload?.blockedReason).toBe("real-mode-disabled");
+		expect(recordedEvent?.requestEventId).toBeDefined();
+		expect(recordedEvent?.payload?.requestEventId).toBe(recordedEvent?.requestEventId);
 
 		const customEntries = getCustomEntries(harness);
 		const recordedEntry = customEntries.find((entry) => entry.customType === "rck-bridge.hermes.recorded");
@@ -437,7 +512,7 @@ describe("RCK bridge commands", () => {
 			(message) =>
 				message.customType === "rck-bridge-status" &&
 				typeof message.content === "string" &&
-				message.content.includes("blockedReason=real-mode-disabled"),
+				message.content.includes("Hermes real run recorded"),
 		);
 		expect(statusMessage).toBeDefined();
 		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr|stdout|stderr/i);

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
+import type { HermesRunMode, HermesRunStatus } from "./rck-hermes.js";
 
 export type RckActor = "user" | "pi" | "extension";
 
@@ -69,7 +70,29 @@ export interface RckStatePayload extends RckStorageBase {
 export interface RckEventPayload extends RckStorageBase {
 	artifactType: "rck.event";
 	eventId: string;
-	eventType: "StatePackCreated" | "ContextPackInjected" | "AnchorRegistered";
+	eventType:
+		| "StatePackCreated"
+		| "ContextPackInjected"
+		| "AnchorRegistered"
+		| "HermesRunRequested"
+		| "HermesRunRecorded";
+	command?: {
+		name: string;
+		args?: string;
+	};
+	requestEventId?: string;
+	resultSummary?: string;
+	exitCode?: number;
+	mode?: HermesRunMode;
+	status?: HermesRunStatus;
+	timedOut?: boolean;
+	durationMs?: number;
+	blockedReason?: string;
+	stdout?: string;
+	stderr?: string;
+	stdoutRef?: HermesEvidenceRef;
+	stderrRef?: HermesEvidenceRef;
+	safeSummary?: string;
 	payload: {
 		stateId?: string;
 		statePath?: string;
@@ -80,6 +103,19 @@ export interface RckEventPayload extends RckStorageBase {
 		anchorId?: string;
 		anchorPath?: string;
 		anchorEventId?: string;
+		runId?: string;
+		requestEventId?: string;
+		mode?: HermesRunMode;
+		promptSummary?: string;
+		timeoutMs?: number;
+		status?: HermesRunStatus;
+		exitCode?: number;
+		timedOut?: boolean;
+		durationMs?: number;
+		blockedReason?: string;
+		stdoutRef?: HermesEvidenceRef;
+		stderrRef?: HermesEvidenceRef;
+		safeSummary?: string;
 	};
 }
 

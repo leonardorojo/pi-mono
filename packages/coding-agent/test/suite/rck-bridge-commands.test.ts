@@ -457,6 +457,11 @@ describe("RCK bridge commands", () => {
 				blockedReason?: string;
 				stdoutRef?: { kind?: string; path?: string };
 				stderrRef?: { kind?: string; path?: string };
+				stdoutTruncated?: boolean;
+				stderrTruncated?: boolean;
+				stdoutByteLength?: number;
+				stderrByteLength?: number;
+				errorKind?: string;
 				payload?: {
 					mode?: string;
 					status?: string;
@@ -465,6 +470,11 @@ describe("RCK bridge commands", () => {
 					timeoutMs?: number;
 					stdoutRef?: { kind?: string; path?: string };
 					stderrRef?: { kind?: string; path?: string };
+					stdoutTruncated?: boolean;
+					stderrTruncated?: boolean;
+					stdoutByteLength?: number;
+					stderrByteLength?: number;
+					errorKind?: string;
 					safeSummary?: string;
 					requestEventId?: string;
 				};
@@ -489,6 +499,11 @@ describe("RCK bridge commands", () => {
 		expect(recordedEvent?.payload?.blockedReason).toBeUndefined();
 		expect(recordedEvent?.payload?.stdoutRef?.kind).toBe("stdout");
 		expect(recordedEvent?.payload?.stderrRef).toBeUndefined();
+		expect(recordedEvent?.payload?.stdoutTruncated).toBe(false);
+		expect(recordedEvent?.payload?.stderrTruncated).toBe(false);
+		expect(recordedEvent?.payload?.stdoutByteLength).toBeGreaterThan(0);
+		expect(recordedEvent?.payload?.stderrByteLength).toBe(0);
+		expect(recordedEvent?.payload?.errorKind).toBeUndefined();
 		expect(recordedEvent?.requestEventId).toBeDefined();
 		expect(recordedEvent?.payload?.requestEventId).toBe(recordedEvent?.requestEventId);
 
@@ -567,7 +582,7 @@ describe("RCK bridge commands", () => {
 			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
 				eventType: string;
 				requestEventId?: string;
-				payload?: { mode?: string; status?: string; blockedReason?: string; stderrRef?: { kind?: string } };
+				payload?: { mode?: string; status?: string; blockedReason?: string; stderrRef?: { kind?: string }; stdoutTruncated?: boolean; stderrTruncated?: boolean; stdoutByteLength?: number; stderrByteLength?: number; errorKind?: string };
 			},
 		);
 		const requestedEvent = eventRecords.find((event) => event.eventType === "HermesRunRequested");

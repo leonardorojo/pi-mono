@@ -3,6 +3,13 @@ import { spawn } from "node:child_process";
 export type HermesRunMode = "fake" | "real";
 
 export type HermesRunStatus = "succeeded" | "failed" | "timed_out" | "aborted";
+export type HermesErrorKind =
+	| "real_disabled"
+	| "hermes_not_found"
+	| "spawn_error"
+	| "timeout"
+	| "non_zero_exit"
+	| "output_truncated";
 
 export interface HermesRunRequest {
 	prompt: string;
@@ -17,6 +24,13 @@ export interface HermesExecResult {
 	stdout: string;
 	stderr: string;
 	durationMs?: number;
+	status?: HermesRunStatus;
+	errorKind?: HermesErrorKind;
+	blockedReason?: string;
+	stdoutTruncated?: boolean;
+	stderrTruncated?: boolean;
+	stdoutByteLength?: number;
+	stderrByteLength?: number;
 }
 
 export type HermesExecRunner =
@@ -28,10 +42,15 @@ export interface HermesRunResult {
 	status: HermesRunStatus;
 	exitCode: number;
 	timedOut: boolean;
+	errorKind?: HermesErrorKind;
+	blockedReason?: string;
 	durationMs?: number;
 	stdout?: string;
 	stderr?: string;
-	blockedReason?: string;
+	stdoutTruncated?: boolean;
+	stderrTruncated?: boolean;
+	stdoutByteLength?: number;
+	stderrByteLength?: number;
 	safeSummary: string;
 }
 
@@ -44,6 +63,7 @@ export interface HermesRealRunnerOptions {
 	env?: NodeJS.ProcessEnv;
 	command?: string;
 	defaultTimeoutMs?: number;
+	maxOutputBytes?: number;
 }
 
 function normalizeWhitespace(input: string): string {
@@ -92,9 +112,50 @@ function signalToExitCode(signal: NodeJS.Signals | string | null | undefined): n
 	}
 }
 
-function buildRunnerFailure(error: unknown): {
-	blockedReason: string;
+function createLimitedOutputCollector(maxBytes: number): {
+	push: (chunk: Buffer | string) => void;
+	finish: () => { text: string; byteLength: number; truncated: boolean };
+} {
+	const limit = Number.isFinite(maxBytes) && maxBytes >= 0 ? Math.floor(maxBytes) : 0;
+	const chunks: Buffer[] = [];
+	let storedBytes = 0;
+	let totalBytes = 0;
+	let truncated = false;
+
+	return {
+		push(chunk: Buffer | string) {
+			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+			totalBytes += buffer.length;
+			if (storedBytes >= limit) {
+				truncated = true;
+				return;
+			}
+
+			const remaining = limit - storedBytes;
+			if (buffer.length > remaining) {
+				chunks.push(buffer.subarray(0, remaining));
+				storedBytes += remaining;
+				truncated = true;
+				return;
+			}
+
+			chunks.push(buffer);
+			storedBytes += buffer.length;
+		},
+		finish() {
+			return {
+				text: chunks.length > 0 ? Buffer.concat(chunks).toString("utf8") : "",
+				byteLength: totalBytes,
+				truncated,
+			};
+		},
+	};
+}
+
+function normalizeRunnerError(error: unknown): {
+	errorKind: HermesErrorKind;
 	exitCode: number;
+	blockedReason?: string;
 	status: HermesRunStatus;
 	stderr: string;
 } {
@@ -104,20 +165,23 @@ function buildRunnerFailure(error: unknown): {
 
 	if (code === "ENOENT") {
 		return {
-			blockedReason: "hermes-not-found",
+			errorKind: "hermes_not_found",
 			exitCode: 127,
 			status: "aborted",
+			blockedReason: "hermes-not-found",
 			stderr: message,
 		};
 	}
 
 	return {
-		blockedReason: "spawn-error",
+		errorKind: "spawn_error",
 		exitCode: 1,
 		status: "failed",
 		stderr: message,
 	};
 }
+
+
 
 export function getAllowRealHermesFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
 	return normalizeRealHermesGate(env.RCK_BRIDGE_ALLOW_REAL_HERMES);
@@ -202,8 +266,28 @@ export function createSafeHermesSummary(result: Omit<HermesRunResult, "safeSumma
 		pieces.push(`durationMs=${result.durationMs}`);
 	}
 
+	if (result.errorKind) {
+		pieces.push(`errorKind=${result.errorKind}`);
+	}
+
 	if (result.blockedReason) {
 		pieces.push(`blockedReason=${result.blockedReason}`);
+	}
+
+	if (typeof result.stdoutByteLength === "number") {
+		pieces.push(`stdoutByteLength=${result.stdoutByteLength}`);
+	}
+
+	if (typeof result.stderrByteLength === "number") {
+		pieces.push(`stderrByteLength=${result.stderrByteLength}`);
+	}
+
+	if (result.stdoutTruncated) {
+		pieces.push("stdoutTruncated=true");
+	}
+
+	if (result.stderrTruncated) {
+		pieces.push("stderrTruncated=true");
 	}
 
 	if (promptPreview.length > 0) {
@@ -217,16 +301,37 @@ export function createHermesRealRunner(options: HermesRealRunnerOptions = {}): H
 	return async (request: HermesRunRequest): Promise<HermesExecResult> => {
 		const command = options.command ?? "hermes";
 		const timeoutMs = request.timeoutMs ?? options.defaultTimeoutMs ?? 60000;
+		const maxOutputBytes = options.maxOutputBytes ?? 8192;
 		const startedAt = Date.now();
-		const stdoutChunks: string[] = [];
-		const stderrChunks: string[] = [];
+		const stdoutCollector = createLimitedOutputCollector(maxOutputBytes);
+		const stderrCollector = createLimitedOutputCollector(maxOutputBytes);
 
-		return new Promise<HermesExecResult>((resolve, reject) => {
-			const child = spawn(command, ["-z", request.prompt], {
-				cwd: options.cwd,
-				env: options.env,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
+		return new Promise<HermesExecResult>((resolve) => {
+			let child: ReturnType<typeof spawn> | undefined;
+			try {
+				child = spawn(command, ["-z", request.prompt], {
+					cwd: options.cwd,
+					env: options.env,
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+			} catch (error) {
+				const normalized = normalizeRunnerError(error);
+				resolve({
+					exitCode: normalized.exitCode,
+					timedOut: false,
+					stdout: "",
+					stderr: normalized.stderr,
+					durationMs: Date.now() - startedAt,
+					status: normalized.status,
+					errorKind: normalized.errorKind,
+					blockedReason: normalized.blockedReason,
+					stdoutTruncated: false,
+					stderrTruncated: false,
+					stdoutByteLength: 0,
+					stderrByteLength: Buffer.byteLength(normalized.stderr, "utf8"),
+				});
+				return;
+			}
 
 			let settled = false;
 			let timedOut = false;
@@ -248,45 +353,61 @@ export function createHermesRealRunner(options: HermesRealRunnerOptions = {}): H
 				resolve(result);
 			};
 
-			const fail = (error: unknown): void => {
-				if (settled) {
-					return;
-				}
-
-				settled = true;
-				if (timeoutHandle) {
-					clearTimeout(timeoutHandle);
-				}
-				if (timeoutKillHandle) {
-					clearTimeout(timeoutKillHandle);
-				}
-				reject(error);
-			};
-
-			child.stdout?.setEncoding("utf8");
-			child.stdout?.on("data", (chunk: string) => {
-				stdoutChunks.push(chunk);
+			child.stdout?.on("data", (chunk: Buffer) => {
+				stdoutCollector.push(chunk);
 			});
 
-			child.stderr?.setEncoding("utf8");
-			child.stderr?.on("data", (chunk: string) => {
-				stderrChunks.push(chunk);
+			child.stderr?.on("data", (chunk: Buffer) => {
+				stderrCollector.push(chunk);
 			});
 
-			child.once("error", fail);
+			child.once("error", (error) => {
+				const normalized = normalizeRunnerError(error);
+				settle({
+					exitCode: normalized.exitCode,
+					timedOut: false,
+					stdout: "",
+					stderr: normalized.stderr,
+					durationMs: Date.now() - startedAt,
+					status: normalized.status,
+					errorKind: normalized.errorKind,
+					blockedReason: normalized.blockedReason,
+					stdoutTruncated: false,
+					stderrTruncated: false,
+					stdoutByteLength: 0,
+					stderrByteLength: Buffer.byteLength(normalized.stderr, "utf8"),
+				});
+			});
+
 			child.once("close", (code, signal) => {
+				const stdout = stdoutCollector.finish();
+				const stderr = stderrCollector.finish();
 				const exitCode = timedOut
 					? 124
 					: typeof code === "number"
 						? code
 						: signalToExitCode(signal);
+				const status = timedOut ? "timed_out" : mapHermesStatus(exitCode, false);
+				const errorKind = timedOut
+					? "timeout"
+					: exitCode === 0
+						? (stdout.truncated || stderr.truncated ? "output_truncated" : undefined)
+						: exitCode === 127
+							? "hermes_not_found"
+							: "non_zero_exit";
 
 				settle({
 					exitCode,
 					timedOut,
-					stdout: stdoutChunks.join(""),
-					stderr: stderrChunks.join(""),
+					stdout: stdout.text,
+					stderr: stderr.text,
 					durationMs: Date.now() - startedAt,
+					status,
+					errorKind,
+					stdoutTruncated: stdout.truncated,
+					stderrTruncated: stderr.truncated,
+					stdoutByteLength: stdout.byteLength,
+					stderrByteLength: stderr.byteLength,
 				});
 			});
 
@@ -323,6 +444,7 @@ export async function runHermesExecution(
 			status: "aborted",
 			exitCode: 0,
 			timedOut: false,
+			errorKind: "real_disabled",
 			blockedReason: "real-mode-disabled",
 			safeSummary: "",
 		};
@@ -336,23 +458,39 @@ export async function runHermesExecution(
 	try {
 		const execution = await runner(request);
 		const durationMs = typeof execution.durationMs === "number" ? execution.durationMs : Date.now() - startedAt;
+		const status = execution.status ?? mapHermesStatus(execution.exitCode, execution.timedOut);
+		const outputTruncated = Boolean(execution.stdoutTruncated || execution.stderrTruncated);
+		const errorKind =
+			execution.errorKind
+				?? (execution.timedOut
+					? "timeout"
+					: status === "failed" && execution.exitCode !== 0
+						? (execution.exitCode === 127 ? "hermes_not_found" : "non_zero_exit")
+						: outputTruncated
+							? "output_truncated"
+							: undefined);
 		const result: HermesRunResult = {
 			request,
 			mode: request.mode,
-			status: mapHermesStatus(execution.exitCode, execution.timedOut),
+			status,
 			exitCode: execution.exitCode,
 			timedOut: execution.timedOut,
+			errorKind,
 			durationMs,
 			stdout: execution.stdout,
 			stderr: execution.stderr,
-			blockedReason: execution.timedOut ? "timeout" : undefined,
+			stdoutTruncated: execution.stdoutTruncated,
+			stderrTruncated: execution.stderrTruncated,
+			stdoutByteLength: execution.stdoutByteLength,
+			stderrByteLength: execution.stderrByteLength,
+			blockedReason: execution.blockedReason,
 			safeSummary: "",
 		};
 
 		result.safeSummary = createSafeHermesSummary(result);
 		return result;
 	} catch (error) {
-		const failure = buildRunnerFailure(error);
+		const failure = normalizeRunnerError(error);
 		const durationMs = Date.now() - startedAt;
 		const result: HermesRunResult = {
 			request,
@@ -360,6 +498,7 @@ export async function runHermesExecution(
 			status: failure.status,
 			exitCode: failure.exitCode,
 			timedOut: false,
+			errorKind: failure.errorKind,
 			durationMs,
 			stdout: "",
 			stderr: failure.stderr,

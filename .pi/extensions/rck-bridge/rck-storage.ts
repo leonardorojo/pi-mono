@@ -28,6 +28,10 @@ export interface HermesEvidenceRef {
 export interface HermesEvidenceWriteResult {
 	stdoutRef?: HermesEvidenceRef;
 	stderrRef?: HermesEvidenceRef;
+	stdoutByteLength?: number;
+	stderrByteLength?: number;
+	stdoutTruncated?: boolean;
+	stderrTruncated?: boolean;
 }
 
 export interface RckStorageBase {
@@ -92,6 +96,11 @@ export interface RckEventPayload extends RckStorageBase {
 	stderr?: string;
 	stdoutRef?: HermesEvidenceRef;
 	stderrRef?: HermesEvidenceRef;
+	errorKind?: string;
+	stdoutTruncated?: boolean;
+	stderrTruncated?: boolean;
+	stdoutByteLength?: number;
+	stderrByteLength?: number;
 	safeSummary?: string;
 	payload: {
 		stateId?: string;
@@ -113,8 +122,13 @@ export interface RckEventPayload extends RckStorageBase {
 		timedOut?: boolean;
 		durationMs?: number;
 		blockedReason?: string;
+		errorKind?: string;
 		stdoutRef?: HermesEvidenceRef;
 		stderrRef?: HermesEvidenceRef;
+		stdoutTruncated?: boolean;
+		stderrTruncated?: boolean;
+		stdoutByteLength?: number;
+		stderrByteLength?: number;
 		safeSummary?: string;
 	};
 }
@@ -302,13 +316,16 @@ export function writeHermesEvidence(
 	recordedAt: string,
 	stdout: string,
 	stderr: string,
+	options: { maxOutputBytes?: number } = {},
 ): HermesEvidenceWriteResult {
 	const cwd = dirname(dirname(root));
 	const timestamp = safeFileTimestamp(new Date(recordedAt));
 	const result: HermesEvidenceWriteResult = {};
+	const limit = Number.isFinite(options.maxOutputBytes ?? 8192) ? Math.max(0, Math.floor(options.maxOutputBytes ?? 8192)) : 8192;
 
 	const writeEvidence = (kind: "stdout" | "stderr", content: string): HermesEvidenceRef | undefined => {
-		if (content.length === 0) {
+		const byteLength = Buffer.byteLength(content, "utf8");
+		if (byteLength === 0) {
 			return undefined;
 		}
 
@@ -316,17 +333,22 @@ export function writeHermesEvidence(
 		mkdirSync(dir, { recursive: true });
 		const artifactId = `${timestamp}_hermes_${runId}_${kind}`;
 		const filePath = join(dir, `${artifactId}.log`);
-		writeTextAtomic(filePath, content);
+		const stored = byteLength > limit ? Buffer.from(content, "utf8").subarray(0, limit).toString("utf8") : content;
+		writeTextAtomic(filePath, stored);
 		return {
 			artifactId,
 			kind,
 			path: toArtifactPath(cwd, filePath),
-			byteLength: Buffer.byteLength(content, "utf8"),
+			byteLength: Buffer.byteLength(stored, "utf8"),
 		};
 	};
 
 	result.stdoutRef = writeEvidence("stdout", stdout);
 	result.stderrRef = writeEvidence("stderr", stderr);
+	result.stdoutByteLength = Buffer.byteLength(stdout, "utf8");
+	result.stderrByteLength = Buffer.byteLength(stderr, "utf8");
+	result.stdoutTruncated = result.stdoutByteLength > limit;
+	result.stderrTruncated = result.stderrByteLength > limit;
 	return result;
 }
 

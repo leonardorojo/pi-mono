@@ -261,9 +261,10 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 					recordedAt,
 					result.stdout ?? "",
 					result.stderr ?? "",
+					{ maxOutputBytes: 8192 },
 				);
 
-				const recorded: HermesRunRecordedEvent = {
+				const recorded = {
 					...createBaseEvent("HermesRunRecorded", result.safeSummary, "extension", {
 						traceId: requestEvent.traceId,
 						branchId: requestEvent.branchId,
@@ -288,6 +289,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 					mode: result.mode,
 					status: result.status,
 					timedOut: result.timedOut,
+					errorKind: result.errorKind,
 					durationMs: result.durationMs,
 					blockedReason: result.blockedReason,
 					safeSummary: result.safeSummary,
@@ -295,6 +297,16 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 					stderr: undefined,
 					stdoutRef: evidence.stdoutRef,
 					stderrRef: evidence.stderrRef,
+					stdoutTruncated: evidence.stdoutTruncated,
+					stderrTruncated: evidence.stderrTruncated,
+					stdoutByteLength: evidence.stdoutByteLength,
+					stderrByteLength: evidence.stderrByteLength,
+				} as HermesRunRecordedEvent & {
+					errorKind?: string;
+					stdoutTruncated?: boolean;
+					stderrTruncated?: boolean;
+					stdoutByteLength?: number;
+					stderrByteLength?: number;
 				};
 				const recordedEventRecord: RckEventPayload = {
 					schemaVersion: STORAGE_SCHEMA_VERSION,
@@ -330,10 +342,15 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 						status: result.status,
 						exitCode: result.exitCode,
 						timedOut: result.timedOut,
+						errorKind: result.errorKind,
 						durationMs: result.durationMs,
 						blockedReason: result.blockedReason,
 						stdoutRef: evidence.stdoutRef,
 						stderrRef: evidence.stderrRef,
+						stdoutTruncated: evidence.stdoutTruncated,
+						stderrTruncated: evidence.stderrTruncated,
+						stdoutByteLength: evidence.stdoutByteLength,
+						stderrByteLength: evidence.stderrByteLength,
 						safeSummary: result.safeSummary,
 					},
 				};

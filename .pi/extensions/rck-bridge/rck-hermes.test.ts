@@ -8,6 +8,10 @@ import {
 	type HermesExecResult,
 	type HermesExecRunner,
 } from "./rck-hermes.js";
+import {
+	evaluateRckSupervision,
+	type RckSupervisionHermesInput,
+} from "./rck-supervision.js";
 
 describe("rck-hermes", () => {
 	it("parses default fake prompt", () => {
@@ -185,5 +189,157 @@ describe("rck-hermes", () => {
 		expect(summary).not.toContain("top secret stderr");
 		expect(summary).not.toContain("stdout");
 		expect(summary).not.toContain("stderr");
+	});
+
+	it("evaluates no Hermes run as info without attention", () => {
+		const evaluation = evaluateRckSupervision({
+			latestHermes: undefined,
+			currentTrace: { traceId: "trace_1" },
+			latestEventId: "evt_1",
+		});
+
+		expect(evaluation).toMatchObject({
+			level: "info",
+			reason: "No Hermes run recorded yet",
+			recommendedAction: "No action needed",
+			needsAttention: false,
+			traceId: "trace_1",
+			latestEventId: "evt_1",
+		});
+	});
+
+	it("evaluates a successful Hermes run as ok", () => {
+		const latestHermes: RckSupervisionHermesInput = {
+			eventId: "evt_run_1",
+			runId: "run_1",
+			traceId: "trace_1",
+			mode: "fake",
+			status: "succeeded",
+			timedOut: false,
+			durationMs: 250,
+			stdoutByteLength: 12,
+			stderrByteLength: 0,
+			stdoutTruncated: false,
+			stderrTruncated: false,
+		};
+
+		const evaluation = evaluateRckSupervision({
+			latestHermes,
+			currentTrace: { traceId: "trace_1" },
+			latestEventId: "evt_2",
+		});
+
+		expect(evaluation).toMatchObject({
+			level: "ok",
+			reason: "Latest Hermes run succeeded without supervision flags",
+			needsAttention: false,
+			latestRunId: "run_1",
+			latestEventId: "evt_2",
+			traceId: "trace_1",
+		});
+	});
+
+	it("evaluates timed out Hermes runs as blocking", () => {
+		const evaluation = evaluateRckSupervision({
+			latestHermes: {
+				eventId: "evt_run_2",
+				runId: "run_2",
+				traceId: "trace_2",
+				status: "timed_out",
+				timedOut: true,
+				durationMs: 61000,
+			},
+			currentTrace: { traceId: "trace_2" },
+			latestEventId: "evt_3",
+		});
+
+		expect(evaluation).toMatchObject({
+			level: "blocking",
+			needsAttention: true,
+			reason: "Latest Hermes run timed out",
+			recommendedAction: "Request checkpoint or stop/retry manually",
+		});
+	});
+
+	it("evaluates Hermes not found and spawn errors as error", () => {
+		const hermesNotFound = evaluateRckSupervision({
+			latestHermes: {
+				eventId: "evt_run_3",
+				runId: "run_3",
+				traceId: "trace_3",
+				status: "aborted",
+				errorKind: "hermes_not_found",
+				blockedReason: "hermes-not-found",
+			},
+			currentTrace: { traceId: "trace_3" },
+			latestEventId: "evt_4",
+		});
+		expect(hermesNotFound).toMatchObject({
+			level: "error",
+			needsAttention: true,
+			recommendedAction: "Fix Hermes environment before retrying",
+		});
+
+		const spawnError = evaluateRckSupervision({
+			latestHermes: {
+				eventId: "evt_run_4",
+				runId: "run_4",
+				traceId: "trace_4",
+				status: "failed",
+				errorKind: "spawn_error",
+			},
+			currentTrace: { traceId: "trace_4" },
+			latestEventId: "evt_5",
+		});
+		expect(spawnError).toMatchObject({
+			level: "error",
+			needsAttention: true,
+			recommendedAction: "Fix Hermes environment before retrying",
+		});
+	});
+
+	it("evaluates truncated Hermes output as warning", () => {
+		const evaluation = evaluateRckSupervision({
+			latestHermes: {
+				eventId: "evt_run_5",
+				runId: "run_5",
+				traceId: "trace_5",
+				status: "succeeded",
+				stdoutTruncated: true,
+				stderrTruncated: false,
+				stdoutByteLength: 4096,
+				stderrByteLength: 0,
+			},
+			currentTrace: { traceId: "trace_5" },
+			latestEventId: "evt_6",
+		});
+
+		expect(evaluation).toMatchObject({
+			level: "warning",
+			needsAttention: true,
+			reason: "Hermes output was truncated",
+			recommendedAction: "Request partial summary or inspect evidence manually",
+		});
+	});
+
+	it("evaluates real-mode-disabled as info", () => {
+		const evaluation = evaluateRckSupervision({
+			latestHermes: {
+				eventId: "evt_run_6",
+				runId: "run_6",
+				traceId: "trace_6",
+				status: "aborted",
+				blockedReason: "real-mode-disabled",
+			},
+			currentTrace: { traceId: "trace_6" },
+			latestEventId: "evt_7",
+		});
+
+		expect(evaluation).toMatchObject({
+			level: "info",
+			needsAttention: false,
+			reason: "Real Hermes execution is disabled",
+			recommendedAction: "Enable RCK_BRIDGE_ALLOW_REAL_HERMES=1 only if real execution is intended",
+		});
 	});
 });

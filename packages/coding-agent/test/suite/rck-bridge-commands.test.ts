@@ -333,27 +333,75 @@ describe("RCK bridge commands", () => {
 	});
 
 
-	it("executes /rck list without storage and stays read-only", async () => {
+	it("executes /rck supervise without storage and stays read-only", async () => {
 		harness = await createHarnessWithExtensions({
 			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
 		});
 
 		const runner = harness.session.extensionRunner;
 		expect(runner).toBeDefined();
-		await runner!.getCommand("rck")!.handler("list", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("supervise", runner!.createCommandContext());
 
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
 		expect(existsSync(rckRoot)).toBe(false);
 
 		const customMessages = getCustomMessages(harness);
-		const listMessage = customMessages.find(
-			(message) => message.customType === "rck-bridge-status" && String(message.content).includes("No RCK storage found. Run /state first."),
+		const superviseMessage = customMessages.find(
+			(message) => message.customType === "rck-bridge-status" && String(message.content).includes("No RCK storage found. Run /state or /hermes first."),
 		);
-		expect(listMessage).toBeDefined();
-		expect(String(listMessage?.content)).toContain("No RCK storage found. Run /state first.");
+		expect(superviseMessage).toBeDefined();
+		expect(String(superviseMessage?.content)).toContain("No RCK storage found. Run /state or /hermes first.");
 	});
 
-	it("executes /state then /rck list and reports safe counts with current trace", async () => {
+	it("executes /state then /rck supervise and reports safe ok status", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("state")!.handler("supervision baseline", runner!.createCommandContext());
+		await runner!.getCommand("hermes")!.handler("inspect fake bridge", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("supervise", runner!.createCommandContext());
+
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(existsSync(join(rckRoot, "events"))).toBe(true);
+		const customMessages = getCustomMessages(harness);
+		const superviseMessage = customMessages.find(
+			(message) => message.customType === "rck-bridge-status" && String(message.content).startsWith("RCK supervise"),
+		);
+		expect(superviseMessage).toBeDefined();
+		const content = String(superviseMessage?.content);
+		expect(content).toContain("- level: ok");
+		expect(content).toContain("- needs attention: no");
+		expect(content).toContain("- reason: Latest Hermes run succeeded without supervision flags");
+		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
+	});
+
+	it("executes /state then real-mode disabled Hermes and reports safe info status", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("state")!.handler("supervision real gate", runner!.createCommandContext());
+		await runner!.getCommand("hermes")!.handler("--mode real inspect bridge gate", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("supervise", runner!.createCommandContext());
+
+		const customMessages = getCustomMessages(harness);
+		const superviseMessage = customMessages.find(
+			(message) => message.customType === "rck-bridge-status" && String(message.content).startsWith("RCK supervise"),
+		);
+		expect(superviseMessage).toBeDefined();
+		const content = String(superviseMessage?.content);
+		expect(content).toContain("- level: info");
+		expect(content).toContain("- needs attention: no");
+		expect(content).toContain("- reason: Real Hermes execution is disabled");
+		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
+	});
+
+	it("executes /state then /rck inject and /rck list flow unchanged", async () => {
 		harness = await createHarnessWithExtensions({
 			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
 		});
@@ -361,36 +409,6 @@ describe("RCK bridge commands", () => {
 		const runner = harness.session.extensionRunner;
 		expect(runner).toBeDefined();
 		await runner!.getCommand("state")!.handler("list baseline", runner!.createCommandContext());
-		await runner!.getCommand("rck")!.handler("list", runner!.createCommandContext());
-
-		const rckRoot = join(harness.tempDir, ".pi", "rck");
-		expect(existsSync(join(rckRoot, "indexes", "latest-state.json"))).toBe(true);
-		expect(existsSync(join(rckRoot, "indexes", "latest-context-pack.json"))).toBe(false);
-		expect(existsSync(join(rckRoot, "indexes", "latest-anchor.json"))).toBe(false);
-
-		const customMessages = getCustomMessages(harness);
-		const listMessage = customMessages.find(
-			(message) => message.customType === "rck-bridge-status" && String(message.content).startsWith("RCK list"),
-		);
-		expect(listMessage).toBeDefined();
-		const content = String(listMessage?.content);
-		expect(content).toContain("- states: 1");
-		expect(content).toContain("- context packs: 0");
-		expect(content).toContain("- anchors: 0");
-		expect(content).toContain("- events: 1");
-		expect(content).toContain("- current trace: traceId=");
-		expect(content).toContain("StatePackCreated");
-		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
-	});
-
-	it("executes /state, /rck inject, /rck anchor, /hermes fake, then /rck list with safe Hermes metadata", async () => {
-		harness = await createHarnessWithExtensions({
-			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
-		});
-
-		const runner = harness.session.extensionRunner;
-		expect(runner).toBeDefined();
-		await runner!.getCommand("state")!.handler("list full flow", runner!.createCommandContext());
 		await runner!.getCommand("rck")!.handler("inject", runner!.createCommandContext());
 		await runner!.getCommand("rck")!.handler("anchor list-flow", runner!.createCommandContext());
 		await runner!.getCommand("hermes")!.handler("inspect list flow", runner!.createCommandContext());

@@ -43,6 +43,11 @@ import {
 	parseHermesArgs,
 	runHermesExecution,
 } from "./rck-hermes.js";
+import {
+	evaluateRckSupervision,
+	formatRckSupervisionLines,
+	type RckSupervisionHermesInput,
+} from "./rck-supervision.js";
 
 const SCHEMA_VERSION = 1 as const;
 const STORAGE_SCHEMA_VERSION = "0.1" as const;
@@ -193,6 +198,25 @@ function readJsonFiles<T>(dirPath: string): T[] {
 
 function readRckEventRecords(root: string): RckEventPayload[] {
 	return readJsonFiles<RckEventPayload>(`${root}/events`);
+}
+
+function normalizeHermesRunForSupervision(event: RckEventPayload): RckSupervisionHermesInput {
+	return {
+		eventId: event.eventId,
+		runId: event.payload?.runId ?? event.eventId,
+		traceId: event.traceId,
+		mode: event.mode ?? event.payload?.mode,
+		status: event.status ?? event.payload?.status,
+		errorKind: event.errorKind ?? event.payload?.errorKind,
+		timedOut: event.timedOut ?? event.payload?.timedOut,
+		durationMs: event.durationMs ?? event.payload?.durationMs,
+		stdoutByteLength: event.stdoutByteLength ?? event.payload?.stdoutByteLength,
+		stderrByteLength: event.stderrByteLength ?? event.payload?.stderrByteLength,
+		stdoutTruncated: event.stdoutTruncated ?? event.payload?.stdoutTruncated,
+		stderrTruncated: event.stderrTruncated ?? event.payload?.stderrTruncated,
+		blockedReason: event.blockedReason ?? event.payload?.blockedReason,
+		safeSummary: event.safeSummary ?? event.payload?.safeSummary,
+	};
 }
 
 function summarizeRckEventForList(event: RckEventPayload): string {
@@ -603,6 +627,33 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 							anchorCount: resolveCurrentTraceForStatus(root)!.anchorCount,
 						}
 						: null,
+				});
+				return;
+			}
+
+			if (command === "supervise") {
+				if (!existsSync(root)) {
+					appendCustomMessage(pi, "rck-bridge-status", "No RCK storage found. Run /state or /hermes first.", {
+						storage: "missing",
+						root: ".pi/rck",
+					});
+					return;
+				}
+
+				const currentTrace = resolveCurrentTraceForStatus(root);
+				const eventRecords = readRckEventRecords(root);
+				const latestEventId = eventRecords.length > 0 ? eventRecords[eventRecords.length - 1]?.eventId : undefined;
+				const hermesEvents = eventRecords.filter((event) => event.eventType === "HermesRunRecorded");
+				const latestHermesEvent = hermesEvents.length > 0 ? hermesEvents[hermesEvents.length - 1] : undefined;
+				const evaluation = evaluateRckSupervision({
+					latestHermes: latestHermesEvent ? normalizeHermesRunForSupervision(latestHermesEvent) : undefined,
+					currentTrace: currentTrace ? { traceId: currentTrace.traceId } : undefined,
+					latestEventId,
+				});
+
+				appendCustomMessage(pi, "rck-bridge-status", formatRckSupervisionLines(evaluation).join("\n"), {
+					storage: ".pi/rck",
+					supervision: evaluation,
 				});
 				return;
 			}

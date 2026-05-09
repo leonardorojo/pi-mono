@@ -129,6 +129,43 @@ What it reports:
 - the latest Hermes mode/status plus evidence refs presence
 
 
+### `/rck supervise`
+
+Evaluates the latest Hermes run and returns a safe read-only supervision summary.
+
+What it does:
+- checks whether `.pi/rck/` exists
+- reads the latest HermesRunRecorded metadata only
+- computes a supervision level from safe metadata
+- reports whether human attention is needed
+- does not persist incident events yet
+- does not read raw Hermes stdout/stderr
+- does not inject context packs
+
+What it writes in Pi:
+- a safe status-style custom message only
+
+What it reports:
+- `level`
+- `needs attention`
+- `reason`
+- `recommended action`
+- `trace`
+- `latest run`
+- `latest event`
+- safe `signals` metadata
+
+Current heuristics v0.1:
+- no Hermes run yet → `info`
+- succeeded without flags → `ok`
+- timed out → `blocking`
+- `hermes_not_found` / `spawn_error` → `error`
+- output truncated → `warning`
+- `non_zero_exit` → `warning`
+- `real-mode-disabled` → `info`
+- long duration (`> 60000ms`) → `warning`
+
+
 ### `/hermes <prompt>`
 
 Records a fake-first Hermes request and a fake Hermes result.
@@ -210,7 +247,8 @@ printf '%s\n' \
   '{"id":"3","type":"prompt","message":"/state"}' \
   '{"id":"4","type":"prompt","message":"/rck inject"}' \
   '{"id":"5","type":"prompt","message":"/hermes inspect mock bridge"}' \
-  '{"id":"6","type":"prompt","message":"/rck list"}' \
+  '{"id":"6","type":"prompt","message":"/rck supervise"}' \
+  '{"id":"7","type":"prompt","message":"/rck list"}' \
 | timeout 20 ./pi-test.sh --offline --mode rpc --no-tools --no-extensions --extension .pi/extensions/rck-bridge/index.ts
 ```
 

@@ -30,7 +30,12 @@ import {
 	type RckEventPayload,
 	type RckStatePayload,
 } from "./rck-storage.js";
-import { parseHermesArgs, runHermesExecution } from "./rck-hermes.js";
+import {
+	createHermesRealRunner,
+	getAllowRealHermesFromEnv,
+	parseHermesArgs,
+	runHermesExecution,
+} from "./rck-hermes.js";
 
 const SCHEMA_VERSION = 1 as const;
 const STORAGE_SCHEMA_VERSION = "0.1" as const;
@@ -130,7 +135,8 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 
 				appendMockEvent(pi, "rck-bridge.hermes.requested", requestEvent);
 
-				const result = await runHermesExecution(request, async (runRequest) => {
+				const allowRealExecution = getAllowRealHermesFromEnv();
+				const fakeHermesRunner = async (runRequest: typeof request) => {
 					const preview = runRequest.prompt.slice(0, 120) || "inspection requested";
 					const failed = /\b(fail|error|stderr)\b/i.test(runRequest.prompt);
 					if (failed) {
@@ -150,7 +156,11 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 						stderr: "",
 						durationMs: 0,
 					};
-				});
+				};
+				const runner = request.mode === "real" && allowRealExecution
+					? createHermesRealRunner({ cwd, env: process.env })
+					: fakeHermesRunner;
+				const result = await runHermesExecution(request, runner, { allowRealExecution });
 
 				const recordedAt = nowUtc();
 				const evidence = writeHermesEvidence(

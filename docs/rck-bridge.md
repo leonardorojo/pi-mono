@@ -126,6 +126,7 @@ What it writes in `.pi/rck/`:
 Still mock / fake-first:
 - Hermes is not executed for real yet
 - `--mode real` is blocked by default
+- real mode requires `RCK_BRIDGE_ALLOW_REAL_HERMES=1`
 - this command remains a bridge placeholder until a later explicit phase enables real execution
 
 ## Storage layout
@@ -219,7 +220,7 @@ Recommended shape:
 - `ctx.exec` is not used yet
 - no external RCK CLI yet
 - no Codex usage
-- real mode requires a later explicit phase
+- real mode requires a later explicit phase and the `RCK_BRIDGE_ALLOW_REAL_HERMES=1` env gate
 - storage v0.1 has no locks or retention policy
 - `piEntryId` is optional and may be incomplete during early correlation
 - Pi visual labels are not integrated yet

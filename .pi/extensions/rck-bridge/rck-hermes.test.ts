@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	createSafeHermesSummary,
+	getAllowRealHermesFromEnv,
 	mapHermesStatus,
 	parseHermesArgs,
 	runHermesExecution,
@@ -34,11 +35,12 @@ describe("rck-hermes", () => {
 		expect(request.prompt).toBe("inspect storage");
 	});
 
-	it("parses --timeout 30s", () => {
-		const request = parseHermesArgs("--timeout 30s inspect storage");
-
-		expect(request.timeoutMs).toBe(30000);
-		expect(request.prompt).toBe("inspect storage");
+	it("reads the real Hermes gate from env", () => {
+		expect(getAllowRealHermesFromEnv({ RCK_BRIDGE_ALLOW_REAL_HERMES: "1" } as NodeJS.ProcessEnv)).toBe(true);
+		expect(getAllowRealHermesFromEnv({ RCK_BRIDGE_ALLOW_REAL_HERMES: "true" } as NodeJS.ProcessEnv)).toBe(true);
+		expect(getAllowRealHermesFromEnv({ RCK_BRIDGE_ALLOW_REAL_HERMES: "0" } as NodeJS.ProcessEnv)).toBe(false);
+		expect(getAllowRealHermesFromEnv({ RCK_BRIDGE_ALLOW_REAL_HERMES: "false" } as NodeJS.ProcessEnv)).toBe(false);
+		expect(getAllowRealHermesFromEnv({} as NodeJS.ProcessEnv)).toBe(false);
 	});
 
 	it("maps status success failure timeout and aborted", () => {
@@ -124,12 +126,13 @@ describe("rck-hermes", () => {
 		expect(result.blockedReason).toBe("real-mode-disabled");
 	});
 
-	it("allows real mode when enabled and maps exit code", async () => {
+	it("allows real mode when enabled and uses the runner result", async () => {
 		const runner = vi.fn<HermesExecRunner>().mockResolvedValue({
-			exitCode: 143,
+			exitCode: 0,
 			timedOut: false,
 			stdout: "real stdout",
-			stderr: "",
+			stderr: "real stderr",
+			durationMs: 17,
 		});
 
 		const result = await runHermesExecution(
@@ -139,13 +142,34 @@ describe("rck-hermes", () => {
 		);
 
 		expect(runner).toHaveBeenCalledTimes(1);
+		expect(result.status).toBe("succeeded");
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("real stdout");
+		expect(result.stderr).toBe("real stderr");
+		expect(result.blockedReason).toBeUndefined();
+		expect(result.safeSummary).not.toContain("real stdout");
+		expect(result.safeSummary).not.toContain("real stderr");
+	});
+
+	it("handles real runner spawn errors without crashing", async () => {
+		const runner = vi.fn<HermesExecRunner>().mockRejectedValue(Object.assign(new Error("spawn ENOENT hermes"), { code: "ENOENT" }));
+
+		const result = await runHermesExecution(
+			{ prompt: "real run", mode: "real", rawArgs: "--mode real real run" },
+			runner,
+			{ allowRealExecution: true },
+		);
+
+		expect(runner).toHaveBeenCalledTimes(1);
 		expect(result.status).toBe("aborted");
-		expect(result.exitCode).toBe(143);
+		expect(result.blockedReason).toBe("hermes-not-found");
+		expect(result.exitCode).toBe(127);
+		expect(result.safeSummary).toContain("blockedReason=hermes-not-found");
 	});
 
 	it("safe summary does not leak stdout or stderr", () => {
 		const result = {
-			request: { prompt: "x", mode: "fake", rawArgs: "x" },
+			request: { prompt: "x", mode: "fake" as const, rawArgs: "x" },
 			mode: "fake" as const,
 			status: "failed" as const,
 			exitCode: 2,

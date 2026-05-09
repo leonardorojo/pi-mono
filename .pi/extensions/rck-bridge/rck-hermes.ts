@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+
 export type HermesRunMode = "fake" | "real";
 
 export type HermesRunStatus = "succeeded" | "failed" | "timed_out" | "aborted";
@@ -37,6 +39,13 @@ export interface RunHermesExecutionOptions {
 	allowRealExecution?: boolean;
 }
 
+export interface HermesRealRunnerOptions {
+	cwd?: string;
+	env?: NodeJS.ProcessEnv;
+	command?: string;
+	defaultTimeoutMs?: number;
+}
+
 function normalizeWhitespace(input: string): string {
 	return input.replace(/\s+/g, " ").trim();
 }
@@ -58,6 +67,60 @@ function parseTimeoutValue(value: string): number | undefined {
 	}
 
 	return Math.round(numeric);
+}
+
+function normalizeRealHermesGate(value: unknown): boolean {
+	if (typeof value !== "string") {
+		return false;
+	}
+
+	return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+function signalToExitCode(signal: NodeJS.Signals | string | null | undefined): number {
+	switch (signal) {
+		case "SIGINT":
+			return 130;
+		case "SIGTERM":
+			return 143;
+		case "SIGKILL":
+			return 137;
+		case "SIGQUIT":
+			return 131;
+		default:
+			return 1;
+	}
+}
+
+function buildRunnerFailure(error: unknown): {
+	blockedReason: string;
+	exitCode: number;
+	status: HermesRunStatus;
+	stderr: string;
+} {
+	const errorRecord = error as { code?: string; message?: string } | undefined;
+	const code = errorRecord?.code;
+	const message = error instanceof Error ? error.message : String(error);
+
+	if (code === "ENOENT") {
+		return {
+			blockedReason: "hermes-not-found",
+			exitCode: 127,
+			status: "aborted",
+			stderr: message,
+		};
+	}
+
+	return {
+		blockedReason: "spawn-error",
+		exitCode: 1,
+		status: "failed",
+		stderr: message,
+	};
+}
+
+export function getAllowRealHermesFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+	return normalizeRealHermesGate(env.RCK_BRIDGE_ALLOW_REAL_HERMES);
 }
 
 export function parseHermesArgs(args: string): HermesRunRequest {
@@ -150,6 +213,104 @@ export function createSafeHermesSummary(result: Omit<HermesRunResult, "safeSumma
 	return `Hermes run: ${pieces.join(" | ")}`;
 }
 
+export function createHermesRealRunner(options: HermesRealRunnerOptions = {}): HermesExecRunner {
+	return async (request: HermesRunRequest): Promise<HermesExecResult> => {
+		const command = options.command ?? "hermes";
+		const timeoutMs = request.timeoutMs ?? options.defaultTimeoutMs ?? 60000;
+		const startedAt = Date.now();
+		const stdoutChunks: string[] = [];
+		const stderrChunks: string[] = [];
+
+		return new Promise<HermesExecResult>((resolve, reject) => {
+			const child = spawn(command, ["-z", request.prompt], {
+				cwd: options.cwd,
+				env: options.env,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+
+			let settled = false;
+			let timedOut = false;
+			let timeoutHandle: NodeJS.Timeout | undefined;
+			let timeoutKillHandle: NodeJS.Timeout | undefined;
+
+			const settle = (result: HermesExecResult): void => {
+				if (settled) {
+					return;
+				}
+
+				settled = true;
+				if (timeoutHandle) {
+					clearTimeout(timeoutHandle);
+				}
+				if (timeoutKillHandle) {
+					clearTimeout(timeoutKillHandle);
+				}
+				resolve(result);
+			};
+
+			const fail = (error: unknown): void => {
+				if (settled) {
+					return;
+				}
+
+				settled = true;
+				if (timeoutHandle) {
+					clearTimeout(timeoutHandle);
+				}
+				if (timeoutKillHandle) {
+					clearTimeout(timeoutKillHandle);
+				}
+				reject(error);
+			};
+
+			child.stdout?.setEncoding("utf8");
+			child.stdout?.on("data", (chunk: string) => {
+				stdoutChunks.push(chunk);
+			});
+
+			child.stderr?.setEncoding("utf8");
+			child.stderr?.on("data", (chunk: string) => {
+				stderrChunks.push(chunk);
+			});
+
+			child.once("error", fail);
+			child.once("close", (code, signal) => {
+				const exitCode = timedOut
+					? 124
+					: typeof code === "number"
+						? code
+						: signalToExitCode(signal);
+
+				settle({
+					exitCode,
+					timedOut,
+					stdout: stdoutChunks.join(""),
+					stderr: stderrChunks.join(""),
+					durationMs: Date.now() - startedAt,
+				});
+			});
+
+			if (typeof timeoutMs === "number" && timeoutMs > 0) {
+				timeoutHandle = setTimeout(() => {
+					if (settled) {
+						return;
+					}
+
+					timedOut = true;
+					child.kill("SIGTERM");
+					timeoutKillHandle = setTimeout(() => {
+						if (settled) {
+							return;
+						}
+
+						child.kill("SIGKILL");
+					}, 500);
+				}, timeoutMs);
+			}
+		});
+	};
+}
+
 export async function runHermesExecution(
 	request: HermesRunRequest,
 	runner: HermesExecRunner,
@@ -171,21 +332,42 @@ export async function runHermesExecution(
 	}
 
 	const startedAt = Date.now();
-	const execution = await runner(request);
-	const durationMs = typeof execution.durationMs === "number" ? execution.durationMs : Date.now() - startedAt;
-	const status = mapHermesStatus(execution.exitCode, execution.timedOut);
-	const result: HermesRunResult = {
-		request,
-		mode: request.mode,
-		status,
-		exitCode: execution.exitCode,
-		timedOut: execution.timedOut,
-		durationMs,
-		stdout: execution.stdout,
-		stderr: execution.stderr,
-		safeSummary: "",
-	};
 
-	result.safeSummary = createSafeHermesSummary(result);
-	return result;
+	try {
+		const execution = await runner(request);
+		const durationMs = typeof execution.durationMs === "number" ? execution.durationMs : Date.now() - startedAt;
+		const result: HermesRunResult = {
+			request,
+			mode: request.mode,
+			status: mapHermesStatus(execution.exitCode, execution.timedOut),
+			exitCode: execution.exitCode,
+			timedOut: execution.timedOut,
+			durationMs,
+			stdout: execution.stdout,
+			stderr: execution.stderr,
+			blockedReason: execution.timedOut ? "timeout" : undefined,
+			safeSummary: "",
+		};
+
+		result.safeSummary = createSafeHermesSummary(result);
+		return result;
+	} catch (error) {
+		const failure = buildRunnerFailure(error);
+		const durationMs = Date.now() - startedAt;
+		const result: HermesRunResult = {
+			request,
+			mode: request.mode,
+			status: failure.status,
+			exitCode: failure.exitCode,
+			timedOut: false,
+			durationMs,
+			stdout: "",
+			stderr: failure.stderr,
+			blockedReason: failure.blockedReason,
+			safeSummary: "",
+		};
+
+		result.safeSummary = createSafeHermesSummary(result);
+		return result;
+	}
 }

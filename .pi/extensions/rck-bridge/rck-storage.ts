@@ -176,6 +176,21 @@ export interface LatestContextPackIndexPayload {
 	updatedByEventId: string;
 }
 
+export interface CurrentTraceIndexPayload {
+	schemaVersion: "rck.current-trace/v0.1";
+	artifactType: "rck.index.current-trace";
+	traceId: string;
+	createdAtUtc: string;
+	updatedAtUtc: string;
+	headAnchorId: string | null;
+	anchorCount: number;
+}
+
+export interface GetOrCreateCurrentTraceOptions {
+	seedTraceId?: string;
+	now?: string;
+}
+
 export function getRckRoot(cwd: string): string {
 	return join(cwd, ".pi", "rck");
 }
@@ -205,6 +220,70 @@ export function writeJsonAtomic(filePath: string, data: unknown): void {
 	writeFileSync(tempPath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
 	rmSync(filePath, { force: true });
 	renameSync(tempPath, filePath);
+}
+
+export function readCurrentTraceIndex(root: string): CurrentTraceIndexPayload | undefined {
+	return readJson<CurrentTraceIndexPayload>(join(root, "indexes", "current-trace.json"));
+}
+
+export function writeCurrentTraceIndex(root: string, payload: CurrentTraceIndexPayload): void {
+	writeJsonAtomic(join(root, "indexes", "current-trace.json"), payload);
+}
+
+function createTraceId(): string {
+	return `trace_${randomUUID().replace(/-/g, "")}`;
+}
+
+function readTraceIdFromLatestIndexes(root: string): string | undefined {
+	const candidates = [
+		readJson<LatestStateIndexPayload>(join(root, "indexes", "latest-state.json")),
+		readJson<LatestContextPackIndexPayload>(join(root, "indexes", "latest-context-pack.json")),
+		readJson<LatestAnchorIndexPayload>(join(root, "indexes", "latest-anchor.json")),
+	];
+
+	for (const candidate of candidates) {
+		if (candidate?.traceId) {
+			return candidate.traceId;
+		}
+	}
+
+	return undefined;
+}
+
+export function getOrCreateCurrentTrace(root: string, options: GetOrCreateCurrentTraceOptions = {}): CurrentTraceIndexPayload {
+	const existing = readCurrentTraceIndex(root);
+	if (existing) {
+		return existing;
+	}
+
+	const now = options.now ?? new Date().toISOString();
+	const traceId = options.seedTraceId ?? readTraceIdFromLatestIndexes(root) ?? createTraceId();
+	const payload: CurrentTraceIndexPayload = {
+		schemaVersion: "rck.current-trace/v0.1",
+		artifactType: "rck.index.current-trace",
+		traceId,
+		createdAtUtc: now,
+		updatedAtUtc: now,
+		headAnchorId: null,
+		anchorCount: 0,
+	};
+	writeCurrentTraceIndex(root, payload);
+	return payload;
+}
+
+export function updateCurrentTraceIndex(
+	root: string,
+	patch: Partial<Pick<CurrentTraceIndexPayload, "headAnchorId" | "anchorCount" | "updatedAtUtc">>,
+): CurrentTraceIndexPayload {
+	const current = getOrCreateCurrentTrace(root);
+	const updated: CurrentTraceIndexPayload = {
+		...current,
+		headAnchorId: patch.headAnchorId ?? current.headAnchorId,
+		anchorCount: patch.anchorCount ?? current.anchorCount,
+		updatedAtUtc: patch.updatedAtUtc ?? new Date().toISOString(),
+	};
+	writeCurrentTraceIndex(root, updated);
+	return updated;
 }
 
 export function writeTextAtomic(filePath: string, data: string): void {

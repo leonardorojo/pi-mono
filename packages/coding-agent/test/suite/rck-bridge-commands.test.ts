@@ -51,6 +51,14 @@ describe("RCK bridge commands", () => {
 		expect(latestState.currentEventId).toContain("evt_");
 		expect(latestState.traceId).toContain("trace_");
 
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
+			traceId: string;
+			headAnchorId: string | null;
+			anchorCount: number;
+		};
+		expect(currentTrace.traceId).toBe(latestState.traceId);
+		expect(currentTrace.anchorCount).toBe(0);
+
 		const stateJson = JSON.parse(readFileSync(join(rckRoot, "states", stateFiles[0]), "utf-8")) as {
 			artifactType: string;
 			stateId: string;
@@ -69,6 +77,8 @@ describe("RCK bridge commands", () => {
 		expect(eventJson.payload.stateId).toBe(stateJson.stateId);
 		expect(eventJson.payload.statePath).toBe(latestState.currentStatePath);
 		expect(eventJson.traceId).toBe(stateJson.traceId);
+		expect(stateJson.traceId).toBe(currentTrace.traceId);
+		expect(eventJson.traceId).toBe(currentTrace.traceId);
 
 		const customEntries = getCustomEntries(harness);
 		expect(
@@ -133,11 +143,19 @@ describe("RCK bridge commands", () => {
 			currentEventId: string;
 			stateId: string;
 			statePath: string;
+			traceId: string;
 		};
 		expect(latestContext.currentContextPackId).toContain("pack_");
 		expect(latestContext.currentContextPackPath).toMatch(/^\.pi\/rck\/context-packs\//);
 		expect(latestContext.currentEventId).toContain("evt_");
 		expect(latestContext.statePath).toMatch(/^\.pi\/rck\/states\//);
+
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
+			traceId: string;
+			headAnchorId: string | null;
+			anchorCount: number;
+		};
+		expect(currentTrace.traceId).toBe(latestContext.traceId);
 
 		const contextPackJson = JSON.parse(readFileSync(join(rckRoot, "context-packs", contextPackFiles[0]), "utf-8")) as {
 			artifactType: string;
@@ -145,12 +163,14 @@ describe("RCK bridge commands", () => {
 			contextPackId: string;
 			stateId: string;
 			statePath: string;
+			traceId: string;
 			contextSummary: { objective: string };
 		};
 		expect(contextPackJson.artifactType).toBe("rck.context-pack");
 		expect(contextPackJson.allowedToInject).toBe(true);
 		expect(contextPackJson.stateId).toBe(latestContext.stateId);
 		expect(contextPackJson.statePath).toBe(latestContext.statePath);
+		expect(contextPackJson.traceId).toBe(currentTrace.traceId);
 
 		const injectEventFile = eventFiles.find((file) => {
 			const parsed = JSON.parse(readFileSync(join(rckRoot, "events", file), "utf-8")) as { eventType?: string };
@@ -159,9 +179,11 @@ describe("RCK bridge commands", () => {
 		expect(injectEventFile).toBeDefined();
 		const injectEventJson = JSON.parse(readFileSync(join(rckRoot, "events", injectEventFile as string), "utf-8")) as {
 			eventType: string;
+			traceId: string;
 			payload: { contextPackId: string; contextPackPath: string; stateId: string };
 		};
 		expect(injectEventJson.eventType).toBe("ContextPackInjected");
+		expect(injectEventJson.traceId).toBe(currentTrace.traceId);
 		expect(injectEventJson.payload.contextPackId).toBe(contextPackJson.contextPackId);
 		expect(injectEventJson.payload.stateId).toBe(latestContext.stateId);
 
@@ -204,6 +226,15 @@ describe("RCK bridge commands", () => {
 		expect(latestAnchor.currentAnchorId).toContain("anchor_");
 		expect(latestAnchor.currentAnchorPath).toMatch(/^\.pi\/rck\/anchors\//);
 		expect(latestAnchor.currentEventId).toContain("evt_");
+
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
+			traceId: string;
+			headAnchorId: string | null;
+			anchorCount: number;
+		};
+		expect(currentTrace.traceId).toBe(latestAnchor.traceId);
+		expect(currentTrace.headAnchorId).toBe(latestAnchor.currentAnchorId);
+		expect(currentTrace.anchorCount).toBe(1);
 
 		const anchorJson = JSON.parse(readFileSync(join(rckRoot, "anchors", anchorFiles[0]), "utf-8")) as {
 			artifactType: string;
@@ -261,6 +292,14 @@ describe("RCK bridge commands", () => {
 		expect(latestAnchor.traceId).toBeDefined();
 		expect(latestAnchor.currentAnchorPath).toMatch(/^\.pi\/rck\/anchors\//);
 		expect(latestAnchor.currentEventId).toContain("evt_");
+
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
+			traceId: string;
+			headAnchorId: string | null;
+			anchorCount: number;
+		};
+		expect(currentTrace.traceId).toBe(latestState.traceId);
+		expect(currentTrace.traceId).toBe(latestAnchor.traceId);
 
 		const anchorFiles = readdirSync(join(rckRoot, "anchors"));
 		expect(anchorFiles).toHaveLength(1);
@@ -339,6 +378,12 @@ describe("RCK bridge commands", () => {
 		expect(content).toContain("- context pack: missing");
 		expect(content).toContain("- anchor: missing");
 		expect(content).toContain("- latest Hermes: missing");
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
+			traceId: string;
+			headAnchorId: string | null;
+			anchorCount: number;
+		};
+		expect(content).toContain(`- current trace: traceId=${currentTrace.traceId}`);
 		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
 	});
 
@@ -370,6 +415,12 @@ describe("RCK bridge commands", () => {
 		expect(content).toContain("- context pack: present");
 		expect(content).toContain("- anchor: present");
 		expect(content).toContain("- latest Hermes: mode=fake, status=succeeded");
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
+			traceId: string;
+			headAnchorId: string | null;
+			anchorCount: number;
+		};
+		expect(content).toContain(`- current trace: traceId=${currentTrace.traceId}`);
 		expect(content).toMatch(/evidence=(stdout|stderr|stdout\/stderr)/);
 		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
 	});
@@ -399,6 +450,7 @@ describe("RCK bridge commands", () => {
 		const eventRecords = eventFiles.map((file) =>
 			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
 				eventType: string;
+				traceId: string;
 				requestEventId?: string;
 				mode?: string;
 				status?: string;
@@ -422,6 +474,13 @@ describe("RCK bridge commands", () => {
 		const recordedEvent = eventRecords.find((event) => event.eventType === "HermesRunRecorded");
 		expect(requestedEvent).toBeDefined();
 		expect(recordedEvent).toBeDefined();
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
+			traceId: string;
+			headAnchorId: string | null;
+			anchorCount: number;
+		};
+		expect(requestedEvent?.traceId).toBe(currentTrace.traceId);
+		expect(recordedEvent?.traceId).toBe(currentTrace.traceId);
 		expect(requestedEvent?.payload?.mode).toBe("fake");
 		expect(requestedEvent?.payload?.promptSummary).toBe("inspect mock bridge");
 		expect(requestedEvent?.payload?.timeoutMs).toBeUndefined();
@@ -567,12 +626,20 @@ describe("RCK bridge commands", () => {
 		const eventRecords = readdirSync(eventDir).map((file) =>
 			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
 				eventType: string;
+				traceId: string;
 				requestEventId?: string;
 				payload?: { mode?: string; status?: string; blockedReason?: string; requestEventId?: string };
 			},
 		);
 		const requestedEvent = eventRecords.find((event) => event.eventType === "HermesRunRequested");
 		const recordedEvent = eventRecords.find((event) => event.eventType === "HermesRunRecorded");
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
+			traceId: string;
+			headAnchorId: string | null;
+			anchorCount: number;
+		};
+		expect(requestedEvent?.traceId).toBe(currentTrace.traceId);
+		expect(recordedEvent?.traceId).toBe(currentTrace.traceId);
 		expect(requestedEvent?.payload?.mode).toBe("real");
 		expect(recordedEvent?.payload?.mode).toBe("real");
 		expect(recordedEvent?.payload?.status).toBe("aborted");

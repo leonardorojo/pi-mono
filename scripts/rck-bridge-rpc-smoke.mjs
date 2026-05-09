@@ -211,6 +211,7 @@ async function main() {
 
 		await runPrompt("2", "/state", "state");
 		await waitForFile(".pi/rck/indexes/latest-state.json", "latest-state index");
+		await waitForFile(".pi/rck/indexes/current-trace.json", "current-trace index");
 
 		await runPrompt("3", "/rck inject", "inject");
 		await waitForFile(".pi/rck/indexes/latest-context-pack.json", "latest-context-pack index");
@@ -234,6 +235,19 @@ async function main() {
 		const recordedEvent = eventRecords.find((entry) => entry.json?.eventType === "HermesRunRecorded")?.json;
 		if (!requestedEvent || !recordedEvent) {
 			throw new Error("Hermes request/recorded events were not both present");
+		}
+
+		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf8"));
+		const latestStateIndex = JSON.parse(readFileSync(join(rckRoot, "indexes", "latest-state.json"), "utf8"));
+		const latestContextIndex = JSON.parse(readFileSync(join(rckRoot, "indexes", "latest-context-pack.json"), "utf8"));
+		const latestAnchorIndex = JSON.parse(readFileSync(join(rckRoot, "indexes", "latest-anchor.json"), "utf8"));
+		if (requestedEvent.traceId !== currentTrace.traceId || recordedEvent.traceId !== currentTrace.traceId) {
+			throw new Error(`Hermes traceId mismatch: current=${currentTrace.traceId}, requested=${requestedEvent.traceId}, recorded=${recordedEvent.traceId}`);
+		}
+		if (latestStateIndex.traceId !== currentTrace.traceId || latestContextIndex.traceId !== currentTrace.traceId || latestAnchorIndex.traceId !== currentTrace.traceId) {
+			throw new Error(
+				`Current trace mismatch across indexes: current=${currentTrace.traceId}, state=${latestStateIndex.traceId}, context=${latestContextIndex.traceId}, anchor=${latestAnchorIndex.traceId}`,
+			);
 		}
 
 		const stdoutDir = join(rckRoot, "evidence", "hermes", "stdout");

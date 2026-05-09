@@ -15,8 +15,11 @@ import {
 	createStateId,
 	ensureRckStorage,
 	getRckRoot,
+	readCurrentTraceIndex,
+	getOrCreateCurrentTrace,
 	readJson,
 	readLatestRckState,
+	updateCurrentTraceIndex,
 	updateLatestAnchorIndex,
 	updateLatestContextPackIndex,
 	updateLatestStateIndex,
@@ -25,6 +28,7 @@ import {
 	writeRckContextPack,
 	writeRckEvent,
 	writeRckState,
+	type CurrentTraceIndexPayload,
 	type LatestAnchorIndexPayload,
 	type LatestContextPackIndexPayload,
 	type LatestStateIndexPayload,
@@ -142,6 +146,32 @@ function readLatestHermesRecordedEvent(root: string): RckEventPayload | undefine
 	return undefined;
 }
 
+function resolveCurrentTraceForStatus(root: string): CurrentTraceIndexPayload | undefined {
+	const currentTrace = readCurrentTraceIndex(root);
+	if (currentTrace) {
+		return currentTrace;
+	}
+
+	const latestStateIndex = readJson<LatestStateIndexPayload>(`${root}/indexes/latest-state.json`);
+	const latestContextIndex = readJson<LatestContextPackIndexPayload>(`${root}/indexes/latest-context-pack.json`);
+	const latestAnchorIndex = readJson<LatestAnchorIndexPayload>(`${root}/indexes/latest-anchor.json`);
+	const inferredTraceId = latestStateIndex?.traceId ?? latestContextIndex?.traceId ?? latestAnchorIndex?.traceId;
+	if (!inferredTraceId) {
+		return undefined;
+	}
+
+	const inferredAt = latestStateIndex?.updatedAt ?? latestContextIndex?.updatedAt ?? latestAnchorIndex?.updatedAt ?? new Date().toISOString();
+	return {
+		schemaVersion: "rck.current-trace/v0.1",
+		artifactType: "rck.index.current-trace",
+		traceId: inferredTraceId,
+		createdAtUtc: inferredAt,
+		updatedAtUtc: inferredAt,
+		headAnchorId: latestAnchorIndex?.currentAnchorId ?? null,
+		anchorCount: latestAnchorIndex ? 1 : 0,
+	};
+}
+
 export default function registerRckBridge(pi: ExtensionAPI) {
 	pi.registerCommand("hermes", {
 		description: "Mock Hermes bridge (POC only)",
@@ -152,8 +182,11 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 
 				const request = parseHermesArgs(args);
 				const promptSummary = request.prompt || "Mock Hermes inspection request";
+				const currentTrace = getOrCreateCurrentTrace(root);
+				const traceId = currentTrace.traceId;
 				const requestEvent: HermesRunRequestedEvent = {
 					...createBaseEvent("HermesRunRequested", promptSummary, "user", {
+						traceId,
 						tags: ["rck-bridge", request.mode, "hermes"],
 						piSessionId: ctx.sessionManager.getSessionId(),
 					}),
@@ -192,6 +225,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 					},
 				};
 				const requestEventRef = writeRckEvent(root, requestEventRecord);
+				updateCurrentTraceIndex(root, { updatedAtUtc: requestEvent.timestamp });
 
 				const allowRealExecution = getAllowRealHermesFromEnv();
 				const fakeHermesRunner = async (runRequest: typeof request) => {
@@ -304,6 +338,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 					},
 				};
 				const recordedEventRef = writeRckEvent(root, recordedEventRecord);
+				updateCurrentTraceIndex(root, { updatedAtUtc: recorded.timestamp });
 				const visibleLabel = result.mode === "real" ? "Hermes real run recorded" : "Hermes fake run recorded";
 				appendMockEvent(pi, "rck-bridge.hermes.recorded", recorded);
 				appendCustomMessage(
@@ -337,11 +372,12 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 			const payload = args.trim();
 			const stateId = createStateId();
 			const eventId = createEventId();
-			const traceId = createId("trace");
 			const cwd = ctx.cwd;
 			const repoPath = cwd;
 			const root = getRckRoot(cwd);
 			ensureRckStorage(root);
+			const currentTrace = getOrCreateCurrentTrace(root);
+			const traceId = currentTrace.traceId;
 
 			const summary = payload || "Mock state snapshot for current branch";
 			const sessionId = ctx.sessionManager.getSessionId();
@@ -420,6 +456,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 			};
 			const eventRef = writeRckEvent(root, eventPayload);
 			updateLatestStateIndex(root, stateRef, eventRef, traceId);
+			updateCurrentTraceIndex(root, { updatedAtUtc: stateEvent.timestamp });
 			appendMockEvent(pi, "rck-bridge.state.created", {
 				...stateEvent,
 				traceId,
@@ -461,8 +498,12 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				const latestHermesSafeSummary = latestHermes?.safeSummary ?? latestHermes?.payload?.safeSummary ?? null;
 				const latestHermesRecordedAt = latestHermes?.createdAt ?? null;
 				const latestHermesEvidence = latestHermes ? summarizeHermesEvidence(latestHermes) : "none";
+				const currentTrace = resolveCurrentTraceForStatus(root);
 				const statusLines = [
 					"RCK status",
+					currentTrace
+						? `- current trace: traceId=${currentTrace.traceId}, headAnchorId=${currentTrace.headAnchorId ?? "null"}, anchorCount=${currentTrace.anchorCount}`
+						: "- current trace: missing",
 					`- state: ${latestStateIndex ? "present" : "missing"}`,
 					`- context pack: ${latestContextIndex ? "present" : "missing"}`,
 					`- anchor: ${latestAnchorIndex ? "present" : "missing"}`,
@@ -473,6 +514,13 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				];
 				appendCustomMessage(pi, "rck-bridge-status", statusLines.join("\n"), {
 					storage: ".pi/rck",
+					currentTrace: currentTrace
+						? {
+							traceId: currentTrace.traceId,
+							headAnchorId: currentTrace.headAnchorId,
+							anchorCount: currentTrace.anchorCount,
+						}
+						: null,
 					state: latestStateIndex ? "present" : "missing",
 					contextPack: latestContextIndex ? "present" : "missing",
 					anchor: latestAnchorIndex ? "present" : "missing",
@@ -508,7 +556,8 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 
 				const contextPackId = createContextPackId();
 				const contextEventId = createEventId();
-				const traceId = latestState.traceId;
+				const currentTrace = getOrCreateCurrentTrace(root);
+				const traceId = currentTrace.traceId;
 				const sessionId = ctx.sessionManager.getSessionId();
 				const safeSummaryText = stateSummaryToSafeText(latestState);
 				const contextSummary = {
@@ -607,6 +656,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				};
 				const eventRef = writeRckEvent(root, eventPayload);
 				updateLatestContextPackIndex(root, packRef, eventRef, traceId, latestState.stateId, latestIndex.currentStatePath);
+				updateCurrentTraceIndex(root, { updatedAtUtc: contextPack.createdAt });
 
 				appendMockEvent(pi, "rck-bridge.context.injected.record", {
 					...contextEvent,
@@ -638,7 +688,8 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				const latestState = readLatestRckState(root);
 				const anchorId = createId("anchor");
 				const eventId = createEventId();
-				const traceId = latestState?.traceId ?? createId("trace");
+				const currentTrace = getOrCreateCurrentTrace(root);
+				const traceId = currentTrace.traceId;
 				const sessionId = ctx.sessionManager.getSessionId();
 				const hasState = Boolean(latestIndex && latestState);
 				const stateId = hasState ? latestState!.stateId : undefined;
@@ -722,6 +773,11 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				};
 				const eventRef = writeRckEvent(root, anchorEventPayload);
 				updateLatestAnchorIndex(root, anchorRef, eventRef, traceId);
+				updateCurrentTraceIndex(root, {
+					headAnchorId: anchorId,
+					anchorCount: currentTrace.anchorCount + 1,
+					updatedAtUtc: anchorPayload.createdAt,
+				});
 
 				appendMockEvent(pi, "rck-bridge.anchor.registered", {
 					eventType: "AnchorRegistered",

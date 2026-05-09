@@ -108,7 +108,8 @@ Reads the current RCK storage summary without writing anything.
 
 What it does:
 - checks whether `.pi/rck/` exists
-- reads the latest state, context-pack, and anchor indexes when present
+- resolves the active trace from `indexes/current-trace.json` when present
+- falls back to the latest state, context-pack, or anchor index trace when needed
 - reads the latest `HermesRunRecorded` event metadata only
 - emits a safe visible summary for the session
 - does not create a context pack
@@ -165,6 +166,7 @@ Still mock / fake-first:
       stdout/
       stderr/
   indexes/
+    current-trace.json
     latest-state.json
     latest-context-pack.json
     latest-anchor.json

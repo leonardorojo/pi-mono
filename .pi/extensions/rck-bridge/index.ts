@@ -1,3 +1,4 @@
+import { existsSync, readdirSync } from "node:fs";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type {
 	AnchorRegisteredEvent,
@@ -24,6 +25,8 @@ import {
 	writeRckContextPack,
 	writeRckEvent,
 	writeRckState,
+	type LatestAnchorIndexPayload,
+	type LatestContextPackIndexPayload,
 	type LatestStateIndexPayload,
 	type RckAnchorPayload,
 	type RckContextPackPayload,
@@ -111,6 +114,32 @@ function stateSummaryToSafeText(state: RckStatePayload): string {
 	return safeContextSummary(
 		`${state.stateSummary.title}: ${state.stateSummary.objective} | scope=${state.stateSummary.scope} | next=${state.stateSummary.nextAction}`,
 	);
+}
+
+function summarizeHermesEvidence(event: { stdoutRef?: RckEventPayload["stdoutRef"]; stderrRef?: RckEventPayload["stderrRef"]; payload?: { stdoutRef?: RckEventPayload["stdoutRef"]; stderrRef?: RckEventPayload["stderrRef"] } }): string {
+	const stdoutRef = event.stdoutRef ?? event.payload?.stdoutRef;
+	const stderrRef = event.stderrRef ?? event.payload?.stderrRef;
+	const hasStdout = Boolean(stdoutRef);
+	const hasStderr = Boolean(stderrRef);
+	if (hasStdout && hasStderr) return "stdout/stderr";
+	if (hasStdout) return "stdout";
+	if (hasStderr) return "stderr";
+	return "none";
+}
+
+function readLatestHermesRecordedEvent(root: string): RckEventPayload | undefined {
+	const eventsDir = `${root}/events`;
+	if (!existsSync(eventsDir)) {
+		return undefined;
+	}
+	const files = readdirSync(eventsDir).filter((file) => file.endsWith(".json")).sort();
+	for (let index = files.length - 1; index >= 0; index -= 1) {
+		const event = readJson<RckEventPayload>(`${eventsDir}/${files[index]}`);
+		if (event?.eventType === "HermesRunRecorded") {
+			return event;
+		}
+	}
+	return undefined;
 }
 
 export default function registerRckBridge(pi: ExtensionAPI) {
@@ -413,6 +442,54 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 			const { command, payload } = parseArgs(args);
 			const cwd = ctx.cwd;
 			const root = getRckRoot(cwd);
+
+			if (command === "status") {
+				if (!existsSync(root)) {
+					appendCustomMessage(pi, "rck-bridge-status", "No RCK storage found. Run /state first.", {
+						storage: "missing",
+						root: ".pi/rck",
+					});
+					return;
+				}
+
+				const latestStateIndex = readJson<LatestStateIndexPayload>(`${root}/indexes/latest-state.json`);
+				const latestContextIndex = readJson<LatestContextPackIndexPayload>(`${root}/indexes/latest-context-pack.json`);
+				const latestAnchorIndex = readJson<LatestAnchorIndexPayload>(`${root}/indexes/latest-anchor.json`);
+				const latestHermes = readLatestHermesRecordedEvent(root);
+				const latestHermesMode = latestHermes?.mode ?? latestHermes?.payload?.mode ?? "unknown";
+				const latestHermesStatus = latestHermes?.status ?? latestHermes?.payload?.status ?? "unknown";
+				const latestHermesSafeSummary = latestHermes?.safeSummary ?? latestHermes?.payload?.safeSummary ?? null;
+				const latestHermesRecordedAt = latestHermes?.createdAt ?? null;
+				const latestHermesEvidence = latestHermes ? summarizeHermesEvidence(latestHermes) : "none";
+				const statusLines = [
+					"RCK status",
+					`- state: ${latestStateIndex ? "present" : "missing"}`,
+					`- context pack: ${latestContextIndex ? "present" : "missing"}`,
+					`- anchor: ${latestAnchorIndex ? "present" : "missing"}`,
+					latestHermes
+						? `- latest Hermes: mode=${latestHermesMode}, status=${latestHermesStatus}, evidence=${latestHermesEvidence}, recordedAt=${latestHermesRecordedAt ?? "unknown"}, safeSummary=${safeContextSummary(String(latestHermesSafeSummary ?? ""))}`
+						: "- latest Hermes: missing",
+					`- storage: .pi/rck`,
+				];
+				appendCustomMessage(pi, "rck-bridge-status", statusLines.join("\n"), {
+					storage: ".pi/rck",
+					state: latestStateIndex ? "present" : "missing",
+					contextPack: latestContextIndex ? "present" : "missing",
+					anchor: latestAnchorIndex ? "present" : "missing",
+					latestHermes: latestHermes
+						? {
+							mode: latestHermesMode,
+							status: latestHermesStatus,
+							createdAt: latestHermesRecordedAt,
+							stdoutRef: Boolean(latestHermes.stdoutRef ?? latestHermes.payload?.stdoutRef),
+							stderrRef: Boolean(latestHermes.stderrRef ?? latestHermes.payload?.stderrRef),
+							safeSummary: latestHermesSafeSummary,
+						}
+						: null,
+				});
+				return;
+			}
+
 			ensureRckStorage(root);
 
 			if (command === "inject") {

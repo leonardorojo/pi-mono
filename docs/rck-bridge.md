@@ -102,6 +102,29 @@ Still mock:
 - `/rck anchor` is a bridge-level RCK operation, not a real Hermes run
 - no real Hermes execution happens
 
+### `/rck status`
+
+Reads the current RCK storage summary without writing anything.
+
+What it does:
+- checks whether `.pi/rck/` exists
+- reads the latest state, context-pack, and anchor indexes when present
+- reads the latest `HermesRunRecorded` event metadata only
+- emits a safe visible summary for the session
+- does not create a context pack
+- does not create a new event
+- does not read raw Hermes stdout/stderr
+
+What it writes in Pi:
+- a safe status-style custom message only
+
+What it reports:
+- whether state is present or missing
+- whether a context pack is present or missing
+- whether an anchor is present or missing
+- the latest Hermes mode/status plus evidence refs presence
+
+
 ### `/hermes <prompt>`
 
 Records a fake-first Hermes request and a fake Hermes result.

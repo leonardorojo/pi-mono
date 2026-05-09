@@ -119,6 +119,7 @@ describe("RCK bridge commands", () => {
 		await runner!.getCommand("state")!.handler("design bridge state", runner!.createCommandContext());
 		await runner!.getCommand("rck")!.handler("inject", runner!.createCommandContext());
 
+
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
 		const contextPackFiles = readdirSync(join(rckRoot, "context-packs"));
 		const eventFiles = readdirSync(join(rckRoot, "events"));
@@ -238,6 +239,7 @@ describe("RCK bridge commands", () => {
 		const runner = harness.session.extensionRunner;
 		expect(runner).toBeDefined();
 		await runner!.getCommand("state")!.handler("phase 3b anchor linkage", runner!.createCommandContext());
+
 		await runner!.getCommand("rck")!.handler("anchor phase-3b-linked", runner!.createCommandContext());
 
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
@@ -289,6 +291,87 @@ describe("RCK bridge commands", () => {
 
 		const customMessages = getCustomMessages(harness);
 		expect(customMessages.some((message) => message.customType === "rck-bridge.anchor.registered" && String(message.content).includes("linked to latest state"))).toBe(true);
+	});
+
+
+	it("executes /rck status without storage and stays read-only", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("rck")!.handler("status", runner!.createCommandContext());
+
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(existsSync(rckRoot)).toBe(false);
+
+		const customMessages = getCustomMessages(harness);
+		const statusMessage = customMessages.find(
+			(message) => message.customType === "rck-bridge-status" && String(message.content).includes("No RCK storage found. Run /state first."),
+		);
+		expect(statusMessage).toBeDefined();
+		expect(String(statusMessage?.content)).toContain("No RCK storage found. Run /state first.");
+	});
+
+	it("executes /state then /rck status and reports missing context pack and anchor", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("state")!.handler("status baseline", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("status", runner!.createCommandContext());
+
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(existsSync(join(rckRoot, "indexes", "latest-state.json"))).toBe(true);
+		expect(existsSync(join(rckRoot, "indexes", "latest-context-pack.json"))).toBe(false);
+		expect(existsSync(join(rckRoot, "indexes", "latest-anchor.json"))).toBe(false);
+
+		const customMessages = getCustomMessages(harness);
+		const statusMessage = customMessages.find(
+			(message) => message.customType === "rck-bridge-status" && String(message.content).startsWith("RCK status"),
+		);
+		expect(statusMessage).toBeDefined();
+		const content = String(statusMessage?.content);
+		expect(content).toContain("- state: present");
+		expect(content).toContain("- context pack: missing");
+		expect(content).toContain("- anchor: missing");
+		expect(content).toContain("- latest Hermes: missing");
+		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
+	});
+
+	it("executes /state, /rck inject, /rck anchor, /hermes fake, then /rck status with safe Hermes metadata", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("state")!.handler("status full flow", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("inject", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("anchor status-flow", runner!.createCommandContext());
+		await runner!.getCommand("hermes")!.handler("inspect status flow", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("status", runner!.createCommandContext());
+
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(existsSync(join(rckRoot, "indexes", "latest-state.json"))).toBe(true);
+		expect(existsSync(join(rckRoot, "indexes", "latest-context-pack.json"))).toBe(true);
+		expect(existsSync(join(rckRoot, "indexes", "latest-anchor.json"))).toBe(true);
+
+		const customMessages = getCustomMessages(harness);
+		const statusMessage = customMessages.find(
+			(message) => message.customType === "rck-bridge-status" && String(message.content).startsWith("RCK status"),
+		);
+		expect(statusMessage).toBeDefined();
+		const content = String(statusMessage?.content);
+		expect(content).toContain("- state: present");
+		expect(content).toContain("- context pack: present");
+		expect(content).toContain("- anchor: present");
+		expect(content).toContain("- latest Hermes: mode=fake, status=succeeded");
+		expect(content).toMatch(/evidence=(stdout|stderr|stdout\/stderr)/);
+		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
 	});
 
 	it("executes /hermes inspect mock bridge and records safe Hermes results", async () => {
@@ -358,6 +441,7 @@ describe("RCK bridge commands", () => {
 		expect((requestedEntry?.data as { eventType?: string; command?: { args?: string } } | undefined)?.eventType).toBe(
 			"HermesRunRequested",
 		);
+
 		expect((requestedEntry?.data as { command?: { args?: string } } | undefined)?.command?.args).toBe(
 			"inspect mock bridge",
 		);
@@ -478,6 +562,7 @@ describe("RCK bridge commands", () => {
 		expect(existsSync(stdoutDir) ? readdirSync(stdoutDir) : []).toHaveLength(0);
 		expect(existsSync(stderrDir) ? readdirSync(stderrDir) : []).toHaveLength(0);
 		expect(readdirSync(eventDir)).toHaveLength(2);
+
 
 		const eventRecords = readdirSync(eventDir).map((file) =>
 			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {

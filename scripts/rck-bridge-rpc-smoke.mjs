@@ -222,6 +222,7 @@ async function main() {
 			? "/hermes --mode real Respond only with: HERMES_REAL_OK"
 			: "/hermes inspect fake bridge";
 		await runPrompt("5", hermesMessage, wantRealRun ? "hermes real" : "hermes fake");
+		await runPrompt("6", "/rck status", "status");
 
 		const eventRecords = await waitFor(() => {
 			const records = loadJsonRecords(".pi/rck/events");

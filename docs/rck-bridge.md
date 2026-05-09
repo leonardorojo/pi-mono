@@ -254,7 +254,42 @@ printf '%s\n' \
 
 This confirms the bridge works in a minimal RPC runtime with explicit extension loading.
 
-## Important RPC note
+## RPC cockpit aggregator
+
+`scripts/rck-bridge-rpc-cockpit.mjs` builds a UI-ready JSON snapshot by querying the bridge over RPC and combining safe metadata from:
+- `get_commands`
+- `/rck status`
+- `/rck list`
+- `/rck supervise`
+
+It is read-only by default.
+It does not create `.pi/rck/` when storage is missing.
+It does not read raw Hermes stdout/stderr.
+It does not depend on the physical `.pi/rck/` layout as its primary source.
+It does not touch `web-ui`.
+
+### Contract: `rck.cockpit/v0.1`
+
+Top-level shape:
+
+```json
+{
+  "schemaVersion": "rck.cockpit/v0.1",
+  "generatedAtUtc": "...",
+  "repo": { "path": "...", "branch": "...", "dirty": false },
+  "trace": { "traceId": null, "healthLevel": "unknown", "needsAttention": false },
+  "status": { "available": true, "summary": "...", "source": "/rck status" },
+  "supervision": { "available": true, "level": "...", "reason": "...", "recommendedAction": "...", "needsAttention": false, "source": "/rck supervise" },
+  "inventory": { "available": true, "summary": "...", "counts": {}, "source": "/rck list" },
+  "latestHermes": { "available": false, "mode": null, "status": null, "evidenceRefPresent": false },
+  "actions": [],
+  "capabilities": {},
+  "safety": { "realHermesGated": true, "rawEvidenceExposed": false, "readOnly": true, "warnings": [] },
+  "safeMessages": { "commands": "...", "status": "...", "list": "...", "supervise": "..." }
+}
+```
+
+`safeMessages` stores only safe bridge messages, not raw evidence.
 
 Use `--no-extensions` and load `rck-bridge` explicitly.
 

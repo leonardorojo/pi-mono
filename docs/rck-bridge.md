@@ -102,16 +102,17 @@ Still mock:
 - `/rck anchor` is a bridge-level RCK operation, not a real Hermes run
 - no real Hermes execution happens
 
-### `/rck status`
+### `/rck list`
 
-Reads the current RCK storage summary without writing anything.
+Reads the safe RCK storage summary without writing anything.
 
 What it does:
 - checks whether `.pi/rck/` exists
 - resolves the active trace from `indexes/current-trace.json` when present
 - falls back to the latest state, context-pack, or anchor index trace when needed
-- reads the latest `HermesRunRecorded` event metadata only
-- emits a safe visible summary for the session
+- reads safe metadata from the latest state, context-pack, anchor, and event records
+- reports the latest Hermes recorded event metadata only
+- lists the latest events and latest Hermes recorded events as safe metadata
 - does not create a context pack
 - does not create a new event
 - does not read raw Hermes stdout/stderr
@@ -123,6 +124,8 @@ What it reports:
 - whether state is present or missing
 - whether a context pack is present or missing
 - whether an anchor is present or missing
+- the current trace metadata
+- the latest event metadata only
 - the latest Hermes mode/status plus evidence refs presence
 
 
@@ -207,7 +210,7 @@ printf '%s\n' \
   '{"id":"3","type":"prompt","message":"/state"}' \
   '{"id":"4","type":"prompt","message":"/rck inject"}' \
   '{"id":"5","type":"prompt","message":"/hermes inspect mock bridge"}' \
-  '{"id":"6","type":"prompt","message":"/rck anchor fase-3b-anchor-test"}' \
+  '{"id":"6","type":"prompt","message":"/rck list"}' \
 | timeout 20 ./pi-test.sh --offline --mode rpc --no-tools --no-extensions --extension .pi/extensions/rck-bridge/index.ts
 ```
 

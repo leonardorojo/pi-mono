@@ -333,35 +333,35 @@ describe("RCK bridge commands", () => {
 	});
 
 
-	it("executes /rck status without storage and stays read-only", async () => {
+	it("executes /rck list without storage and stays read-only", async () => {
 		harness = await createHarnessWithExtensions({
 			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
 		});
 
 		const runner = harness.session.extensionRunner;
 		expect(runner).toBeDefined();
-		await runner!.getCommand("rck")!.handler("status", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("list", runner!.createCommandContext());
 
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
 		expect(existsSync(rckRoot)).toBe(false);
 
 		const customMessages = getCustomMessages(harness);
-		const statusMessage = customMessages.find(
+		const listMessage = customMessages.find(
 			(message) => message.customType === "rck-bridge-status" && String(message.content).includes("No RCK storage found. Run /state first."),
 		);
-		expect(statusMessage).toBeDefined();
-		expect(String(statusMessage?.content)).toContain("No RCK storage found. Run /state first.");
+		expect(listMessage).toBeDefined();
+		expect(String(listMessage?.content)).toContain("No RCK storage found. Run /state first.");
 	});
 
-	it("executes /state then /rck status and reports missing context pack and anchor", async () => {
+	it("executes /state then /rck list and reports safe counts with current trace", async () => {
 		harness = await createHarnessWithExtensions({
 			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
 		});
 
 		const runner = harness.session.extensionRunner;
 		expect(runner).toBeDefined();
-		await runner!.getCommand("state")!.handler("status baseline", runner!.createCommandContext());
-		await runner!.getCommand("rck")!.handler("status", runner!.createCommandContext());
+		await runner!.getCommand("state")!.handler("list baseline", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("list", runner!.createCommandContext());
 
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
 		expect(existsSync(join(rckRoot, "indexes", "latest-state.json"))).toBe(true);
@@ -369,22 +369,55 @@ describe("RCK bridge commands", () => {
 		expect(existsSync(join(rckRoot, "indexes", "latest-anchor.json"))).toBe(false);
 
 		const customMessages = getCustomMessages(harness);
-		const statusMessage = customMessages.find(
-			(message) => message.customType === "rck-bridge-status" && String(message.content).startsWith("RCK status"),
+		const listMessage = customMessages.find(
+			(message) => message.customType === "rck-bridge-status" && String(message.content).startsWith("RCK list"),
 		);
-		expect(statusMessage).toBeDefined();
-		const content = String(statusMessage?.content);
-		expect(content).toContain("- state: present");
-		expect(content).toContain("- context pack: missing");
-		expect(content).toContain("- anchor: missing");
-		expect(content).toContain("- latest Hermes: missing");
-		const currentTrace = JSON.parse(readFileSync(join(rckRoot, "indexes", "current-trace.json"), "utf-8")) as {
-			traceId: string;
-			headAnchorId: string | null;
-			anchorCount: number;
-		};
-		expect(content).toContain(`- current trace: traceId=${currentTrace.traceId}`);
+		expect(listMessage).toBeDefined();
+		const content = String(listMessage?.content);
+		expect(content).toContain("- states: 1");
+		expect(content).toContain("- context packs: 0");
+		expect(content).toContain("- anchors: 0");
+		expect(content).toContain("- events: 1");
+		expect(content).toContain("- current trace: traceId=");
+		expect(content).toContain("StatePackCreated");
 		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
+	});
+
+	it("executes /state, /rck inject, /rck anchor, /hermes fake, then /rck list with safe Hermes metadata", async () => {
+		harness = await createHarnessWithExtensions({
+			extensionFactories: [{ path: "<rck-bridge>", factory: registerRckBridge }],
+		});
+
+		const runner = harness.session.extensionRunner;
+		expect(runner).toBeDefined();
+		await runner!.getCommand("state")!.handler("list full flow", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("inject", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("anchor list-flow", runner!.createCommandContext());
+		await runner!.getCommand("hermes")!.handler("inspect list flow", runner!.createCommandContext());
+		await runner!.getCommand("rck")!.handler("list", runner!.createCommandContext());
+
+		const rckRoot = join(harness.tempDir, ".pi", "rck");
+		expect(existsSync(join(rckRoot, "indexes", "latest-state.json"))).toBe(true);
+		expect(existsSync(join(rckRoot, "indexes", "latest-context-pack.json"))).toBe(true);
+		expect(existsSync(join(rckRoot, "indexes", "latest-anchor.json"))).toBe(true);
+
+		const customMessages = getCustomMessages(harness);
+		const listMessage = customMessages.find(
+			(message) => message.customType === "rck-bridge-status" && String(message.content).startsWith("RCK list"),
+		);
+		expect(listMessage).toBeDefined();
+		const content = String(listMessage?.content);
+		expect(content).toContain("- states: 1");
+		expect(content).toContain("- context packs: 1");
+		expect(content).toContain("- anchors: 1");
+		expect(content).toContain("- events: 5");
+		expect(content).toContain("- current trace: traceId=");
+		expect(content).toContain("StatePackCreated");
+		expect(content).toContain("ContextPackInjected");
+		expect(content).toContain("AnchorRegistered");
+		expect(content).toMatch(/HermesRunRecorded .*mode=fake status=succeeded/);
+		expect(content).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
+		expect(content).not.toMatch(/stdoutRef=.*mock-hermes|stderrRef=.*mock-hermes/i);
 	});
 
 	it("executes /state, /rck inject, /rck anchor, /hermes fake, then /rck status with safe Hermes metadata", async () => {
@@ -549,7 +582,7 @@ describe("RCK bridge commands", () => {
 		);
 		expect(statusMessage).toBeDefined();
 		expect(String(statusMessage?.content)).toContain("status=succeeded");
-		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr|stdout|stderr/i);
+		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
 		expect((statusMessage?.details as { mock?: boolean; stdoutRef?: unknown } | undefined)?.mock).toBe(true);
 		expect((statusMessage?.details as { eventType?: string } | undefined)?.eventType).toBe("HermesRunRecorded");
 		expect((statusMessage?.details as { stdoutRef?: { kind?: string; path?: string } } | undefined)?.stdoutRef?.kind).toBe(
@@ -616,7 +649,7 @@ describe("RCK bridge commands", () => {
 		);
 		expect(statusMessage).toBeDefined();
 		expect(String(statusMessage?.content)).not.toContain(stderrContent);
-		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr|stdout|stderr/i);
+		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
 	});
 
 	it("executes /hermes --mode real and blocks real execution by default", async () => {
@@ -682,7 +715,7 @@ describe("RCK bridge commands", () => {
 				message.content.includes("Hermes real run recorded"),
 		);
 		expect(statusMessage).toBeDefined();
-		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr|stdout|stderr/i);
+		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
 		expect((statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.mode).toBe(
 			"real",
 		);

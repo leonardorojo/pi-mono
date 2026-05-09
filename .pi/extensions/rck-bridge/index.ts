@@ -172,6 +172,94 @@ function resolveCurrentTraceForStatus(root: string): CurrentTraceIndexPayload | 
 	};
 }
 
+function countJsonFiles(root: string, relativeDir: string): number {
+	const dir = `${root}/${relativeDir}`;
+	if (!existsSync(dir)) {
+		return 0;
+	}
+	return readdirSync(dir).filter((file) => file.endsWith(".json")).length;
+}
+
+function readJsonFiles<T>(dirPath: string): T[] {
+	if (!existsSync(dirPath)) {
+		return [];
+	}
+	return readdirSync(dirPath)
+		.filter((file) => file.endsWith(".json"))
+		.sort()
+		.map((file) => readJson<T>(`${dirPath}/${file}`))
+		.filter((value): value is T => value !== undefined);
+}
+
+function readRckEventRecords(root: string): RckEventPayload[] {
+	return readJsonFiles<RckEventPayload>(`${root}/events`);
+}
+
+function summarizeRckEventForList(event: RckEventPayload): string {
+	const base = `  - ${event.eventType} id=${event.eventId} trace=${event.traceId}`;
+	if (event.eventType === "HermesRunRecorded") {
+		const mode = event.mode ?? event.payload?.mode ?? "unknown";
+		const status = event.status ?? event.payload?.status ?? "unknown";
+		const evidence = summarizeHermesEvidence(event);
+		const errorKind = event.errorKind ?? event.payload?.errorKind;
+		const byteSummary = [
+			event.stdoutByteLength ?? event.payload?.stdoutByteLength,
+			event.stderrByteLength ?? event.payload?.stderrByteLength,
+		]
+			.map((value, index) => (index === 0 ? `stdoutBytes=${value ?? 0}` : `stderrBytes=${value ?? 0}`))
+			.join(" ");
+		return `${base} mode=${mode} status=${status} evidence=${evidence}${errorKind ? ` errorKind=${errorKind}` : ""} ${byteSummary}`;
+	}
+
+	if (event.eventType === "HermesRunRequested") {
+		const mode = event.payload?.mode ?? event.mode ?? "unknown";
+		return `${base} mode=${mode}`;
+	}
+
+	if (event.eventType === "StatePackCreated") {
+		return `${base} state=${event.payload?.stateId ?? "unknown"}`;
+	}
+
+	if (event.eventType === "ContextPackInjected") {
+		return `${base} contextPack=${event.payload?.contextPackId ?? "unknown"}`;
+	}
+
+	if (event.eventType === "AnchorRegistered") {
+		return `${base} anchor=${event.payload?.anchorId ?? "unknown"}`;
+	}
+
+	return base;
+}
+
+function buildRckListLines(root: string): string[] {
+	const currentTrace = resolveCurrentTraceForStatus(root);
+	const latestStateIndex = readJson<LatestStateIndexPayload>(`${root}/indexes/latest-state.json`);
+	const latestContextIndex = readJson<LatestContextPackIndexPayload>(`${root}/indexes/latest-context-pack.json`);
+	const latestAnchorIndex = readJson<LatestAnchorIndexPayload>(`${root}/indexes/latest-anchor.json`);
+	const eventRecords = readRckEventRecords(root);
+	const latestEvents = eventRecords.slice(-5);
+	const latestHermesEvents = eventRecords.filter((event) => event.eventType === "HermesRunRecorded").slice(-5);
+
+	return [
+		"RCK list",
+		currentTrace
+			? `- current trace: traceId=${currentTrace.traceId}, headAnchorId=${currentTrace.headAnchorId ?? "null"}, anchorCount=${currentTrace.anchorCount}`
+			: "- current trace: missing",
+		`- states: ${countJsonFiles(root, "states")}`,
+		`- context packs: ${countJsonFiles(root, "context-packs")}`,
+		`- anchors: ${countJsonFiles(root, "anchors")}`,
+		`- events: ${eventRecords.length}`,
+		`- latest state: ${latestStateIndex ? latestStateIndex.currentStateId : "missing"}`,
+		`- latest context pack: ${latestContextIndex ? latestContextIndex.currentContextPackId : "missing"}`,
+		`- latest anchor: ${latestAnchorIndex ? latestAnchorIndex.currentAnchorId : "missing"}`,
+		"- latest events:",
+		...(latestEvents.length > 0 ? latestEvents.map((event) => summarizeRckEventForList(event)) : ["  - none"]),
+		"- latest Hermes recorded events:",
+		...(latestHermesEvents.length > 0 ? latestHermesEvents.map((event) => summarizeRckEventForList(event)) : ["  - none"]),
+		"- storage: .pi/rck",
+	];
+}
+
 export default function registerRckBridge(pi: ExtensionAPI) {
 	pi.registerCommand("hermes", {
 		description: "Mock Hermes bridge (POC only)",
@@ -496,6 +584,28 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 			const { command, payload } = parseArgs(args);
 			const cwd = ctx.cwd;
 			const root = getRckRoot(cwd);
+
+			if (command === "list") {
+				if (!existsSync(root)) {
+					appendCustomMessage(pi, "rck-bridge-status", "No RCK storage found. Run /state first.", {
+						storage: "missing",
+						root: ".pi/rck",
+					});
+					return;
+				}
+
+				appendCustomMessage(pi, "rck-bridge-status", buildRckListLines(root).join("\n"), {
+					storage: ".pi/rck",
+					currentTrace: resolveCurrentTraceForStatus(root)
+						? {
+							traceId: resolveCurrentTraceForStatus(root)!.traceId,
+							headAnchorId: resolveCurrentTraceForStatus(root)!.headAnchorId,
+							anchorCount: resolveCurrentTraceForStatus(root)!.anchorCount,
+						}
+						: null,
+				});
+				return;
+			}
 
 			if (command === "status") {
 				if (!existsSync(root)) {

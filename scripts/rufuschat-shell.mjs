@@ -90,7 +90,163 @@ function latestEvent(events, eventType) {
 	return undefined;
 }
 
-function buildUsage() {
+function hasLatestState(snapshot) {
+	return Boolean(snapshot.statusDto?.latestState);
+}
+
+function defaultReadOnlySuggestions(snapshot) {
+	const suggestions = ["--help", "--supervise"];
+	if (hasLatestState(snapshot)) {
+		suggestions.push("--state");
+	}
+	return suggestions;
+}
+
+function statusSuggestions(snapshot) {
+	const suggestions = ["--supervise"];
+	if (hasLatestState(snapshot)) {
+		suggestions.push("--state");
+	}
+	return suggestions;
+}
+
+function superviseSuggestions(snapshot) {
+	if (snapshot.supervisionDto.needsAttention) {
+		const suggestions = ["--status"];
+		if (hasLatestState(snapshot)) {
+			suggestions.push("--state");
+		}
+		return suggestions;
+	}
+	const suggestions = ["--status"];
+	if (hasLatestState(snapshot)) {
+		suggestions.push("--state");
+	}
+	return suggestions;
+}
+
+function stateSuggestions() {
+	return ["--inject", "--anchor <label>"];
+}
+
+function injectSuggestions() {
+	return ["--anchor <label>"];
+}
+
+function anchorSuggestions() {
+	return ["--run-fake <prompt>", "--supervise"];
+}
+
+function runFakeSuggestions(snapshot) {
+	const suggestions = ["--supervise", "--state"];
+	if (snapshot.supervisionDto.needsAttention) {
+		suggestions.unshift("--status");
+	}
+	return suggestions;
+}
+
+function demoSuggestions() {
+	return ["--help", "--status"];
+}
+
+const ACTION_DEFINITIONS = [
+	{
+		name: "default",
+		flag: "(default)",
+		kind: "read-only",
+		description: "No flags: run /rck status and /rck supervise.",
+		run: async (ctx) => ctx.runDefaultCabin(),
+		suggestedNextActions: defaultReadOnlySuggestions,
+	},
+	{
+		name: "help",
+		flag: "--help",
+		kind: "read-only",
+		description: "Show generated usage and the action catalog.",
+		run: async (ctx) => ctx.showHelp(),
+		suggestedNextActions: () => [],
+	},
+	{
+		name: "status",
+		flag: "--status",
+		kind: "read-only",
+		description: "Run /rck status.",
+		run: async (ctx) => ctx.runCoreAction("status"),
+		suggestedNextActions: statusSuggestions,
+	},
+	{
+		name: "supervise",
+		flag: "--supervise",
+		kind: "read-only",
+		description: "Run /rck supervise.",
+		run: async (ctx) => ctx.runCoreAction("supervise"),
+		suggestedNextActions: superviseSuggestions,
+	},
+	{
+		name: "list",
+		flag: "--list",
+		kind: "read-only",
+		description: "Run /rck list.",
+		run: async (ctx) => ctx.runCoreAction("list"),
+		suggestedNextActions: () => ["--help", "--status"],
+	},
+	{
+		name: "state",
+		flag: "--state",
+		kind: "mutating",
+		description: "Run /state.",
+		run: async (ctx) => ctx.runCoreAction("state"),
+		suggestedNextActions: stateSuggestions,
+	},
+	{
+		name: "inject",
+		flag: "--inject",
+		kind: "mutating",
+		description: "Run /rck inject.",
+		run: async (ctx) => ctx.runCoreAction("inject"),
+		suggestedNextActions: injectSuggestions,
+	},
+	{
+		name: "anchor",
+		flag: "--anchor",
+		kind: "mutating",
+		requiresValue: true,
+		valueLabel: "<label>",
+		description: "Run /rck anchor <label>.",
+		run: async (ctx, action) => ctx.runCoreAction("anchor", action.value),
+		suggestedNextActions: anchorSuggestions,
+	},
+	{
+		name: "run-fake",
+		flag: "--run-fake",
+		kind: "mutating",
+		requiresValue: true,
+		valueLabel: "<prompt>",
+		description: "Run /hermes <prompt>.",
+		run: async (ctx, action) => ctx.runCoreAction("run-fake", action.value),
+		suggestedNextActions: runFakeSuggestions,
+	},
+	{
+		name: "demo",
+		flag: "--demo",
+		kind: "mutating",
+		description: "Run the explicit demo flow.",
+		run: async (ctx) => ctx.runDemo(),
+		suggestedNextActions: demoSuggestions,
+	},
+];
+
+const ACTION_DEFINITION_BY_FLAG = new Map(ACTION_DEFINITIONS.map((definition) => [definition.flag, definition]));
+const ACTION_DEFINITION_BY_NAME = new Map(ACTION_DEFINITIONS.map((definition) => [definition.name, definition]));
+
+function formatHelpLine(definition) {
+	const flag = definition.requiresValue ? `${definition.flag} ${definition.valueLabel}` : definition.flag;
+	return `  ${flag.padEnd(24)} ${definition.description}`;
+}
+
+function generatedHelpSections() {
+	const readOnly = ACTION_DEFINITIONS.filter((definition) => definition.kind === "read-only");
+	const mutating = ACTION_DEFINITIONS.filter((definition) => definition.kind === "mutating");
 	return [
 		"Usage:",
 		"  node scripts/rufuschat-shell.mjs",
@@ -107,24 +263,59 @@ function buildUsage() {
 		"Default behavior:",
 		"  No flags = read-only shell that runs /rck status and /rck supervise.",
 		"",
-		"Read-only flags:",
-		"  --status     Run /rck status.",
-		"  --supervise  Run /rck supervise.",
-		"  --list       Run /rck list.",
+		"Read-only actions:",
+		...readOnly.map((definition) => formatHelpLine(definition)),
 		"",
-		"Explicit mutating flags:",
-		"  --state                 Run /state.",
-		"  --inject                Run /rck inject.",
-		"  --anchor <label>        Run /rck anchor <label>.",
-		"  --run-fake <prompt>     Run /hermes <prompt>.",
-		"  --demo                  Run the explicit demo flow:",
-		"                         /state -> /rck inject -> /rck anchor rufuschat-shell -> /hermes inspect fake bridge -> /rck supervise",
+		"Mutating actions:",
+		...mutating.map((definition) => formatHelpLine(definition)),
 		"",
 		"Safety:",
+		"  - Mutating actions create RCK events/artifacts.",
+		"  - Raw evidence is never displayed.",
 		"  - No raw stdout/stderr is shown.",
 		"  - Evidence is kept to safe refs / metadata.",
 		"  - No web UI, no Codex, no RufusLab.RCK.Cli.",
 	].join("\n");
+}
+
+function suggestNextActions(action, snapshot) {
+	const definition = ACTION_DEFINITION_BY_NAME.get(action.name);
+	if (!definition?.suggestedNextActions) {
+		return [];
+	}
+	const suggestions = definition.suggestedNextActions(snapshot, action);
+	return Array.isArray(suggestions) ? suggestions.filter(Boolean) : [];
+}
+
+function actionDisplayName(action) {
+	if (action.name === "default") {
+		return "default read-only cabin";
+	}
+	if (action.name === "help") {
+		return "help";
+	}
+	if (action.value && action.name === "anchor") {
+		return `/rck anchor ${action.value}`;
+	}
+	if (action.value && action.name === "run-fake") {
+		return action.value.startsWith("/hermes ") ? action.value : `/hermes ${action.value}`;
+	}
+	const definition = ACTION_DEFINITION_BY_NAME.get(action.name);
+	if (!definition) {
+		return action.name;
+	}
+	if (definition.flag === "(default)") {
+		return "default read-only cabin";
+	}
+	return definition.requiresValue && action.value ? `${definition.flag} ${action.value}` : definition.flag;
+}
+
+function actionKindLabel(action) {
+	return ACTION_DEFINITION_BY_NAME.get(action.name)?.kind ?? "unknown";
+}
+
+function buildUsage() {
+	return generatedHelpSections();
 }
 
 function parseArgs(argv) {
@@ -139,75 +330,50 @@ function parseArgs(argv) {
 			help = true;
 			continue;
 		}
-		if (arg === "--demo") {
+		const definition = ACTION_DEFINITION_BY_FLAG.get(arg);
+		if (!definition) {
+			if (arg.startsWith("--")) {
+				errors.push(`Unknown flag: ${arg}. Use --help.`);
+				continue;
+			}
+			errors.push(`Unexpected argument: ${arg}`);
+			continue;
+		}
+		if (definition.name === "demo") {
 			demoRequested = true;
-			actions.push({ kind: "demo" });
+			actions.push({ name: definition.name, kind: definition.kind, flag: definition.flag, definition });
 			continue;
 		}
-		if (arg === "--status") {
-			actions.push({ kind: "status" });
-			continue;
-		}
-		if (arg === "--supervise") {
-			actions.push({ kind: "supervise" });
-			continue;
-		}
-		if (arg === "--list") {
-			actions.push({ kind: "list" });
-			continue;
-		}
-		if (arg === "--state") {
-			actions.push({ kind: "state" });
-			continue;
-		}
-		if (arg === "--inject") {
-			actions.push({ kind: "inject" });
-			continue;
-		}
-		if (arg === "--anchor") {
-			const label = argv[index + 1];
-			if (!label || label.startsWith("--")) {
-				errors.push("Missing label after --anchor.");
+		if (definition.requiresValue) {
+			const value = argv[index + 1];
+			if (!value || value.startsWith("--")) {
+				errors.push(definition.name === "anchor" ? "Missing label after --anchor." : "Missing prompt after --run-fake.");
 				continue;
 			}
-			actions.push({ kind: "anchor", label });
+			actions.push({ name: definition.name, kind: definition.kind, flag: definition.flag, value, definition });
 			index += 1;
 			continue;
 		}
-		if (arg === "--run-fake") {
-			const prompt = argv[index + 1];
-			if (!prompt || prompt.startsWith("--")) {
-				errors.push("Missing prompt after --run-fake.");
-				continue;
-			}
-			actions.push({ kind: "run-fake", prompt });
-			index += 1;
-			continue;
-		}
-		if (arg.startsWith("--")) {
-			errors.push(`Unknown flag: ${arg}`);
-			continue;
-		}
-		errors.push(`Unexpected argument: ${arg}`);
+		actions.push({ name: definition.name, kind: definition.kind, flag: definition.flag, definition });
 	}
 
 	if (help) {
 		return { help: true, actions: [], errors: [], demoRequested: false };
 	}
 
-	if (actions.some((action) => action.kind === "demo") && actions.length > 1) {
+	if (actions.some((action) => action.name === "demo") && actions.length > 1) {
 		errors.push("--demo cannot be combined with other actions.");
 	}
 
-	if (actions.some((action) => action.kind === "demo")) {
+	if (actions.some((action) => action.name === "demo")) {
 		return {
 			help: false,
 			actions: [
-				{ kind: "state" },
-				{ kind: "inject" },
-				{ kind: "anchor", label: "rufuschat-shell" },
-				{ kind: "run-fake", prompt: "inspect fake bridge" },
-				{ kind: "supervise" },
+				{ name: "state", kind: "mutating", flag: "--state", definition: ACTION_DEFINITION_BY_NAME.get("state") },
+				{ name: "inject", kind: "mutating", flag: "--inject", definition: ACTION_DEFINITION_BY_NAME.get("inject") },
+				{ name: "anchor", kind: "mutating", flag: "--anchor", value: "rufuschat-shell", definition: ACTION_DEFINITION_BY_NAME.get("anchor") },
+				{ name: "run-fake", kind: "mutating", flag: "--run-fake", value: "inspect fake bridge", definition: ACTION_DEFINITION_BY_NAME.get("run-fake") },
+				{ name: "supervise", kind: "read-only", flag: "--supervise", definition: ACTION_DEFINITION_BY_NAME.get("supervise") },
 			],
 			errors,
 			demoRequested,
@@ -215,14 +381,19 @@ function parseArgs(argv) {
 	}
 
 	if (actions.length === 0) {
-		actions.push({ kind: "status" }, { kind: "supervise" });
+		actions.push(
+			{ name: "status", kind: "read-only", flag: "--status", definition: ACTION_DEFINITION_BY_NAME.get("status") },
+			{ name: "supervise", kind: "read-only", flag: "--supervise", definition: ACTION_DEFINITION_BY_NAME.get("supervise") },
+		);
 	}
 
 	return { help: false, actions, errors, demoRequested };
 }
 
 function commandForAction(action) {
-	switch (action.kind) {
+	switch (action.name) {
+		case "default":
+			return "default read-only cabin";
 		case "status":
 			return "/rck status";
 		case "supervise":
@@ -234,9 +405,9 @@ function commandForAction(action) {
 		case "inject":
 			return "/rck inject";
 		case "anchor":
-			return `/rck anchor ${action.label}`;
+			return `/rck anchor ${action.value}`;
 		case "run-fake":
-			return action.prompt.startsWith("/hermes ") ? action.prompt : `/hermes ${action.prompt}`;
+			return action.value.startsWith("/hermes ") ? action.value : `/hermes ${action.value}`;
 		default:
 			return "";
 	}
@@ -281,7 +452,7 @@ function latestSafeSummary(snapshot) {
 }
 
 function safeSummaryForAction(action, snapshot) {
-	switch (action.kind) {
+	switch (action.name) {
 		case "status":
 			return latestSafeSummary(snapshot);
 		case "list":
@@ -302,7 +473,7 @@ function safeSummaryForAction(action, snapshot) {
 }
 
 function generatedIdForAction(action, snapshot) {
-	switch (action.kind) {
+	switch (action.name) {
 		case "state":
 			return snapshot.latestState?.stateId ?? null;
 		case "inject":
@@ -319,7 +490,7 @@ function generatedIdForAction(action, snapshot) {
 }
 
 function actionNeedsAttention(action, snapshot) {
-	if (action.kind === "supervise" || action.kind === "run-fake") {
+	if (action.name === "supervise" || action.name === "run-fake") {
 		return snapshot.supervisionDto.needsAttention;
 	}
 	return snapshot.supervisionDto.needsAttention;
@@ -331,7 +502,10 @@ function actionRecommendedAction(snapshot) {
 
 function renderActionBlock(action, snapshot) {
 	const command = commandForAction(action);
+	const suggestedNextActions = suggestNextActions(action, snapshot);
 	const lines = [
+		`action name: ${actionDisplayName(action)}`,
+		`action kind: ${actionKindLabel(action)}`,
 		`action executed: ${command}`,
 		`traceId: ${snapshot.traceId ?? "unknown"}`,
 	];
@@ -346,6 +520,9 @@ function renderActionBlock(action, snapshot) {
 	}
 	if (actionRecommendedAction(snapshot)) {
 		lines.push(`recommendedAction: ${actionRecommendedAction(snapshot)}`);
+	}
+	if (suggestedNextActions.length > 0) {
+		lines.push(`suggestedNextActions: ${suggestedNextActions.join(", ")}`);
 	}
 	return renderSection(`Action: ${command}`, lines);
 }
@@ -577,24 +754,24 @@ async function main() {
 		const beforeHermesEvents = loadJsonRecords(".pi/rck/events").map((record) => record.json);
 		const previousHermesEvent = latestEvent(beforeHermesEvents, "HermesRunRecorded")?.eventId ?? null;
 
-		if (action.kind === "state") {
-			await runPrompt(promptId, command, action.kind);
+		if (action.name === "state") {
+			await runPrompt(promptId, command, action.name);
 			await waitForFile("indexes/latest-state.json", "latest-state index");
 		}
-		if (action.kind === "inject") {
-			await runPrompt(promptId, command, action.kind);
+		if (action.name === "inject") {
+			await runPrompt(promptId, command, action.name);
 			await waitForFile("indexes/latest-context-pack.json", "latest-context-pack index");
 		}
-		if (action.kind === "anchor") {
-			await runPrompt(promptId, command, action.kind);
+		if (action.name === "anchor") {
+			await runPrompt(promptId, command, action.name);
 			await waitForFile("indexes/latest-anchor.json", "latest-anchor index");
 		}
-		if (action.kind === "run-fake") {
-			await runPrompt(promptId, command, action.kind);
+		if (action.name === "run-fake") {
+			await runPrompt(promptId, command, action.name);
 			await waitForLatestHermesEvent(previousHermesEvent);
 		}
-		if (action.kind === "status" || action.kind === "supervise" || action.kind === "list") {
-			await runPrompt(promptId, command, action.kind);
+		if (action.name === "status" || action.name === "supervise" || action.name === "list") {
+			await runPrompt(promptId, command, action.name);
 		}
 		return captureSnapshot();
 	};
@@ -627,9 +804,9 @@ async function main() {
 		const finalSnapshot = actionSnapshots[actionSnapshots.length - 1]?.snapshot ?? captureSnapshot();
 		const modeLabel = parsed.demoRequested
 			? "demo"
-			: parsed.actions.length === 2 && parsed.actions[0]?.kind === "status" && parsed.actions[1]?.kind === "supervise"
+			: parsed.actions.length === 2 && parsed.actions[0]?.name === "status" && parsed.actions[1]?.name === "supervise"
 				? "read-only"
-				: parsed.actions.map((action) => action.kind).join(", ") || "read-only";
+				: parsed.actions.map((action) => action.name).join(", ") || "read-only";
 		const renderLines = [
 			"## RufusChat Minimal Shell",
 			`- mode: ${modeLabel}`,
@@ -638,6 +815,15 @@ async function main() {
 			`- needsAttention: ${finalSnapshot.supervisionDto.needsAttention ? "yes" : "no"}`,
 			`- generatedAt: ${finalSnapshot.statusDto.generatedAt}`,
 		];
+
+		const topLevelSuggestions = parsed.demoRequested
+			? demoSuggestions(finalSnapshot)
+			: parsed.actions.length === 2 && parsed.actions[0]?.name === "status" && parsed.actions[1]?.name === "supervise"
+				? defaultReadOnlySuggestions(finalSnapshot)
+				: [];
+		if (topLevelSuggestions.length > 0) {
+			renderLines.push("", renderSection("Suggested Next Actions", topLevelSuggestions));
+		}
 
 		for (const { action, snapshot } of actionSnapshots) {
 			renderLines.push("", renderActionBlock(action, snapshot));

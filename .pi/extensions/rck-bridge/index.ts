@@ -308,12 +308,12 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 				};
 
 				appendMockEvent(pi, "rck-bridge.hermes.requested", requestEvent);
-				const requestEventRecord: RckEventPayload = {
-					schemaVersion: STORAGE_SCHEMA_VERSION,
-					artifactType: "rck.event",
-					id: requestEvent.eventId,
-					traceId: requestEvent.traceId,
-					createdAt: requestEvent.timestamp,
+			const requestEventRecord: RckEventPayload = {
+				schemaVersion: STORAGE_SCHEMA_VERSION,
+				artifactType: "rck.event",
+				id: requestEvent.eventId,
+				traceId: requestEvent.correlation.traceId,
+				createdAt: requestEvent.timestamp,
 					repoPath: cwd,
 					cwd,
 					piSessionId: requestEvent.piSessionId ?? ctx.sessionManager.getSessionId(),
@@ -385,7 +385,7 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 						parentPiEntryId: requestEvent.parentPiEntryId,
 						tags: ["rck-bridge", result.mode, "hermes", "recorded"],
 						correlation: {
-							traceId: requestEvent.traceId,
+							traceId: requestEvent.correlation.traceId,
 							requestEventId: requestEvent.eventId,
 							parentEventId: requestEvent.eventId,
 						},
@@ -420,12 +420,12 @@ export default function registerRckBridge(pi: ExtensionAPI) {
 					stdoutByteLength?: number;
 					stderrByteLength?: number;
 				};
-				const recordedEventRecord: RckEventPayload = {
-					schemaVersion: STORAGE_SCHEMA_VERSION,
-					artifactType: "rck.event",
-					id: recorded.eventId,
-					traceId: recorded.traceId ?? requestEvent.traceId,
-					createdAt: recorded.timestamp,
+			const recordedEventRecord: RckEventPayload = {
+				schemaVersion: STORAGE_SCHEMA_VERSION,
+				artifactType: "rck.event",
+				id: recorded.eventId,
+				traceId: recorded.correlation.traceId,
+				createdAt: recorded.timestamp,
 					repoPath: cwd,
 					cwd,
 					piSessionId: recorded.piSessionId ?? requestEvent.piSessionId ?? ctx.sessionManager.getSessionId(),

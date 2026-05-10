@@ -1,40 +1,66 @@
 #!/bin/sh
 
-# Get list of staged files before running check
-STAGED_FILES=$(git diff --cached --name-only)
+# Allow manual test runs to override the staged-file list.
+STAGED_FILES=${STAGED_FILES:-$(git diff --cached --name-only)}
 
-# Run the check script (formatting, linting, and type checking)
-echo "Running formatting, linting, and type checking..."
-npm run check
-if [ $? -ne 0 ]; then
-  echo "❌ Checks failed. Please fix the errors before committing."
-  exit 1
-fi
+run_check() {
+	label=$1
+	shift
+	"$@"
+	if [ $? -ne 0 ]; then
+		echo "❌ $label failed. Please fix the errors before committing."
+		exit 1
+	fi
+}
+
+has_staged_match() {
+	pattern=$1
+	for file in $STAGED_FILES; do
+		case "$file" in
+			$pattern)
+				return 0
+				;;
+		esac
+	done
+	return 1
+}
+
+echo "Running formatting and type checking..."
+run_check "Formatting and type checking" npm run check:core
 
 RUN_BROWSER_SMOKE=0
-for file in $STAGED_FILES; do
-  case "$file" in
-    packages/ai/*|packages/web-ui/*|package.json|package-lock.json)
-      RUN_BROWSER_SMOKE=1
-      break
-      ;;
-  esac
-done
+if has_staged_match "packages/ai/*" || has_staged_match "packages/web-ui/*" || has_staged_match "package.json" || has_staged_match "package-lock.json"; then
+	RUN_BROWSER_SMOKE=1
+fi
 
-if [ $RUN_BROWSER_SMOKE -eq 1 ]; then
-  echo "Running browser smoke check..."
-  npm run check:browser-smoke
-  if [ $? -ne 0 ]; then
-    echo "❌ Browser smoke check failed."
-    exit 1
-  fi
+if [ "$RUN_BROWSER_SMOKE" -eq 1 ]; then
+	echo "Running browser smoke check..."
+	run_check "Browser smoke check" npm run check:browser-smoke
+fi
+
+RUN_WEB_UI_CHECK=0
+if has_staged_match "packages/web-ui/*" || has_staged_match "tsconfig.json" || has_staged_match "tsconfig.base.json" || has_staged_match "biome.json"; then
+	RUN_WEB_UI_CHECK=1
+fi
+
+if [ "$RUN_WEB_UI_CHECK" -eq 1 ]; then
+	echo "Running packages/web-ui check..."
+	(
+		cd packages/web-ui && npm run check
+	)
+	if [ $? -ne 0 ]; then
+		echo "❌ packages/web-ui check failed."
+		exit 1
+	fi
+else
+	echo "Skipping packages/web-ui check: no staged files under packages/web-ui/."
 fi
 
 # Restage files that were previously staged and may have been modified by formatting
 for file in $STAGED_FILES; do
-  if [ -f "$file" ]; then
-    git add "$file"
-  fi
+	if [ -f "$file" ]; then
+		git add "$file"
+	fi
 done
 
 echo "✅ All pre-commit checks passed!"

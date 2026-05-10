@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,7 +16,15 @@ const timeoutMs = Number.parseInt(process.env.RUFUSCHAT_SHELL_TIMEOUT_MS ?? "450
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function cleanupArtifacts() {
-	rmSync(rckRoot, { recursive: true, force: true });
+	if (!existsSync(rckRoot)) {
+		return;
+	}
+	for (const entry of readdirSync(rckRoot, { withFileTypes: true })) {
+		if (entry.name === "rufuschat-sessions") {
+			continue;
+		}
+		rmSync(join(rckRoot, entry.name), { recursive: true, force: true });
+	}
 }
 
 function readRepoJsonMaybe(relativePath) {
@@ -88,6 +97,130 @@ function latestEvent(events, eventType) {
 		}
 	}
 	return undefined;
+}
+
+function sanitizeSessionName(sessionName) {
+	const fallback = "default";
+	if (typeof sessionName !== "string") {
+		return fallback;
+	}
+	const cleaned = sessionName.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^[-_.]+|[-_.]+$/g, "");
+	return cleaned || fallback;
+}
+
+function makeSessionTimestampStamp(date = new Date()) {
+	return date.toISOString().replace(/[:]/g, "-").replace(/\./g, "-");
+}
+
+function createSessionTranscriptContext(sessionName) {
+	const sessionDir = join(rckRoot, "rufuschat-sessions");
+	mkdirSync(sessionDir, { recursive: true });
+	const timestampStamp = makeSessionTimestampStamp();
+	const safeSessionName = sanitizeSessionName(sessionName);
+	const sessionId = `${timestampStamp}_${safeSessionName}_${randomUUID().slice(0, 8)}`;
+	const fileName = `${timestampStamp}_${safeSessionName}.jsonl`;
+	return {
+		sessionId,
+		sessionName: safeSessionName,
+		path: join(sessionDir, fileName),
+	};
+}
+
+function safeEvidenceRef(kind, refId, path) {
+	if (!refId || !path) {
+		return null;
+	}
+	return {
+		kind,
+		refId,
+		path,
+		isRaw: true,
+		displayPolicy: "reference-only",
+	};
+}
+
+function collectSessionEvidenceRefs(snapshot) {
+	const refs = [];
+	const latestState = snapshot.statusDto?.latestState;
+	if (latestState) {
+		const ref = safeEvidenceRef("state", latestState.stateId, latestState.statePath);
+		if (ref) refs.push(ref);
+	}
+	const latestContextPack = snapshot.statusDto?.latestContextPack;
+	if (latestContextPack) {
+		const ref = safeEvidenceRef("context-pack", latestContextPack.contextPackId, latestContextPack.contextPackPath);
+		if (ref) refs.push(ref);
+	}
+	const latestAnchor = snapshot.statusDto?.latestAnchor;
+	if (latestAnchor) {
+		const ref = safeEvidenceRef("anchor", latestAnchor.anchorId, latestAnchor.anchorPath);
+		if (ref) refs.push(ref);
+	}
+	if (Array.isArray(snapshot.latestHermesRun?.evidenceRefs)) {
+		for (const ref of snapshot.latestHermesRun.evidenceRefs) {
+			if (ref?.refId && ref?.path) {
+				refs.push({
+					kind: ref.kind,
+					refId: ref.refId,
+					path: ref.path,
+					isRaw: true,
+					displayPolicy: "reference-only",
+				});
+			}
+		}
+	}
+	return refs;
+}
+
+function buildSessionEntry(action, snapshot, sessionContext) {
+	const result = {
+		traceId: snapshot.traceId ?? null,
+		needsAttention: Boolean(actionNeedsAttention(action, snapshot)),
+		suggestedNextActions: suggestNextActions(action, snapshot),
+	};
+	const safeSummary = safeSummaryForAction(action, snapshot);
+	if (safeSummary) {
+		result.safeSummary = safeSummary;
+	}
+	const recommendedAction = actionRecommendedAction(snapshot);
+	if (recommendedAction) {
+		result.recommendedAction = recommendedAction;
+	}
+	return {
+		type: "rufuschat.shell.action",
+		timestamp: new Date().toISOString(),
+		sessionId: sessionContext.sessionId,
+		action: {
+			name: action.name,
+			kind: actionKindLabel(action),
+			flag: action.flag,
+		},
+		args: buildSessionArgs(action, sessionContext),
+		result,
+		evidenceRefs: collectSessionEvidenceRefs(snapshot),
+	};
+}
+
+function buildSessionArgs(action, sessionContext) {
+	const args = {};
+	if (action.name === "anchor" && action.value) {
+		args.label = action.value;
+	}
+	if (action.name === "run-fake") {
+		args.promptSupplied = true;
+	}
+	if (sessionContext.sessionName !== "default") {
+		args.sessionName = sessionContext.sessionName;
+	}
+	return args;
+}
+
+function writeSessionTranscriptLine(sessionContext, action, snapshot) {
+	if (!sessionContext) {
+		return;
+	}
+	const entry = buildSessionEntry(action, snapshot, sessionContext);
+	appendFileSync(sessionContext.path, `${JSON.stringify(entry)}\n`, "utf8");
 }
 
 function hasLatestState(snapshot) {
@@ -251,6 +384,7 @@ function generatedHelpSections() {
 		"Usage:",
 		"  node scripts/rufuschat-shell.mjs",
 		"  node scripts/rufuschat-shell.mjs --help",
+		"  node scripts/rufuschat-shell.mjs --session [name]",
 		"  node scripts/rufuschat-shell.mjs --status",
 		"  node scripts/rufuschat-shell.mjs --supervise",
 		"  node scripts/rufuschat-shell.mjs --list",
@@ -268,6 +402,11 @@ function generatedHelpSections() {
 		"",
 		"Mutating actions:",
 		...mutating.map((definition) => formatHelpLine(definition)),
+		"",
+		"Session transcript:",
+		"  --session [name] writes a safe JSONL transcript under .pi/rck/rufuschat-sessions/.",
+		"  The transcript is opt-in and contains references/metadata only.",
+		"  Raw evidence is never included.",
 		"",
 		"Safety:",
 		"  - Mutating actions create RCK events/artifacts.",
@@ -323,11 +462,22 @@ function parseArgs(argv) {
 	const errors = [];
 	let help = false;
 	let demoRequested = false;
+	let sessionEnabled = false;
+	let sessionName = null;
 
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		if (arg === "--help" || arg === "-h") {
 			help = true;
+			continue;
+		}
+		if (arg === "--session") {
+			sessionEnabled = true;
+			const maybeName = argv[index + 1];
+			if (maybeName && !maybeName.startsWith("--")) {
+				sessionName = maybeName;
+				index += 1;
+			}
 			continue;
 		}
 		const definition = ACTION_DEFINITION_BY_FLAG.get(arg);
@@ -358,7 +508,7 @@ function parseArgs(argv) {
 	}
 
 	if (help) {
-		return { help: true, actions: [], errors: [], demoRequested: false };
+		return { help: true, actions: [], errors: [], demoRequested: false, sessionEnabled, sessionName };
 	}
 
 	if (actions.some((action) => action.name === "demo") && actions.length > 1) {
@@ -377,6 +527,8 @@ function parseArgs(argv) {
 			],
 			errors,
 			demoRequested,
+			sessionEnabled,
+			sessionName,
 		};
 	}
 
@@ -387,7 +539,7 @@ function parseArgs(argv) {
 		);
 	}
 
-	return { help: false, actions, errors, demoRequested };
+	return { help: false, actions, errors, demoRequested, sessionEnabled, sessionName };
 }
 
 function commandForAction(action) {
@@ -537,6 +689,7 @@ async function main() {
 		process.stderr.write(`${parsed.errors.join("\n")}\n\n${buildUsage()}\n`);
 		return 1;
 	}
+	const sessionContext = parsed.sessionEnabled ? createSessionTranscriptContext(parsed.sessionName) : null;
 	if (!existsSync(piTestPath)) {
 		throw new Error(`Missing runner: ${piTestPath}`);
 	}
@@ -799,6 +952,7 @@ async function main() {
 			const action = parsed.actions[index];
 			const snapshot = await executeAction(action, String(index + 2));
 			actionSnapshots.push({ action, snapshot });
+			writeSessionTranscriptLine(sessionContext, action, snapshot);
 		}
 
 		const finalSnapshot = actionSnapshots[actionSnapshots.length - 1]?.snapshot ?? captureSnapshot();
@@ -871,6 +1025,10 @@ async function main() {
 				`hermesRuns=${finalSnapshot.inventoryDto.counts.hermesRuns ?? 0}`,
 			]),
 		);
+
+		if (sessionContext) {
+			renderLines.push("", `Transcript: ${sessionContext.path}`);
+		}
 
 		process.stdout.write(`${renderLines.join("\n")}\n`);
 		return 0;

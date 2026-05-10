@@ -90,12 +90,156 @@ function latestEvent(events, eventType) {
 	return undefined;
 }
 
+function buildUsage() {
+	return [
+		"Usage:",
+		"  node scripts/rufuschat-shell.mjs",
+		"  node scripts/rufuschat-shell.mjs --help",
+		"  node scripts/rufuschat-shell.mjs --status",
+		"  node scripts/rufuschat-shell.mjs --supervise",
+		"  node scripts/rufuschat-shell.mjs --list",
+		"  node scripts/rufuschat-shell.mjs --state",
+		"  node scripts/rufuschat-shell.mjs --inject",
+		"  node scripts/rufuschat-shell.mjs --anchor <label>",
+		"  node scripts/rufuschat-shell.mjs --run-fake <prompt>",
+		"  node scripts/rufuschat-shell.mjs --demo",
+		"",
+		"Default behavior:",
+		"  No flags = read-only shell that runs /rck status and /rck supervise.",
+		"",
+		"Read-only flags:",
+		"  --status     Run /rck status.",
+		"  --supervise  Run /rck supervise.",
+		"  --list       Run /rck list.",
+		"",
+		"Explicit mutating flags:",
+		"  --state                 Run /state.",
+		"  --inject                Run /rck inject.",
+		"  --anchor <label>        Run /rck anchor <label>.",
+		"  --run-fake <prompt>     Run /hermes <prompt>.",
+		"  --demo                  Run the explicit demo flow:",
+		"                         /state -> /rck inject -> /rck anchor rufuschat-shell -> /hermes inspect fake bridge -> /rck supervise",
+		"",
+		"Safety:",
+		"  - No raw stdout/stderr is shown.",
+		"  - Evidence is kept to safe refs / metadata.",
+		"  - No web UI, no Codex, no RufusLab.RCK.Cli.",
+	].join("\n");
+}
+
 function parseArgs(argv) {
-	const flags = new Set(argv.filter((arg) => arg.startsWith("--")));
-	return {
-		demo: flags.has("--demo"),
-		list: flags.has("--list"),
-	};
+	const actions = [];
+	const errors = [];
+	let help = false;
+	let demoRequested = false;
+
+	for (let index = 0; index < argv.length; index += 1) {
+		const arg = argv[index];
+		if (arg === "--help" || arg === "-h") {
+			help = true;
+			continue;
+		}
+		if (arg === "--demo") {
+			demoRequested = true;
+			actions.push({ kind: "demo" });
+			continue;
+		}
+		if (arg === "--status") {
+			actions.push({ kind: "status" });
+			continue;
+		}
+		if (arg === "--supervise") {
+			actions.push({ kind: "supervise" });
+			continue;
+		}
+		if (arg === "--list") {
+			actions.push({ kind: "list" });
+			continue;
+		}
+		if (arg === "--state") {
+			actions.push({ kind: "state" });
+			continue;
+		}
+		if (arg === "--inject") {
+			actions.push({ kind: "inject" });
+			continue;
+		}
+		if (arg === "--anchor") {
+			const label = argv[index + 1];
+			if (!label || label.startsWith("--")) {
+				errors.push("Missing label after --anchor.");
+				continue;
+			}
+			actions.push({ kind: "anchor", label });
+			index += 1;
+			continue;
+		}
+		if (arg === "--run-fake") {
+			const prompt = argv[index + 1];
+			if (!prompt || prompt.startsWith("--")) {
+				errors.push("Missing prompt after --run-fake.");
+				continue;
+			}
+			actions.push({ kind: "run-fake", prompt });
+			index += 1;
+			continue;
+		}
+		if (arg.startsWith("--")) {
+			errors.push(`Unknown flag: ${arg}`);
+			continue;
+		}
+		errors.push(`Unexpected argument: ${arg}`);
+	}
+
+	if (help) {
+		return { help: true, actions: [], errors: [], demoRequested: false };
+	}
+
+	if (actions.some((action) => action.kind === "demo") && actions.length > 1) {
+		errors.push("--demo cannot be combined with other actions.");
+	}
+
+	if (actions.some((action) => action.kind === "demo")) {
+		return {
+			help: false,
+			actions: [
+				{ kind: "state" },
+				{ kind: "inject" },
+				{ kind: "anchor", label: "rufuschat-shell" },
+				{ kind: "run-fake", prompt: "inspect fake bridge" },
+				{ kind: "supervise" },
+			],
+			errors,
+			demoRequested,
+		};
+	}
+
+	if (actions.length === 0) {
+		actions.push({ kind: "status" }, { kind: "supervise" });
+	}
+
+	return { help: false, actions, errors, demoRequested };
+}
+
+function commandForAction(action) {
+	switch (action.kind) {
+		case "status":
+			return "/rck status";
+		case "supervise":
+			return "/rck supervise";
+		case "list":
+			return "/rck list";
+		case "state":
+			return "/state";
+		case "inject":
+			return "/rck inject";
+		case "anchor":
+			return `/rck anchor ${action.label}`;
+		case "run-fake":
+			return action.prompt.startsWith("/hermes ") ? action.prompt : `/hermes ${action.prompt}`;
+		default:
+			return "";
+	}
 }
 
 function healthLabel({ needsAttention, hermesStatus, statusAvailable, supervisionAvailable }) {
@@ -124,8 +268,98 @@ function renderSection(title, lines) {
 	return [`## ${title}`, ...lines.map((line) => `- ${line}`)].join("\n");
 }
 
+function latestSafeSummary(snapshot) {
+	return (
+		snapshot.latestState?.safeSummary ??
+		snapshot.latestContextPack?.safeSummary ??
+		snapshot.latestAnchor?.safeSummary ??
+		snapshot.latestHermesRun?.safeSummary ??
+		snapshot.supervisionDto.reason ??
+		snapshot.inventorySummary ??
+		null
+	);
+}
+
+function safeSummaryForAction(action, snapshot) {
+	switch (action.kind) {
+		case "status":
+			return latestSafeSummary(snapshot);
+		case "list":
+			return snapshot.inventorySummary;
+		case "supervise":
+			return snapshot.supervisionDto.reason;
+		case "state":
+			return snapshot.latestState?.safeSummary ?? null;
+		case "inject":
+			return snapshot.latestContextPack?.safeSummary ?? null;
+		case "anchor":
+			return snapshot.latestAnchor?.safeSummary ?? null;
+		case "run-fake":
+			return snapshot.latestHermesRun?.safeSummary ?? null;
+		default:
+			return null;
+	}
+}
+
+function generatedIdForAction(action, snapshot) {
+	switch (action.kind) {
+		case "state":
+			return snapshot.latestState?.stateId ?? null;
+		case "inject":
+			return snapshot.latestContextPack?.contextPackId ?? null;
+		case "anchor":
+			return snapshot.latestAnchor?.anchorId ?? null;
+		case "run-fake":
+			return snapshot.latestHermesRun?.runId ?? snapshot.latestHermesRun?.eventId ?? null;
+		case "supervise":
+			return snapshot.supervisionDto.latestRunId ?? snapshot.supervisionDto.latestEventId ?? null;
+		default:
+			return null;
+	}
+}
+
+function actionNeedsAttention(action, snapshot) {
+	if (action.kind === "supervise" || action.kind === "run-fake") {
+		return snapshot.supervisionDto.needsAttention;
+	}
+	return snapshot.supervisionDto.needsAttention;
+}
+
+function actionRecommendedAction(snapshot) {
+	return snapshot.supervisionDto.recommendedAction;
+}
+
+function renderActionBlock(action, snapshot) {
+	const command = commandForAction(action);
+	const lines = [
+		`action executed: ${command}`,
+		`traceId: ${snapshot.traceId ?? "unknown"}`,
+	];
+	const generatedId = generatedIdForAction(action, snapshot);
+	lines.push(`id: ${generatedId ?? "n/a"}`);
+	const safeSummary = safeSummaryForAction(action, snapshot);
+	if (safeSummary) {
+		lines.push(`safeSummary: ${safeSummary}`);
+	}
+	if (typeof actionNeedsAttention(action, snapshot) === "boolean") {
+		lines.push(`needsAttention: ${actionNeedsAttention(action, snapshot) ? "yes" : "no"}`);
+	}
+	if (actionRecommendedAction(snapshot)) {
+		lines.push(`recommendedAction: ${actionRecommendedAction(snapshot)}`);
+	}
+	return renderSection(`Action: ${command}`, lines);
+}
+
 async function main() {
-	const flags = parseArgs(process.argv.slice(2));
+	const parsed = parseArgs(process.argv.slice(2));
+	if (parsed.help) {
+		process.stdout.write(`${buildUsage()}\n`);
+		return 0;
+	}
+	if (parsed.errors.length > 0) {
+		process.stderr.write(`${parsed.errors.join("\n")}\n\n${buildUsage()}\n`);
+		return 1;
+	}
 	if (!existsSync(piTestPath)) {
 		throw new Error(`Missing runner: ${piTestPath}`);
 	}
@@ -185,9 +419,9 @@ async function main() {
 		if (!line.trim()) {
 			return;
 		}
-		const parsed = parseJsonMaybe(line);
-		if (parsed?.type === "response" && parsed.id) {
-			responses.set(parsed.id, parsed);
+		const parsedLine = parseJsonMaybe(line);
+		if (parsedLine?.type === "response" && parsedLine.id) {
+			responses.set(parsedLine.id, parsedLine);
 		}
 	});
 	child.stdout.on("data", (chunk) => stdoutSplitter.push(chunk));
@@ -239,40 +473,21 @@ async function main() {
 		await waitFor(() => existsSync(join(rckRoot, relativePath)), label);
 	};
 
-	try {
-		await sendJson({ id: "1", type: "get_commands" });
-		const commandsResponse = await waitForResponse("1", "get_commands response");
-		if (!commandsResponse.success) {
-			throw new Error(`get_commands failed: ${JSON.stringify({ id: commandsResponse.id, success: commandsResponse.success, error: commandsResponse.error ?? null })}`);
-		}
-
-		const commandNames = new Set((commandsResponse.data?.commands ?? []).map((command) => command?.name));
-		for (const name of ["state", "rck", "hermes"]) {
-			if (!commandNames.has(name)) {
-				throw new Error(`Missing command: ${name}`);
+	const waitForLatestHermesEvent = async (previousEventId) => {
+		await waitFor(() => {
+			const events = loadJsonRecords(".pi/rck/events").map((record) => record.json);
+			const event = latestEvent(events, "HermesRunRecorded");
+			if (!event) {
+				return null;
 			}
-		}
-
-		if (flags.demo) {
-			cleanupArtifacts();
-			await runPrompt("2", "/state", "state");
-			await waitForFile("indexes/latest-state.json", "latest-state index");
-			await runPrompt("3", "/rck inject", "inject");
-			await waitForFile("indexes/latest-context-pack.json", "latest-context-pack index");
-			await runPrompt("4", "/rck anchor rufuschat-shell", "anchor");
-			await waitForFile("indexes/latest-anchor.json", "latest-anchor index");
-			await runPrompt("5", "/hermes inspect fake bridge", "hermes fake");
-			await runPrompt("6", "/rck supervise", "supervise");
-		} else {
-			await runPrompt("2", "/rck status", "status");
-			let nextPromptId = 3;
-			if (flags.list) {
-				await runPrompt(String(nextPromptId), "/rck list", "list");
-				nextPromptId += 1;
+			if (event.eventId === previousEventId) {
+				return null;
 			}
-			await runPrompt(String(nextPromptId), "/rck supervise", "supervise");
-		}
+			return event;
+		}, "latest Hermes run");
+	};
 
+	const captureSnapshot = () => {
 		const currentTrace = readRepoJsonMaybe(".pi/rck/indexes/current-trace.json") ?? { traceId: null };
 		const latestStateIndex = readRepoJsonMaybe(".pi/rck/indexes/latest-state.json");
 		const latestContextPackIndex = readRepoJsonMaybe(".pi/rck/indexes/latest-context-pack.json");
@@ -282,7 +497,6 @@ async function main() {
 		const latestAnchor = latestAnchorIndex?.currentAnchorPath ? readRepoJsonMaybe(latestAnchorIndex.currentAnchorPath) : null;
 		const events = loadJsonRecords(".pi/rck/events").map((record) => record.json);
 		const latestHermesRecordedEvent = latestEvent(events, "HermesRunRecorded");
-
 		const latestHermesRun = latestHermesRecordedEvent ? normalizeHermesRunResultDto(latestHermesRecordedEvent) : null;
 		const latestHermesForSupervision = latestHermesRecordedEvent
 			? {
@@ -335,57 +549,142 @@ async function main() {
 			latestHermesRun: latestHermesRecordedEvent,
 			generatedAt: new Date().toISOString(),
 		});
-
 		const health = healthLabel({
 			needsAttention: supervisionDto.needsAttention,
 			hermesStatus: latestHermesRun?.status ?? null,
 			statusAvailable: Boolean(statusDto.latestState || statusDto.latestContextPack || statusDto.latestAnchor),
 			supervisionAvailable: true,
 		});
-
 		const traceId = pickTraceId(statusDto.traceId, supervisionDto.traceId, inventoryDto.traceId);
-		const actions = flags.demo
-			? ["/state", "/rck inject", "/rck anchor rufuschat-shell", "/hermes inspect fake bridge", "/rck supervise"]
-			: ["/rck status", ...(flags.list ? ["/rck list"] : []), "/rck supervise", "--demo"];
+		const inventorySummary = `states=${inventoryDto.counts.states} contextPacks=${inventoryDto.counts.contextPacks} anchors=${inventoryDto.counts.anchors} events=${inventoryDto.counts.events} hermesRuns=${inventoryDto.counts.hermesRuns ?? 0}`;
+		return {
+			currentTrace,
+			latestState,
+			latestContextPack,
+			latestAnchor,
+			latestHermesRun,
+			supervisionDto,
+			statusDto,
+			inventoryDto,
+			health,
+			traceId,
+			inventorySummary,
+		};
+	};
+
+	const executeAction = async (action, promptId) => {
+		const command = commandForAction(action);
+		const beforeHermesEvents = loadJsonRecords(".pi/rck/events").map((record) => record.json);
+		const previousHermesEvent = latestEvent(beforeHermesEvents, "HermesRunRecorded")?.eventId ?? null;
+
+		if (action.kind === "state") {
+			await runPrompt(promptId, command, action.kind);
+			await waitForFile("indexes/latest-state.json", "latest-state index");
+		}
+		if (action.kind === "inject") {
+			await runPrompt(promptId, command, action.kind);
+			await waitForFile("indexes/latest-context-pack.json", "latest-context-pack index");
+		}
+		if (action.kind === "anchor") {
+			await runPrompt(promptId, command, action.kind);
+			await waitForFile("indexes/latest-anchor.json", "latest-anchor index");
+		}
+		if (action.kind === "run-fake") {
+			await runPrompt(promptId, command, action.kind);
+			await waitForLatestHermesEvent(previousHermesEvent);
+		}
+		if (action.kind === "status" || action.kind === "supervise" || action.kind === "list") {
+			await runPrompt(promptId, command, action.kind);
+		}
+		return captureSnapshot();
+	};
+
+	try {
+		await sendJson({ id: "1", type: "get_commands" });
+		const commandsResponse = await waitForResponse("1", "get_commands response");
+		if (!commandsResponse.success) {
+			throw new Error(`get_commands failed: ${JSON.stringify({ id: commandsResponse.id, success: commandsResponse.success, error: commandsResponse.error ?? null })}`);
+		}
+
+		const commandNames = new Set((commandsResponse.data?.commands ?? []).map((command) => command?.name));
+		for (const name of ["state", "rck", "hermes"]) {
+			if (!commandNames.has(name)) {
+				throw new Error(`Missing command: ${name}`);
+			}
+		}
+
+		if (parsed.demoRequested) {
+			cleanupArtifacts();
+		}
+
+		const actionSnapshots = [];
+		for (let index = 0; index < parsed.actions.length; index += 1) {
+			const action = parsed.actions[index];
+			const snapshot = await executeAction(action, String(index + 2));
+			actionSnapshots.push({ action, snapshot });
+		}
+
+		const finalSnapshot = actionSnapshots[actionSnapshots.length - 1]?.snapshot ?? captureSnapshot();
+		const modeLabel = parsed.demoRequested
+			? "demo"
+			: parsed.actions.length === 2 && parsed.actions[0]?.kind === "status" && parsed.actions[1]?.kind === "supervise"
+				? "read-only"
+				: parsed.actions.map((action) => action.kind).join(", ") || "read-only";
 		const renderLines = [
 			"## RufusChat Minimal Shell",
-			`- mode: ${flags.demo ? "demo" : "read-only"}`,
-			`- traceId: ${traceId ?? "unknown"}`,
-			`- health: ${health}`,
-			`- needsAttention: ${supervisionDto.needsAttention ? "yes" : "no"}`,
-			`- generatedAt: ${statusDto.generatedAt}`,
+			`- mode: ${modeLabel}`,
+			`- traceId: ${finalSnapshot.traceId ?? "unknown"}`,
+			`- health: ${finalSnapshot.health}`,
+			`- needsAttention: ${finalSnapshot.supervisionDto.needsAttention ? "yes" : "no"}`,
+			`- generatedAt: ${finalSnapshot.statusDto.generatedAt}`,
+		];
+
+		for (const { action, snapshot } of actionSnapshots) {
+			renderLines.push("", renderActionBlock(action, snapshot));
+		}
+
+		renderLines.push(
 			"",
 			renderSection("Session", [
-				`current trace: ${currentTrace.traceId ?? "unknown"}`,
-				`repo state: ${inventoryDto.counts.states} states / ${inventoryDto.counts.contextPacks} context packs / ${inventoryDto.counts.anchors} anchors / ${inventoryDto.counts.events} events`,
+				`current trace: ${finalSnapshot.currentTrace.traceId ?? "unknown"}`,
+				`repo state: ${finalSnapshot.inventoryDto.counts.states} states / ${finalSnapshot.inventoryDto.counts.contextPacks} context packs / ${finalSnapshot.inventoryDto.counts.anchors} anchors / ${finalSnapshot.inventoryDto.counts.events} events`,
 			]),
 			renderSection("RCK Operational Panel", [
-				`latest state: ${statusDto.latestState ? `${statusDto.latestState.stateId} @ ${statusDto.latestState.updatedAt}` : "missing"}`,
-				`latest context pack: ${statusDto.latestContextPack ? `${statusDto.latestContextPack.contextPackId} @ ${statusDto.latestContextPack.updatedAt}` : "missing"}`,
-				`latest anchor: ${statusDto.latestAnchor ? `${statusDto.latestAnchor.anchorId} @ ${statusDto.latestAnchor.updatedAt}` : "missing"}`,
-				`latest Hermes run: ${latestHermesRun ? `${latestHermesRun.status} (${latestHermesRun.runId})` : "missing"}`,
+				`latest state: ${finalSnapshot.statusDto.latestState ? `${finalSnapshot.statusDto.latestState.stateId} @ ${finalSnapshot.statusDto.latestState.updatedAt}` : "missing"}`,
+				`latest context pack: ${finalSnapshot.statusDto.latestContextPack ? `${finalSnapshot.statusDto.latestContextPack.contextPackId} @ ${finalSnapshot.statusDto.latestContextPack.updatedAt}` : "missing"}`,
+				`latest anchor: ${finalSnapshot.statusDto.latestAnchor ? `${finalSnapshot.statusDto.latestAnchor.anchorId} @ ${finalSnapshot.statusDto.latestAnchor.updatedAt}` : "missing"}`,
+				`latest Hermes run: ${finalSnapshot.latestHermesRun ? `${finalSnapshot.latestHermesRun.status} (${finalSnapshot.latestHermesRun.runId})` : "missing"}`,
 			]),
 			renderSection("Conversation Area", [
-				`state: ${statusDto.latestState?.safeSummary ?? "No state summary available"}`,
-				`context pack: ${statusDto.latestContextPack?.safeSummary ?? "No context pack summary available"}`,
-				`anchor: ${statusDto.latestAnchor?.safeSummary ?? "No anchor summary available"}`,
-				`Hermes: ${latestHermesRun?.safeSummary ?? "No Hermes summary available"}`,
+				`state: ${finalSnapshot.statusDto.latestState?.safeSummary ?? "No state summary available"}`,
+				`context pack: ${finalSnapshot.statusDto.latestContextPack?.safeSummary ?? "No context pack summary available"}`,
+				`anchor: ${finalSnapshot.statusDto.latestAnchor?.safeSummary ?? "No anchor summary available"}`,
+				`Hermes: ${finalSnapshot.latestHermesRun?.safeSummary ?? "No Hermes summary available"}`,
 			]),
-			renderSection("Actions Bar", actions),
+			renderSection("Actions Bar", [
+				"/rck status",
+				"/rck supervise",
+				"/rck list",
+				"/state",
+				"/rck inject",
+				"/rck anchor <label>",
+				"/hermes <prompt>",
+				"--demo",
+			]),
 			renderSection("Supervision / Attention", [
-				`level: ${supervisionDto.level}`,
-				`needsAttention: ${supervisionDto.needsAttention ? "yes" : "no"}`,
-				`reason: ${supervisionDto.reason}`,
-				`recommendedAction: ${supervisionDto.recommendedAction}`,
+				`level: ${finalSnapshot.supervisionDto.level}`,
+				`needsAttention: ${finalSnapshot.supervisionDto.needsAttention ? "yes" : "no"}`,
+				`reason: ${finalSnapshot.supervisionDto.reason}`,
+				`recommendedAction: ${finalSnapshot.supervisionDto.recommendedAction}`,
 			]),
 			renderSection("Inventory", [
-				`states=${inventoryDto.counts.states}`,
-				`contextPacks=${inventoryDto.counts.contextPacks}`,
-				`anchors=${inventoryDto.counts.anchors}`,
-				`events=${inventoryDto.counts.events}`,
-				`hermesRuns=${inventoryDto.counts.hermesRuns ?? 0}`,
+				`states=${finalSnapshot.inventoryDto.counts.states}`,
+				`contextPacks=${finalSnapshot.inventoryDto.counts.contextPacks}`,
+				`anchors=${finalSnapshot.inventoryDto.counts.anchors}`,
+				`events=${finalSnapshot.inventoryDto.counts.events}`,
+				`hermesRuns=${finalSnapshot.inventoryDto.counts.hermesRuns ?? 0}`,
 			]),
-		];
+		);
 
 		process.stdout.write(`${renderLines.join("\n")}\n`);
 		return 0;
@@ -396,7 +695,7 @@ async function main() {
 	} finally {
 		clearTimeout(timeout);
 		await stopChild();
-		if (flags.demo) {
+		if (parsed.demoRequested) {
 			cleanupArtifacts();
 		}
 	}

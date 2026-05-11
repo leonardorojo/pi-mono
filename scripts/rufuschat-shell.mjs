@@ -134,7 +134,7 @@ function safeEvidenceRef(kind, refId, path) {
 		kind,
 		refId,
 		path,
-		isRaw: true,
+		isRaw: false,
 		displayPolicy: "reference-only",
 	};
 }
@@ -282,6 +282,81 @@ function demoSuggestions() {
 	return ["--help", "--status"];
 }
 
+function buildDemoActions() {
+	return [
+		{ name: "state", kind: "mutating", flag: "--state", definition: ACTION_DEFINITION_BY_NAME.get("state") },
+		{ name: "inject", kind: "mutating", flag: "--inject", definition: ACTION_DEFINITION_BY_NAME.get("inject") },
+		{ name: "anchor", kind: "mutating", flag: "--anchor", value: "rufuschat-shell", definition: ACTION_DEFINITION_BY_NAME.get("anchor") },
+		{ name: "run-fake", kind: "mutating", flag: "--run-fake", value: "inspect fake bridge", definition: ACTION_DEFINITION_BY_NAME.get("run-fake") },
+		{ name: "supervise", kind: "read-only", flag: "--supervise", definition: ACTION_DEFINITION_BY_NAME.get("supervise") },
+	];
+}
+
+function interactiveCommandLabel(definition) {
+	return definition.requiresValue ? `${definition.name} ${definition.valueLabel}` : definition.name;
+}
+
+function buildInteractiveHelpSections() {
+	const readOnly = ACTION_DEFINITIONS.filter((definition) => definition.kind === "read-only");
+	const mutating = ACTION_DEFINITIONS.filter((definition) => definition.kind === "mutating");
+	return [
+		"Interactive commands:",
+		"  help",
+		"  status",
+		"  supervise",
+		"  list",
+		"  state",
+		"  inject",
+		"  anchor <label>",
+		"  run-fake <prompt>",
+		"  demo",
+		"  exit",
+		"  quit",
+		"",
+		"Read-only commands:",
+		...readOnly.map((definition) => `  ${interactiveCommandLabel(definition).padEnd(24)} ${definition.description}`),
+		"",
+		"Mutating commands:",
+		...mutating.map((definition) => `  ${interactiveCommandLabel(definition).padEnd(24)} ${definition.description}`),
+		"",
+		"Safety:",
+		"  - Mutating commands require explicit confirmation.",
+		"  - Default confirmation is No.",
+	].join("\n");
+}
+
+function parseInteractiveCommand(input) {
+	const trimmed = input.trim();
+	if (!trimmed) {
+		return { type: "empty" };
+	}
+	const [rawCommand, ...rest] = trimmed.split(/\s+/);
+	const command = rawCommand.toLowerCase();
+	const value = rest.join(" ").trim();
+	if (command === "exit" || command === "quit") {
+		return { type: "exit" };
+	}
+	if (command === "help") {
+		return { type: "help" };
+	}
+	const definition = ACTION_DEFINITION_BY_NAME.get(command);
+	if (!definition) {
+		return { type: "unknown" };
+	}
+	if (definition.requiresValue && !value) {
+		return { type: "missing-value", command };
+	}
+	if (command === "demo") {
+		return { type: "demo" };
+	}
+	return { type: "action", action: { name: definition.name, kind: definition.kind, flag: definition.flag, value: definition.requiresValue ? value : undefined, definition } };
+}
+
+function isPositiveConfirmation(input) {
+	const normalized = input.trim().toLowerCase();
+	return normalized === "y" || normalized === "yes";
+}
+
 const ACTION_DEFINITIONS = [
 	{
 		name: "default",
@@ -384,6 +459,7 @@ function generatedHelpSections() {
 		"Usage:",
 		"  node scripts/rufuschat-shell.mjs",
 		"  node scripts/rufuschat-shell.mjs --help",
+		"  node scripts/rufuschat-shell.mjs --chat",
 		"  node scripts/rufuschat-shell.mjs --session [name]",
 		"  node scripts/rufuschat-shell.mjs --status",
 		"  node scripts/rufuschat-shell.mjs --supervise",
@@ -461,6 +537,7 @@ function parseArgs(argv) {
 	const actions = [];
 	const errors = [];
 	let help = false;
+	let chat = false;
 	let demoRequested = false;
 	let sessionEnabled = false;
 	let sessionName = null;
@@ -478,6 +555,10 @@ function parseArgs(argv) {
 				sessionName = maybeName;
 				index += 1;
 			}
+			continue;
+		}
+		if (arg === "--chat") {
+			chat = true;
 			continue;
 		}
 		const definition = ACTION_DEFINITION_BY_FLAG.get(arg);
@@ -508,7 +589,11 @@ function parseArgs(argv) {
 	}
 
 	if (help) {
-		return { help: true, actions: [], errors: [], demoRequested: false, sessionEnabled, sessionName };
+		return { help: true, chat: false, actions: [], errors: [], demoRequested: false, sessionEnabled, sessionName };
+	}
+
+	if (chat && actions.length > 0) {
+		errors.push("--chat cannot be combined with action flags.");
 	}
 
 	if (actions.some((action) => action.name === "demo") && actions.length > 1) {
@@ -516,18 +601,15 @@ function parseArgs(argv) {
 	}
 
 	if (actions.some((action) => action.name === "demo")) {
-		return {
-			help: false,
-			actions: [
-				{ name: "state", kind: "mutating", flag: "--state", definition: ACTION_DEFINITION_BY_NAME.get("state") },
-				{ name: "inject", kind: "mutating", flag: "--inject", definition: ACTION_DEFINITION_BY_NAME.get("inject") },
-				{ name: "anchor", kind: "mutating", flag: "--anchor", value: "rufuschat-shell", definition: ACTION_DEFINITION_BY_NAME.get("anchor") },
-				{ name: "run-fake", kind: "mutating", flag: "--run-fake", value: "inspect fake bridge", definition: ACTION_DEFINITION_BY_NAME.get("run-fake") },
-				{ name: "supervise", kind: "read-only", flag: "--supervise", definition: ACTION_DEFINITION_BY_NAME.get("supervise") },
-			],
-			errors,
-			demoRequested,
-			sessionEnabled,
+			return {
+				help: false,
+				chat,
+				actions: [
+					...buildDemoActions(),
+				],
+				errors,
+				demoRequested,
+				sessionEnabled,
 			sessionName,
 		};
 	}
@@ -539,7 +621,7 @@ function parseArgs(argv) {
 		);
 	}
 
-	return { help: false, actions, errors, demoRequested, sessionEnabled, sessionName };
+	return { help: false, chat, actions, errors, demoRequested, sessionEnabled, sessionName };
 }
 
 function commandForAction(action) {
@@ -687,6 +769,10 @@ async function main() {
 	}
 	if (parsed.errors.length > 0) {
 		process.stderr.write(`${parsed.errors.join("\n")}\n\n${buildUsage()}\n`);
+		return 1;
+	}
+	if (parsed.chat && !process.stdin.isTTY) {
+		process.stderr.write("--chat requires an interactive TTY. Use flags for non-interactive automation.\n");
 		return 1;
 	}
 	const sessionContext = parsed.sessionEnabled ? createSessionTranscriptContext(parsed.sessionName) : null;
@@ -929,6 +1015,146 @@ async function main() {
 		return captureSnapshot();
 	};
 
+	const runInteractiveShell = async () => {
+		let promptCounter = 2;
+		let closed = false;
+		let inputBuffer = "";
+		let inputEnded = false;
+		const pendingLines = [];
+		const pendingResolvers = [];
+		const settleLine = (line) => {
+			const resolver = pendingResolvers.shift();
+			if (resolver) {
+				resolver(line);
+				return;
+			}
+			pendingLines.push(line);
+		};
+		const onData = (chunk) => {
+			inputBuffer += chunk;
+			for (;;) {
+				const index = inputBuffer.indexOf("\n");
+				if (index === -1) {
+					break;
+				}
+				const line = inputBuffer.slice(0, index).replace(/\r$/, "");
+				inputBuffer = inputBuffer.slice(index + 1);
+				settleLine(line);
+			}
+		};
+		const onEnd = () => {
+			if (inputBuffer.length > 0) {
+				settleLine(inputBuffer.replace(/\r$/, ""));
+				inputBuffer = "";
+			}
+			inputEnded = true;
+			if (pendingLines.length === 0) {
+				while (pendingResolvers.length > 0) {
+					pendingResolvers.shift()?.(null);
+				}
+			}
+		};
+		const promptLine = async (prompt) => {
+			process.stdout.write(prompt);
+			if (pendingLines.length > 0) {
+				return pendingLines.shift();
+			}
+			if (closed || inputEnded) {
+				closed = true;
+				return null;
+			}
+			return await new Promise((resolve) => {
+				pendingResolvers.push(resolve);
+			});
+		};
+		const askConfirmation = async (name) => {
+			const answer = await promptLine(`Mutating action "${name}". Continue? [y/N] `);
+			return answer !== null && isPositiveConfirmation(answer);
+		};
+
+		process.stdin.setEncoding("utf8");
+		process.stdin.on("data", onData);
+		process.stdin.on("end", onEnd);
+		process.stdin.resume();
+		process.on("SIGINT", () => {
+			closed = true;
+			process.stdin.pause();
+		});
+
+		process.stdout.write('RufusChat interactive shell\nType "help" for commands. Type "exit" to quit.\n');
+
+		try {
+			while (!closed) {
+				const line = await promptLine("rufuschat> ");
+				if (line === null) {
+					break;
+				}
+
+				const parsedCommand = parseInteractiveCommand(line);
+				if (parsedCommand.type === "empty") {
+					continue;
+				}
+				if (parsedCommand.type === "help") {
+					process.stdout.write(`${buildInteractiveHelpSections()}\n`);
+					continue;
+				}
+				if (parsedCommand.type === "exit") {
+					closed = true;
+					break;
+				}
+				if (parsedCommand.type === "unknown") {
+					process.stdout.write('Unknown command. Type "help" for commands.\n');
+					continue;
+				}
+				if (parsedCommand.type === "missing-value") {
+					if (parsedCommand.command === "anchor") {
+						process.stdout.write("Missing value for anchor. Usage: anchor <label>\n");
+					} else if (parsedCommand.command === "run-fake") {
+						process.stdout.write("Missing value for run-fake. Usage: run-fake <prompt>\n");
+					}
+					continue;
+				}
+				if (parsedCommand.type === "demo") {
+					const confirmed = await askConfirmation("demo");
+					if (!confirmed) {
+						process.stdout.write("Cancelled.\n");
+						continue;
+					}
+					cleanupArtifacts();
+					for (const action of buildDemoActions()) {
+						const snapshot = await executeAction(action, String(promptCounter));
+						promptCounter += 1;
+						writeSessionTranscriptLine(sessionContext, action, snapshot);
+						process.stdout.write(`${renderActionBlock(action, snapshot)}\n`);
+					}
+					continue;
+				}
+
+				const action = parsedCommand.action;
+				if (action.kind === "mutating") {
+					const confirmed = await askConfirmation(action.name);
+					if (!confirmed) {
+						process.stdout.write("Cancelled.\n");
+						continue;
+					}
+				}
+				const snapshot = await executeAction(action, String(promptCounter));
+				promptCounter += 1;
+				writeSessionTranscriptLine(sessionContext, action, snapshot);
+				process.stdout.write(`${renderActionBlock(action, snapshot)}\n`);
+			}
+
+			if (sessionContext) {
+				process.stdout.write(`Transcript: ${sessionContext.path}\n`);
+			}
+			return 0;
+		} finally {
+			process.stdin.off("data", onData);
+			process.stdin.off("end", onEnd);
+			process.stdin.pause();
+		}
+	};
+
 	try {
 		await sendJson({ id: "1", type: "get_commands" });
 		const commandsResponse = await waitForResponse("1", "get_commands response");
@@ -945,6 +1171,10 @@ async function main() {
 
 		if (parsed.demoRequested) {
 			cleanupArtifacts();
+		}
+
+		if (parsed.chat) {
+			return await runInteractiveShell();
 		}
 
 		const actionSnapshots = [];

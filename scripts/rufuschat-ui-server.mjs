@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +11,9 @@ const repoRoot = resolve(__dirname, "..");
 const rckRoot = join(repoRoot, ".pi", "rck");
 const defaultPort = Number.parseInt(process.env.RUFUSCHAT_UI_PORT ?? "8787", 10);
 const host = process.env.RUFUSCHAT_UI_HOST ?? "127.0.0.1";
+const piTestPath = join(repoRoot, "pi-test.sh");
+const rpcArgs = ["--offline", "--mode", "rpc", "--no-tools", "--no-extensions", "--extension", ".pi/extensions/rck-bridge/index.ts"];
+const actionTimeoutMs = Number.parseInt(process.env.RUFUSCHAT_UI_ACTION_TIMEOUT_MS ?? "45000", 10);
 
 function safeReadJson(filePath) {
 	try {
@@ -33,6 +37,82 @@ function loadJsonRecords(relativeDir) {
 			json: safeReadJson(join(dirPath, file)),
 		}))
 		.filter((record) => record.json !== undefined);
+}
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createLineSplitter(onLine) {
+	let buffer = "";
+	return {
+		push(chunk) {
+			buffer += chunk;
+			for (;;) {
+				const index = buffer.indexOf("\n");
+				if (index === -1) {
+					return;
+				}
+				const line = buffer.slice(0, index).replace(/\r$/, "");
+				buffer = buffer.slice(index + 1);
+				onLine(line);
+			}
+		},
+		flush() {
+			const remainder = buffer.replace(/\r$/, "");
+			buffer = "";
+			if (remainder) {
+				onLine(remainder);
+			}
+		},
+	};
+}
+
+function parseJsonMaybe(line) {
+	try {
+		return JSON.parse(line);
+	} catch {
+		return null;
+	}
+}
+
+function latestEvent(events, eventType) {
+	for (let index = events.length - 1; index >= 0; index -= 1) {
+		if (events[index]?.eventType === eventType) {
+			return events[index];
+		}
+	}
+	return undefined;
+}
+
+async function waitForCondition(predicate, label, deadline) {
+	while (Date.now() < deadline) {
+		const value = predicate();
+		if (value) {
+			return value;
+		}
+		await sleep(50);
+	}
+	throw new Error(`Timed out waiting for ${label}`);
+}
+
+function stopChildProcess(child) {
+	try {
+		child.stdin.end();
+	} catch {
+		// ignore
+	}
+	try {
+		if (child.pid) {
+			try {
+				process.kill(-child.pid, "SIGTERM");
+			} catch {
+				child.kill("SIGTERM");
+			}
+		}
+	} catch {
+		// ignore
+	}
 }
 
 function pickTraceId(...values) {
@@ -487,10 +567,10 @@ footer { padding: 0 24px 20px; color: var(--muted); }
 <main>
   <div class="toolbar">
     <button id="refresh">Refresh</button>
-    <button disabled title="Deferred to 8B">Create State</button>
-    <button disabled title="Deferred to 8B">Inject Context</button>
-    <button disabled title="Deferred to 8B">Create Anchor</button>
-    <button disabled title="Deferred to 8B">Run Hermes Fake</button>
+    <button id="create-state">Create State</button>
+    <button id="inject-context">Inject Context</button>
+    <button id="create-anchor">Create Anchor</button>
+    <button id="run-hermes-fake">Run Hermes Fake</button>
   </div>
 
   <div class="notice" id="status-message">${messages[0]}</div>
@@ -557,10 +637,27 @@ const endpoints = {
   status: '/api/status',
   supervision: '/api/supervision',
   inventory: '/api/inventory',
+  state: '/api/state',
+  inject: '/api/inject',
+  anchor: '/api/anchor',
+  hermesFake: '/api/hermes/fake',
 };
+const flashKey = 'rufuschat-ui-flash';
 
 function setStatusMessage(text) {
   document.getElementById('status-message').textContent = text;
+}
+
+function setFlash(text) {
+  sessionStorage.setItem(flashKey, text);
+}
+
+function takeFlash() {
+  const text = sessionStorage.getItem(flashKey);
+  if (text) {
+    sessionStorage.removeItem(flashKey);
+  }
+  return text;
 }
 
 async function fetchJson(url) {
@@ -569,6 +666,44 @@ async function fetchJson(url) {
     throw new Error(url + ' failed with ' + response.status);
   }
   return response.json();
+}
+
+async function postJson(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(data.message ?? data.error ?? (url + ' failed with ' + response.status));
+  }
+  return data;
+}
+
+function reloadWithFlash(message) {
+  setFlash(message);
+  location.reload();
+}
+
+function requirePrompt(message) {
+  const value = window.prompt(message);
+  if (value === null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function applyFlash() {
+  const flash = takeFlash();
+  if (flash) {
+    setStatusMessage(flash);
+  }
 }
 
 async function refresh() {
@@ -586,59 +721,329 @@ async function refresh() {
   setStatusMessage('Supervision: ' + supervision.level + ' — ' + supervision.reason);
 }
 
+async function doState() {
+  if (!window.confirm('Create State will create RCK artifacts/events. Continue?')) {
+    setStatusMessage('Create State cancelled.');
+    return;
+  }
+  const response = await postJson(endpoints.state, {});
+  reloadWithFlash(response.message ?? 'Create State completed.');
+}
+
+async function doInject() {
+  if (!window.confirm('Inject Context will create a context pack. Continue?')) {
+    setStatusMessage('Inject Context cancelled.');
+    return;
+  }
+  const response = await postJson(endpoints.inject, {});
+  reloadWithFlash(response.message ?? 'Inject Context completed.');
+}
+
+async function doAnchor() {
+  const label = requirePrompt('Create Anchor label:');
+  if (!label) {
+    setStatusMessage('Create Anchor cancelled: label is required.');
+    return;
+  }
+  if (!window.confirm('Create Anchor will create an anchor. Continue?')) {
+    setStatusMessage('Create Anchor cancelled.');
+    return;
+  }
+  const response = await postJson(endpoints.anchor, { label });
+  reloadWithFlash(response.message ?? ('Create Anchor completed: ' + label));
+}
+
+async function doHermesFake() {
+  const promptText = requirePrompt('Run Hermes Fake prompt:');
+  if (!promptText) {
+    setStatusMessage('Run Hermes Fake cancelled: prompt is required.');
+    return;
+  }
+  if (!window.confirm('Run Hermes Fake will record a Hermes fake run. Continue?')) {
+    setStatusMessage('Run Hermes Fake cancelled.');
+    return;
+  }
+  const response = await postJson(endpoints.hermesFake, { prompt: promptText });
+  reloadWithFlash(response.message ?? 'Run Hermes Fake completed.');
+}
+
 document.getElementById('refresh').addEventListener('click', () => {
-  refresh().catch((error) => setStatusMessage(error.message));
+  location.reload();
 });
-refresh().catch((error) => setStatusMessage(error.message));
+document.getElementById('create-state').addEventListener('click', () => {
+  doState().catch((error) => setStatusMessage(error.message));
+});
+document.getElementById('inject-context').addEventListener('click', () => {
+  doInject().catch((error) => setStatusMessage(error.message));
+});
+document.getElementById('create-anchor').addEventListener('click', () => {
+  doAnchor().catch((error) => setStatusMessage(error.message));
+});
+document.getElementById('run-hermes-fake').addEventListener('click', () => {
+  doHermesFake().catch((error) => setStatusMessage(error.message));
+});
+applyFlash();
 </script>
 </body>
 </html>`;
 }
 
-function handleRequest(req, res) {
-	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${defaultPort}`}`);
-	const snapshot = buildSnapshot();
-
-	if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-		const body = renderHtml(snapshot);
-		res.writeHead(200, {
-			"content-type": "text/html; charset=utf-8",
-			"cache-control": "no-store",
-			"content-length": Buffer.byteLength(body, "utf8"),
-		});
-		res.end(body);
-		return;
-	}
-
-	if (req.method === "GET" && url.pathname === "/health") {
-		jsonResponse(res, 200, snapshot.health);
-		return;
-	}
-
-	if (req.method === "GET" && url.pathname === "/api/status") {
-		jsonResponse(res, 200, snapshot.statusDto);
-		return;
-	}
-
-	if (req.method === "GET" && url.pathname === "/api/supervision") {
-		jsonResponse(res, 200, snapshot.supervisionDto);
-		return;
-	}
-
-	if (req.method === "GET" && url.pathname === "/api/inventory") {
-		jsonResponse(res, 200, snapshot.inventoryDto);
-		return;
-	}
-
-	jsonResponse(res, 404, {
-		error: "not_found",
-		path: url.pathname,
-	});
+function buildActionResponse(snapshot, actionName, command, result, message) {
+	return {
+		ok: true,
+		action: {
+			name: actionName,
+			command,
+		},
+		message,
+		traceId: snapshot.traceId,
+		health: snapshot.health,
+		statusDto: snapshot.statusDto,
+		supervisionDto: snapshot.supervisionDto,
+		inventoryDto: snapshot.inventoryDto,
+		result,
+	};
 }
 
-const server = createServer(handleRequest);
+async function runRpcAction(command, actionName, waitForKind) {
+	const child = spawn(piTestPath, rpcArgs, {
+		cwd: repoRoot,
+		env: process.env,
+		stdio: ["pipe", "pipe", "pipe"],
+		detached: true,
+	});
+	const responses = new Map();
+	const deadline = Date.now() + actionTimeoutMs;
+	let childExit = null;
+
+	child.stdout.setEncoding("utf8");
+	const stdoutSplitter = createLineSplitter((line) => {
+		if (!line.trim()) {
+			return;
+		}
+		const parsed = parseJsonMaybe(line);
+		if (parsed?.type === "response" && parsed.id) {
+			responses.set(parsed.id, parsed);
+		}
+	});
+	child.stdout.on("data", (chunk) => stdoutSplitter.push(chunk));
+	child.stdout.once("end", () => stdoutSplitter.flush());
+	child.stderr.resume();
+	child.once("close", (code, signal) => {
+		childExit = { code, signal };
+	});
+
+	const sendJson = async (payload) => {
+		const line = `${JSON.stringify(payload)}
+`;
+		if (!child.stdin.write(line)) {
+			await new Promise((resolve) => child.stdin.once("drain", resolve));
+		}
+	};
+
+	const waitForResponse = async (id, label) => {
+		return await waitForCondition(() => {
+			const response = responses.get(id);
+			if (response) {
+				return response;
+			}
+			if (childExit && childExit.code !== 0) {
+				throw new Error(`rpc child exited early while waiting for ${label}: ${JSON.stringify(childExit)}`);
+			}
+			return undefined;
+		}, label, deadline);
+	};
+
+	const stop = async () => {
+		stopChildProcess(child);
+		await sleep(200);
+		try {
+			if (child.pid) {
+				try {
+					process.kill(-child.pid, "SIGKILL");
+				} catch {
+					child.kill("SIGKILL");
+				}
+			}
+		} catch {
+			// ignore
+		}
+	};
+
+	const waitForLatestHermesEventId = async (previousEventId) => {
+		await waitForCondition(() => {
+			const records = loadJsonRecords(".pi/rck/events").map((record) => record.json);
+			const latest = latestEvent(records, "HermesRunRecorded");
+			if (!latest?.eventId || latest.eventId === previousEventId) {
+				return undefined;
+			}
+			return latest.eventId;
+		}, "HermesRunRecorded event", deadline);
+	};
+
+	try {
+		await sendJson({ id: "1", type: "get_commands" });
+		const commandsResponse = await waitForResponse("1", "get_commands response");
+		if (!commandsResponse.success) {
+			throw new Error(`get_commands failed: ${JSON.stringify({ id: commandsResponse.id, success: commandsResponse.success, error: commandsResponse.error ?? null })}`);
+		}
+		const commandNames = new Set((commandsResponse.data?.commands ?? []).map((commandRecord) => commandRecord?.name));
+		for (const name of ["state", "rck", "hermes"]) {
+			if (!commandNames.has(name)) {
+				throw new Error(`Missing command: ${name}`);
+			}
+		}
+
+		const beforeHermesEvents = loadJsonRecords(".pi/rck/events").map((record) => record.json);
+		const previousHermesEventId = latestEvent(beforeHermesEvents, "HermesRunRecorded")?.eventId ?? null;
+
+		await sendJson({ id: "2", type: "prompt", message: command });
+		const response = await waitForResponse("2", `${actionName} response`);
+		if (!response.success) {
+			throw new Error(`${actionName} failed: ${JSON.stringify({ id: response.id, success: response.success, error: response.error ?? null })}`);
+		}
+
+		if (waitForKind === "state") {
+			await waitForCondition(() => existsSync(join(rckRoot, "indexes", "latest-state.json")), "latest-state index", deadline);
+		} else if (waitForKind === "inject") {
+			await waitForCondition(() => existsSync(join(rckRoot, "indexes", "latest-context-pack.json")), "latest-context-pack index", deadline);
+		} else if (waitForKind === "anchor") {
+			await waitForCondition(() => existsSync(join(rckRoot, "indexes", "latest-anchor.json")), "latest-anchor index", deadline);
+		} else if (waitForKind === "hermes-fake") {
+			await waitForLatestHermesEventId(previousHermesEventId);
+		}
+
+		return buildSnapshot();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`UI action ${actionName} failed: ${message}`);
+	} finally {
+		await stop();
+	}
+}
+
+async function readJsonBody(req) {
+	const chunks = [];
+	for await (const chunk of req) {
+		chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+	}
+	const raw = chunks.join("").trim();
+	if (!raw) {
+		return {};
+	}
+	return JSON.parse(raw);
+}
+
+async function handleRequest(req, res) {
+	try {
+		const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${defaultPort}`}`);
+
+		if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+			const snapshot = buildSnapshot();
+			const body = renderHtml(snapshot);
+			res.writeHead(200, {
+				"content-type": "text/html; charset=utf-8",
+				"cache-control": "no-store",
+				"content-length": Buffer.byteLength(body, "utf8"),
+			});
+			res.end(body);
+			return;
+		}
+
+		if (req.method === "GET" && url.pathname === "/health") {
+			jsonResponse(res, 200, buildSnapshot().health);
+			return;
+		}
+
+		if (req.method === "GET" && url.pathname === "/api/status") {
+			jsonResponse(res, 200, buildSnapshot().statusDto);
+			return;
+		}
+
+		if (req.method === "GET" && url.pathname === "/api/supervision") {
+			jsonResponse(res, 200, buildSnapshot().supervisionDto);
+			return;
+		}
+
+		if (req.method === "GET" && url.pathname === "/api/inventory") {
+			jsonResponse(res, 200, buildSnapshot().inventoryDto);
+			return;
+		}
+
+		if (req.method === "POST" && url.pathname === "/api/state") {
+			const snapshot = await runRpcAction("/state", "state", "state");
+			jsonResponse(res, 200, buildActionResponse(snapshot, "state", "/state", snapshot.statusDto.latestState, "Create State completed."));
+			return;
+		}
+
+		if (req.method === "POST" && url.pathname === "/api/inject") {
+			const snapshot = await runRpcAction("/rck inject", "inject", "inject");
+			jsonResponse(res, 200, buildActionResponse(snapshot, "inject", "/rck inject", snapshot.statusDto.latestContextPack, "Inject Context completed."));
+			return;
+		}
+
+		if (req.method === "POST" && url.pathname === "/api/anchor") {
+			let body;
+			try {
+				body = await readJsonBody(req);
+			} catch {
+				jsonResponse(res, 400, { ok: false, error: "invalid_json", message: "Anchor request body must be valid JSON." });
+				return;
+			}
+			const label = typeof body?.label === "string" ? body.label.trim() : "";
+			if (!label) {
+				jsonResponse(res, 400, { ok: false, error: "missing_label", message: "Anchor label is required." });
+				return;
+			}
+			const command = `/rck anchor ${label}`;
+			const snapshot = await runRpcAction(command, "anchor", "anchor");
+			jsonResponse(res, 200, buildActionResponse(snapshot, "anchor", command, snapshot.statusDto.latestAnchor ? { ...snapshot.statusDto.latestAnchor, label } : { label }, "Create Anchor completed."));
+			return;
+		}
+
+		if (req.method === "POST" && url.pathname === "/api/hermes/fake") {
+			let body;
+			try {
+				body = await readJsonBody(req);
+			} catch {
+				jsonResponse(res, 400, { ok: false, error: "invalid_json", message: "Hermes fake request body must be valid JSON." });
+				return;
+			}
+			const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+			if (!prompt) {
+				jsonResponse(res, 400, { ok: false, error: "missing_prompt", message: "Hermes fake prompt is required." });
+				return;
+			}
+			const command = prompt.startsWith("/hermes ") ? prompt : `/hermes ${prompt}`;
+			const snapshot = await runRpcAction(command, "hermes-fake", "hermes-fake");
+			jsonResponse(res, 200, buildActionResponse(snapshot, "hermes-fake", command, snapshot.statusDto.latestHermesRun, "Run Hermes Fake completed."));
+			return;
+		}
+
+		jsonResponse(res, 404, {
+			error: "not_found",
+			path: url.pathname,
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (!res.headersSent) {
+			jsonResponse(res, 500, {
+				ok: false,
+				error: "internal_error",
+				message,
+			});
+			return;
+		}
+		res.destroy(error instanceof Error ? error : undefined);
+	}
+}
+
+const server = createServer((req, res) => {
+	void handleRequest(req, res);
+});
 server.listen(defaultPort, host, () => {
-	process.stdout.write(`RufusChat UI server listening at http://${host}:${defaultPort}\n`);
+	process.stdout.write(`RufusChat UI server listening at http://${host}:${defaultPort}
+`);
 });
 
 process.on("SIGINT", () => {

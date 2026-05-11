@@ -478,11 +478,21 @@ function jsonResponse(res, statusCode, payload) {
 	res.end(body);
 }
 
+function escapeHtml(value) {
+	return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		'"': "&quot;",
+		"'": "&#39;",
+	}[character]));
+}
+
 function renderValue(value, fallback = "—") {
 	if (value === null || value === undefined || value === "") {
 		return fallback;
 	}
-	return String(value);
+	return escapeHtml(value);
 }
 
 function renderBadge(level) {
@@ -490,14 +500,14 @@ function renderBadge(level) {
 }
 
 function renderKeyValue(label, value) {
-	return `<div class="kv"><div class="k">${label}</div><div class="v">${renderValue(value)}</div></div>`;
+	return `<div class="kv"><div class="k">${escapeHtml(label)}</div><div class="v">${renderValue(value)}</div></div>`;
 }
 
 function renderList(items) {
 	if (!items.length) {
 		return "<div class=\"empty\">No items.</div>";
 	}
-	return `<ul class="list">${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
+	return `<ul class="list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
 function renderHtml(snapshot) {
@@ -526,14 +536,26 @@ header { padding: 20px 24px 12px; border-bottom: 1px solid var(--border); backgr
 h1 { margin: 0 0 8px; font-size: 20px; }
 .sub { color: var(--muted); display: flex; flex-wrap: wrap; gap: 12px; }
 main { padding: 20px 24px 28px; display: grid; gap: 16px; }
-.toolbar, .grid, .messages { display: grid; gap: 12px; }
+.toolbar, .grid, .messages, .activity-list { display: grid; gap: 12px; }
 .toolbar { grid-template-columns: repeat(auto-fit, minmax(150px, max-content)); }
 button { border: 1px solid var(--border); background: linear-gradient(180deg, #1a2550, #111a36); color: var(--text); padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 600; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 .grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .card { border: 1px solid var(--border); background: linear-gradient(180deg, rgba(18, 26, 51, 0.96), rgba(12, 18, 39, 0.96)); border-radius: 16px; padding: 16px; box-shadow: 0 10px 32px rgba(0,0,0,.18); }
-.card h2 { margin: 0 0 10px; font-size: 16px; }
+.card h2 { margin: 0; font-size: 16px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.card-head h2 { margin: 0; }
+.card-head .small { margin-left: auto; }
+.activity-card { display: grid; gap: 12px; }
+.activity-list { max-height: 340px; overflow: auto; padding-right: 4px; }
+.activity-entry { border: 1px solid rgba(255,255,255,.06); border-radius: 12px; padding: 12px; background: rgba(10, 15, 31, 0.72); }
+.activity-entry + .activity-entry { margin-top: 10px; }
+.activity-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.activity-time { color: var(--muted); font-size: 12px; margin-left: auto; }
+.activity-message { margin-top: 8px; color: var(--text); }
+.activity-meta { color: var(--muted); margin-top: 6px; word-break: break-word; white-space: pre-wrap; }
+.activity-empty { color: var(--muted); font-style: italic; }
 .kv { padding: 8px 0; border-top: 1px solid rgba(255,255,255,.05); }
 .kv:first-of-type { border-top: 0; padding-top: 0; }
 .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
@@ -544,6 +566,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .badge-warning { color: var(--warn); }
 .badge-error, .badge-blocking { color: var(--err); }
 .badge-unknown { color: var(--muted); }
+.badge-read-only { color: var(--accent); }
+.badge-mutating { color: var(--warn); }
+.badge-cancelled { color: var(--muted); }
 .list { margin: 8px 0 0; padding-left: 18px; color: var(--text); }
 .list li { margin: 6px 0; }
 .empty { color: var(--muted); font-style: italic; }
@@ -574,6 +599,14 @@ footer { padding: 0 24px 20px; color: var(--muted); }
   </div>
 
   <div class="notice" id="status-message">${messages[0]}</div>
+
+  <section class="card activity-card">
+    <div class="card-head">
+      <h2>Activity</h2>
+      <button id="clear-activity" type="button">Clear Activity</button>
+    </div>
+    <div id="activity-panel" class="activity-list"></div>
+  </section>
 
   <section class="grid">
     <article class="card">
@@ -606,7 +639,7 @@ footer { padding: 0 24px 20px; color: var(--muted); }
         ${renderKeyValue("exitCode", latestHermesRun?.exitCode)}
         ${renderKeyValue("durationMs", latestHermesRun?.durationMs)}
         ${renderKeyValue("safeSummary", latestHermesRun?.safeSummary)}
-        ${renderKeyValue("evidenceRefs", latestHermesRun?.evidenceRefs?.length ? JSON.stringify(latestHermesRun.evidenceRefs, null, 2) : "[]")}
+        ${renderKeyValue("evidenceRefs", latestHermesRun?.evidenceRefs?.length ? `${latestHermesRun.evidenceRefs.length} reference-only evidence refs stored` : "[]")}
       </div>
     </article>
 
@@ -643,6 +676,18 @@ const endpoints = {
   hermesFake: '/api/hermes/fake',
 };
 const flashKey = 'rufuschat-ui-flash';
+const activityKey = 'rufuschat-ui-activity';
+const maxActivityEntries = 50;
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[character]));
+}
 
 function setStatusMessage(text) {
   document.getElementById('status-message').textContent = text;
@@ -658,6 +703,140 @@ function takeFlash() {
     sessionStorage.removeItem(flashKey);
   }
   return text;
+}
+
+function getActivityEntries() {
+  try {
+    const raw = sessionStorage.getItem(activityKey);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((entry) => entry && typeof entry === 'object') : [];
+  } catch {
+    return [];
+  }
+}
+
+function setActivityEntries(entries) {
+  sessionStorage.setItem(activityKey, JSON.stringify(entries.slice(0, maxActivityEntries)));
+}
+
+function formatActivityField(value, fallback = '—') {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  return escapeHtml(value);
+}
+
+function renderActivityPanel() {
+  const panel = document.getElementById('activity-panel');
+  if (!panel) {
+    return;
+  }
+  const entries = getActivityEntries();
+  if (!entries.length) {
+    panel.innerHTML = '<div class="activity-empty">No activity yet.</div>';
+    return;
+  }
+  panel.innerHTML = entries.map((entry) => {
+    const kindClass = entry.kind === 'mutating' ? 'badge-mutating' : entry.kind === 'read-only' ? 'badge-read-only' : 'badge-unknown';
+    const statusClass = entry.status === 'ok' ? 'badge-ok' : entry.status === 'error' ? 'badge-error' : entry.status === 'cancelled' ? 'badge-cancelled' : 'badge-unknown';
+    const details = [];
+    if (entry.id !== null && entry.id !== undefined && entry.id !== '') {
+      details.push('<div class="activity-meta"><span class="mono">id</span>: ' + formatActivityField(entry.id) + '</div>');
+    }
+    if (entry.traceId) {
+      details.push('<div class="activity-meta"><span class="mono">traceId</span>: ' + formatActivityField(entry.traceId) + '</div>');
+    }
+    if (entry.safeSummary) {
+      details.push('<div class="activity-meta"><span class="mono">safeSummary</span>: ' + formatActivityField(entry.safeSummary) + '</div>');
+    }
+    if (entry.recommendedAction) {
+      details.push('<div class="activity-meta"><span class="mono">recommendedAction</span>: ' + formatActivityField(entry.recommendedAction) + '</div>');
+    }
+    if (typeof entry.needsAttention === 'boolean') {
+      details.push('<div class="activity-meta"><span class="mono">needsAttention</span>: ' + (entry.needsAttention ? 'yes' : 'no') + '</div>');
+    }
+    if (typeof entry.evidenceRefsCount === 'number') {
+      details.push('<div class="activity-meta"><span class="mono">evidenceRefs</span>: ' + entry.evidenceRefsCount + ' stored</div>');
+    }
+    return '<div class="activity-entry">' +
+      '<div class="activity-top">' +
+        '<span class="badge ' + kindClass + '">' + formatActivityField(entry.kind ?? 'unknown') + '</span>' +
+        '<span class="badge ' + statusClass + '">' + formatActivityField(entry.status ?? 'unknown') + '</span>' +
+        '<span class="mono">' + formatActivityField(entry.actionName ?? 'unknown') + '</span>' +
+        '<span class="activity-time">' + formatActivityField(entry.timestamp ?? '—') + '</span>' +
+      '</div>' +
+      details.join('') +
+      '<div class="activity-message">' + formatActivityField(entry.message ?? 'No message') + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function appendActivityEntry(entry) {
+  const normalized = {
+    timestamp: new Date().toLocaleString(),
+    actionName: entry.actionName ?? 'unknown',
+    kind: entry.kind ?? 'read-only',
+    status: entry.status ?? 'ok',
+    traceId: entry.traceId ?? null,
+    id: entry.id ?? null,
+    safeSummary: entry.safeSummary ?? null,
+    recommendedAction: entry.recommendedAction ?? null,
+    needsAttention: typeof entry.needsAttention === 'boolean' ? entry.needsAttention : null,
+    evidenceRefsCount: typeof entry.evidenceRefsCount === 'number' ? entry.evidenceRefsCount : null,
+    message: entry.message ?? '',
+  };
+  const nextEntries = [normalized, ...getActivityEntries()].slice(0, maxActivityEntries);
+  setActivityEntries(nextEntries);
+  renderActivityPanel();
+}
+
+function recordActionSuccess(actionName, kind, response, fallbackMessage) {
+  const statusDto = response?.statusDto ?? {};
+  const supervisionDto = response?.supervisionDto ?? {};
+  const result = response?.result ?? {};
+  const latestHermesRun = statusDto.latestHermesRun ?? {};
+  const latestState = statusDto.latestState ?? {};
+  const latestContextPack = statusDto.latestContextPack ?? {};
+  const latestAnchor = statusDto.latestAnchor ?? {};
+  const safeSummary = result.safeSummary ?? latestHermesRun.safeSummary ?? latestState.safeSummary ?? latestContextPack.safeSummary ?? latestAnchor.safeSummary ?? null;
+  const recommendedAction = supervisionDto.recommendedAction ?? null;
+  const traceId = response?.traceId ?? statusDto.traceId ?? supervisionDto.traceId ?? null;
+  const id = result.stateId ?? result.contextPackId ?? result.anchorId ?? result.runId ?? latestState.stateId ?? latestContextPack.contextPackId ?? latestAnchor.anchorId ?? latestHermesRun.runId ?? null;
+  const evidenceRefsCount = Array.isArray(result.evidenceRefs) ? result.evidenceRefs.length : Array.isArray(latestHermesRun.evidenceRefs) ? latestHermesRun.evidenceRefs.length : null;
+  appendActivityEntry({
+    actionName,
+    kind,
+    status: 'ok',
+    traceId,
+    id,
+    safeSummary,
+    recommendedAction,
+    needsAttention: supervisionDto.needsAttention,
+    evidenceRefsCount,
+    message: response?.message ?? fallbackMessage,
+  });
+}
+
+function recordActionCancelled(actionName, kind, message) {
+  appendActivityEntry({
+    actionName,
+    kind,
+    status: 'cancelled',
+    message,
+  });
+}
+
+function recordActionError(actionName, kind, errorMessage, traceId) {
+  appendActivityEntry({
+    actionName,
+    kind,
+    status: 'error',
+    traceId,
+    message: errorMessage,
+  });
 }
 
 async function fetchJson(url) {
@@ -680,7 +859,9 @@ async function postJson(url, body) {
   const text = await response.text();
   const data = text ? JSON.parse(text) : {};
   if (!response.ok) {
-    throw new Error(data.message ?? data.error ?? (url + ' failed with ' + response.status));
+    const error = new Error(data.message ?? data.error ?? (url + ' failed with ' + response.status));
+    error.response = data;
+    throw error;
   }
   return data;
 }
@@ -706,83 +887,142 @@ function applyFlash() {
   }
 }
 
-async function refresh() {
-  const [health, status, supervision, inventory] = await Promise.all([
-    fetchJson(endpoints.health),
-    fetchJson(endpoints.status),
-    fetchJson(endpoints.supervision),
-    fetchJson(endpoints.inventory),
-  ]);
-  document.querySelector('header .sub').innerHTML =
-    '<span>traceId: <span class="mono">' + (status.traceId ?? 'null') + '</span></span>' +
-    '<span>health: <span class="badge badge-' + (health.ok ? 'ok' : 'error') + '">' + (health.ok ? 'ok' : 'error') + '</span></span>' +
-    '<span>storage: ' + (health.storageExists ? 'present' : 'absent') + '</span>' +
-    '<span>generatedAt: <span class="mono">' + (status.generatedAt ?? health.generatedAt ?? '') + '</span></span>';
-  setStatusMessage('Supervision: ' + supervision.level + ' — ' + supervision.reason);
+function ensureActivityLoaded() {
+  if (!getActivityEntries().length) {
+    appendActivityEntry({
+      actionName: 'UI loaded',
+      kind: 'read-only',
+      status: 'ok',
+      message: 'Initial UI loaded.',
+    });
+    return;
+  }
+  renderActivityPanel();
+}
+
+function doRefresh() {
+  appendActivityEntry({
+    actionName: 'Refresh',
+    kind: 'read-only',
+    status: 'ok',
+    message: 'Refresh requested.',
+  });
+  location.reload();
 }
 
 async function doState() {
+  const actionName = 'Create State';
+  const kind = 'mutating';
   if (!window.confirm('Create State will create RCK artifacts/events. Continue?')) {
+    recordActionCancelled(actionName, kind, 'Create State cancelled.');
     setStatusMessage('Create State cancelled.');
     return;
   }
-  const response = await postJson(endpoints.state, {});
-  reloadWithFlash(response.message ?? 'Create State completed.');
+  try {
+    const response = await postJson(endpoints.state, {});
+    recordActionSuccess(actionName, kind, response, 'Create State completed.');
+    reloadWithFlash(response.message ?? 'Create State completed.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const traceId = error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+    recordActionError(actionName, kind, message, traceId);
+    setStatusMessage(message);
+  }
 }
 
 async function doInject() {
+  const actionName = 'Inject Context';
+  const kind = 'mutating';
   if (!window.confirm('Inject Context will create a context pack. Continue?')) {
+    recordActionCancelled(actionName, kind, 'Inject Context cancelled.');
     setStatusMessage('Inject Context cancelled.');
     return;
   }
-  const response = await postJson(endpoints.inject, {});
-  reloadWithFlash(response.message ?? 'Inject Context completed.');
+  try {
+    const response = await postJson(endpoints.inject, {});
+    recordActionSuccess(actionName, kind, response, 'Inject Context completed.');
+    reloadWithFlash(response.message ?? 'Inject Context completed.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const traceId = error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+    recordActionError(actionName, kind, message, traceId);
+    setStatusMessage(message);
+  }
 }
 
 async function doAnchor() {
+  const actionName = 'Create Anchor';
+  const kind = 'mutating';
   const label = requirePrompt('Create Anchor label:');
   if (!label) {
+    recordActionCancelled(actionName, kind, 'Create Anchor cancelled: label is required.');
     setStatusMessage('Create Anchor cancelled: label is required.');
     return;
   }
   if (!window.confirm('Create Anchor will create an anchor. Continue?')) {
+    recordActionCancelled(actionName, kind, 'Create Anchor cancelled.');
     setStatusMessage('Create Anchor cancelled.');
     return;
   }
-  const response = await postJson(endpoints.anchor, { label });
-  reloadWithFlash(response.message ?? ('Create Anchor completed: ' + label));
+  try {
+    const response = await postJson(endpoints.anchor, { label });
+    recordActionSuccess(actionName, kind, response, 'Create Anchor completed.');
+    reloadWithFlash(response.message ?? ('Create Anchor completed: ' + label));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const traceId = error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+    recordActionError(actionName, kind, message, traceId);
+    setStatusMessage(message);
+  }
 }
 
 async function doHermesFake() {
+  const actionName = 'Run Hermes Fake';
+  const kind = 'mutating';
   const promptText = requirePrompt('Run Hermes Fake prompt:');
   if (!promptText) {
+    recordActionCancelled(actionName, kind, 'Run Hermes Fake cancelled: prompt is required.');
     setStatusMessage('Run Hermes Fake cancelled: prompt is required.');
     return;
   }
   if (!window.confirm('Run Hermes Fake will record a Hermes fake run. Continue?')) {
+    recordActionCancelled(actionName, kind, 'Run Hermes Fake cancelled.');
     setStatusMessage('Run Hermes Fake cancelled.');
     return;
   }
-  const response = await postJson(endpoints.hermesFake, { prompt: promptText });
-  reloadWithFlash(response.message ?? 'Run Hermes Fake completed.');
+  try {
+    const response = await postJson(endpoints.hermesFake, { prompt: promptText });
+    recordActionSuccess(actionName, kind, response, 'Run Hermes Fake completed.');
+    reloadWithFlash(response.message ?? 'Run Hermes Fake completed.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const traceId = error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+    recordActionError(actionName, kind, message, traceId);
+    setStatusMessage(message);
+  }
 }
 
 document.getElementById('refresh').addEventListener('click', () => {
-  location.reload();
+  doRefresh();
 });
 document.getElementById('create-state').addEventListener('click', () => {
-  doState().catch((error) => setStatusMessage(error.message));
+  void doState();
 });
 document.getElementById('inject-context').addEventListener('click', () => {
-  doInject().catch((error) => setStatusMessage(error.message));
+  void doInject();
 });
 document.getElementById('create-anchor').addEventListener('click', () => {
-  doAnchor().catch((error) => setStatusMessage(error.message));
+  void doAnchor();
 });
 document.getElementById('run-hermes-fake').addEventListener('click', () => {
-  doHermesFake().catch((error) => setStatusMessage(error.message));
+  void doHermesFake();
+});
+document.getElementById('clear-activity').addEventListener('click', () => {
+  sessionStorage.removeItem(activityKey);
+  renderActivityPanel();
 });
 applyFlash();
+ensureActivityLoaded();
 </script>
 </body>
 </html>`;

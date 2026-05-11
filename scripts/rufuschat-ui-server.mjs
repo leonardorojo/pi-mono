@@ -382,6 +382,94 @@ function normalizeAnchorDto(latestAnchorIndex, latestAnchor) {
 	};
 }
 
+function normalizeContextItems(latestContextPack) {
+	const items = [];
+	const pushItem = (kind, title, summary) => {
+		const normalizedTitle = typeof title === "string" && title.trim() ? title.trim() : kind;
+		const normalizedSummary = typeof summary === "string" && summary.trim() ? sanitizeSafeSummary(summary.trim()) : "";
+		if (!normalizedSummary) {
+			return;
+		}
+		items.push({
+			kind,
+			title: normalizedTitle,
+			summary: normalizedSummary,
+		});
+	};
+
+	if (latestContextPack?.stateSummary && typeof latestContextPack.stateSummary === "object") {
+		pushItem(
+			"state-summary",
+			latestContextPack.stateSummary.title ?? "State summary",
+			[
+				latestContextPack.stateSummary.objective,
+				latestContextPack.stateSummary.scope,
+				latestContextPack.stateSummary.nextAction,
+			].filter((value) => typeof value === "string" && value.trim()).join(" | "),
+		);
+	}
+
+	if (latestContextPack?.contextSummary && typeof latestContextPack.contextSummary === "object") {
+		pushItem(
+			"context-summary",
+			latestContextPack.contextSummary.title ?? "Context summary",
+			[
+				latestContextPack.contextSummary.objective,
+				latestContextPack.contextSummary.scope,
+				latestContextPack.contextSummary.nextAction,
+			].filter((value) => typeof value === "string" && value.trim()).join(" | "),
+		);
+	}
+
+	if (Array.isArray(latestContextPack?.tags) && latestContextPack.tags.length) {
+		pushItem("tags", "Tags", latestContextPack.tags.filter((value) => typeof value === "string" && value.trim()).join(", "));
+	}
+
+	return items.slice(0, 5);
+}
+
+function normalizeSafeContextDto(latestContextPackIndex, latestContextPack, latestAnchorIndex) {
+	const contextPackId = latestContextPack?.contextPackId ?? latestContextPackIndex?.currentContextPackId ?? null;
+	const traceId = pickTraceId(latestContextPack?.traceId, latestContextPackIndex?.traceId);
+	const generatedAt = latestContextPackIndex?.updatedAt ?? latestContextPack?.createdAt ?? new Date().toISOString();
+	const sourceStateId = latestContextPack?.stateId ?? latestContextPackIndex?.stateId ?? null;
+	const sourceAnchorId = latestContextPack?.sourceAnchorId ?? latestContextPackIndex?.sourceAnchorId ?? latestAnchorIndex?.currentAnchorId ?? null;
+
+	if (!contextPackId || !traceId) {
+		return {
+			isAvailable: false,
+			traceId: traceId ?? null,
+			contextPackId,
+			generatedAt,
+			message: "No context pack available yet. Run Inject Context first.",
+		};
+	}
+
+	if (!latestContextPack) {
+		return {
+			isAvailable: true,
+			traceId,
+			contextPackId,
+			generatedAt,
+			safeSummary: sanitizeSafeSummary(`Context pack ${contextPackId} is available.`),
+			sourceStateId,
+			sourceAnchorId,
+			items: [],
+		};
+	}
+
+	return {
+		isAvailable: true,
+		traceId,
+		contextPackId,
+		generatedAt,
+		safeSummary: sanitizeSafeSummary(latestContextPack.safeSummary ?? latestContextPack.summary ?? `Context pack ${contextPackId} is ready`),
+		sourceStateId,
+		sourceAnchorId,
+		items: normalizeContextItems(latestContextPack),
+	};
+}
+
 function buildSnapshot() {
 	const storageExists = existsSync(rckRoot);
 	const currentTrace = safeReadJson(join(rckRoot, "indexes", "current-trace.json"));
@@ -391,6 +479,7 @@ function buildSnapshot() {
 	const latestState = readArtifact(latestStateIndex?.currentStatePath);
 	const latestContextPack = readArtifact(latestContextPackIndex?.currentContextPackPath);
 	const latestAnchor = readArtifact(latestAnchorIndex?.currentAnchorPath);
+	const contextDto = normalizeSafeContextDto(latestContextPackIndex, latestContextPack, latestAnchorIndex);
 	const eventRecords = loadJsonRecords(".pi/rck/events").map((record) => record.json);
 	const latestHermesRecordedEvent = [...eventRecords].reverse().find((event) => event?.eventType === "HermesRunRecorded");
 	const latestHermesRun = normalizeHermesRun(latestHermesRecordedEvent);
@@ -415,6 +504,7 @@ function buildSnapshot() {
 		latestState: normalizeStateDto(latestStateIndex, latestState),
 		latestContextPack: normalizeContextPackDto(latestContextPackIndex, latestContextPack),
 		latestAnchor: normalizeAnchorDto(latestAnchorIndex, latestAnchor),
+		contextDto,
 		latestHermesRun,
 		generatedAt: new Date().toISOString(),
 	};
@@ -457,6 +547,7 @@ function buildSnapshot() {
 		storageExists,
 		traceId,
 		statusDto,
+		contextDto,
 		supervisionDto,
 		inventoryDto,
 		health: {
@@ -510,8 +601,15 @@ function renderList(items) {
 	return `<ul class="list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
+function renderSafeContextItems(items) {
+	if (!items.length) {
+		return "<div class=\"empty\">No safe items.</div>";
+	}
+	return `<ul class="list">${items.map((item) => `<li><span class=\"mono\">${escapeHtml(item.kind)}</span> · ${escapeHtml(item.title)} — ${escapeHtml(item.summary)}</li>`).join("")}</ul>`;
+}
+
 function renderHtml(snapshot) {
-	const { statusDto, supervisionDto, inventoryDto, health } = snapshot;
+	const { statusDto, supervisionDto, inventoryDto, health, contextDto } = snapshot;
 	const latestState = statusDto.latestState;
 	const latestContextPack = statusDto.latestContextPack;
 	const latestAnchor = statusDto.latestAnchor;
@@ -623,11 +721,28 @@ footer { padding: 0 24px 20px; color: var(--muted); }
     </article>
 
     <article class="card">
-      <h2>Latest State / Context / Anchor</h2>
+      <h2>Latest State / Anchor</h2>
       <div class="stack">
         ${renderKeyValue("latest state", latestState ? `${latestState.stateId}\n${latestState.safeSummary ?? ""}` : "No state")}
-        ${renderKeyValue("latest context pack", latestContextPack ? `${latestContextPack.contextPackId}\n${latestContextPack.safeSummary ?? ""}` : "No context pack")}
         ${renderKeyValue("latest anchor", latestAnchor ? `${latestAnchor.anchorId}\n${latestAnchor.safeSummary ?? ""}` : "No anchor")}
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <h2>Safe Context</h2>
+        <button id="refresh-context" type="button">Refresh Context</button>
+      </div>
+      <div class="stack" id="safe-context-card">
+        <div class="kv"><div class="k">available</div><div class="v" id="safe-context-available">${contextDto?.isAvailable ? "yes" : "no"}</div></div>
+        <div class="kv"><div class="k">contextPackId</div><div class="v" id="safe-context-context-pack-id">${renderValue(contextDto?.contextPackId ?? null)}</div></div>
+        <div class="kv"><div class="k">traceId</div><div class="v" id="safe-context-trace-id">${renderValue(contextDto?.traceId ?? statusDto.traceId ?? null)}</div></div>
+        <div class="kv"><div class="k">generatedAt</div><div class="v" id="safe-context-generated-at">${renderValue(contextDto?.generatedAt ?? null)}</div></div>
+        <div class="kv"><div class="k">safeSummary</div><div class="v" id="safe-context-safe-summary">${renderValue(contextDto?.safeSummary ?? null)}</div></div>
+        <div class="kv"><div class="k">sourceStateId</div><div class="v" id="safe-context-source-state-id">${renderValue(contextDto?.sourceStateId ?? null)}</div></div>
+        <div class="kv"><div class="k">sourceAnchorId</div><div class="v" id="safe-context-source-anchor-id">${renderValue(contextDto?.sourceAnchorId ?? null)}</div></div>
+        <div class="kv"><div class="k">items</div><div class="v" id="safe-context-items">${renderSafeContextItems(contextDto?.items ?? [])}</div></div>
+        <div class="kv"><div class="k">message</div><div class="v" id="safe-context-message">${renderValue(contextDto?.message ?? (contextDto?.isAvailable ? null : "No context pack available yet. Run Inject Context first."))}</div></div>
       </div>
     </article>
 
@@ -662,7 +777,7 @@ footer { padding: 0 24px 20px; color: var(--muted); }
   </section>
 </main>
 <footer>
-  API: <span class="mono">/health</span>, <span class="mono">/api/status</span>, <span class="mono">/api/supervision</span>, <span class="mono">/api/inventory</span>
+  API: <span class="mono">/health</span>, <span class="mono">/api/status</span>, <span class="mono">/api/supervision</span>, <span class="mono">/api/inventory</span>, <span class="mono">/api/context</span>
 </footer>
 <script>
 const endpoints = {
@@ -670,6 +785,7 @@ const endpoints = {
   status: '/api/status',
   supervision: '/api/supervision',
   inventory: '/api/inventory',
+  context: '/api/context',
   state: '/api/state',
   inject: '/api/inject',
   anchor: '/api/anchor',
@@ -678,7 +794,7 @@ const endpoints = {
 const flashKey = 'rufuschat-ui-flash';
 const activityKey = 'rufuschat-ui-activity';
 const maxActivityEntries = 50;
-const actionButtonIds = ['refresh', 'create-state', 'inject-context', 'create-anchor', 'run-hermes-fake'];
+const actionButtonIds = ['refresh', 'refresh-context', 'create-state', 'inject-context', 'create-anchor', 'run-hermes-fake'];
 const initialSnapshot = ${JSON.stringify({
   hasLatestState: Boolean(latestState),
   hasCurrentTrace: Boolean(snapshot.traceId),
@@ -739,6 +855,20 @@ function formatActivityField(value, fallback = '—') {
     return fallback;
   }
   return escapeHtml(value);
+}
+
+function renderSafeContextItems(items) {
+  if (!items.length) {
+    return '<div class="empty">No safe items.</div>';
+  }
+  return '<ul class="list">' + items.map((item) => '<li><span class="mono">' + formatActivityField(item.kind ?? 'unknown') + '</span> · ' + formatActivityField(item.title ?? 'unknown') + ' — ' + formatActivityField(item.summary ?? '') + '</li>').join('') + '</ul>';
+}
+
+function setSafeContextField(id, value, fallback = '—') {
+  const node = document.getElementById(id);
+  if (node) {
+    node.textContent = value === null || value === undefined || value === '' ? fallback : String(value);
+  }
 }
 
 function renderActivityPanel() {
@@ -803,6 +933,49 @@ function appendActivityEntry(entry) {
   const nextEntries = [normalized, ...getActivityEntries()].slice(0, maxActivityEntries);
   setActivityEntries(nextEntries);
   renderActivityPanel();
+}
+
+function updateSafeContextView(contextDto) {
+  const available = Boolean(contextDto?.isAvailable);
+  setSafeContextField('safe-context-available', available ? 'yes' : 'no');
+  setSafeContextField('safe-context-context-pack-id', contextDto?.contextPackId);
+  setSafeContextField('safe-context-trace-id', contextDto?.traceId ?? initialSnapshot.traceId ?? null);
+  setSafeContextField('safe-context-generated-at', contextDto?.generatedAt);
+  setSafeContextField('safe-context-safe-summary', contextDto?.safeSummary);
+  setSafeContextField('safe-context-source-state-id', contextDto?.sourceStateId);
+  setSafeContextField('safe-context-source-anchor-id', contextDto?.sourceAnchorId);
+  const itemsNode = document.getElementById('safe-context-items');
+  if (itemsNode) {
+    const items = Array.isArray(contextDto?.items) ? contextDto.items : [];
+    itemsNode.innerHTML = items.length
+      ? '<ul class="list">' + items.map((item) => '<li><span class="mono">' + formatActivityField(item.kind ?? 'unknown') + '</span> · ' + formatActivityField(item.title ?? 'unknown') + ' — ' + formatActivityField(item.summary ?? '') + '</li>').join('') + '</ul>'
+      : '<div class="empty">No safe items.</div>';
+  }
+  setSafeContextField('safe-context-message', contextDto?.message ?? (available ? '' : 'No context pack available yet. Run Inject Context first.'));
+}
+
+function recordContextRefreshResult(contextDto) {
+  const traceId = contextDto?.traceId ?? null;
+  const contextPackId = contextDto?.contextPackId ?? null;
+  appendActivityEntry({
+    actionName: 'Refresh Context',
+    kind: 'read-only',
+    status: 'ok',
+    traceId,
+    id: contextPackId,
+    safeSummary: contextDto?.safeSummary ?? null,
+    message: contextDto?.isAvailable ? 'Safe Context refreshed.' : (contextDto?.message ?? 'No context pack available yet. Run Inject Context first.'),
+  });
+}
+
+function recordContextRefreshError(message, traceId = null) {
+  appendActivityEntry({
+    actionName: 'Refresh Context',
+    kind: 'read-only',
+    status: 'error',
+    traceId,
+    message,
+  });
 }
 
 function recordActionSuccess(actionName, kind, response, fallbackMessage) {
@@ -1051,6 +1224,36 @@ function doRefresh() {
   location.reload();
 }
 
+async function doRefreshContext(options = {}) {
+  const { logActivity = true } = options;
+  const actionName = 'Refresh Context';
+  const kind = 'read-only';
+  const run = async () => {
+    try {
+      const response = await fetchJson(endpoints.context);
+      updateSafeContextView(response);
+      if (logActivity) {
+        recordContextRefreshResult(response);
+        setStatusMessage(response?.isAvailable ? 'Safe Context refreshed.' : (response?.message ?? 'No context pack available yet. Run Inject Context first.'));
+      }
+      return response;
+    } catch (error) {
+      const message = buildErrorMessage(actionName, error);
+      const traceId = error?.traceId ?? error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+      if (logActivity) {
+        recordContextRefreshError(message, traceId);
+        setStatusMessage(message);
+      }
+      return null;
+    }
+  };
+
+  if (!logActivity) {
+    return await run();
+  }
+  await runUiAction(actionName, kind, run);
+}
+
 async function doState() {
   const actionName = 'Create State';
   const kind = 'mutating';
@@ -1085,6 +1288,7 @@ async function doInject() {
     try {
       const response = await postJson(endpoints.inject, {});
       recordActionSuccess(actionName, kind, response, 'Inject Context completed.');
+      await doRefreshContext({ logActivity: false });
       reloadWithFlash(response.message ?? 'Inject Context completed.');
     } catch (error) {
       const message = buildErrorMessage(actionName, error);
@@ -1161,6 +1365,10 @@ actionButtonIds.forEach((id) => {
       doRefresh();
       return;
     }
+    if (id === 'refresh-context') {
+      void doRefreshContext();
+      return;
+    }
     if (id === 'create-state') {
       void doState();
       return;
@@ -1184,6 +1392,7 @@ document.getElementById('clear-activity').addEventListener('click', () => {
   renderActivityPanel();
 });
 applyFlash();
+void doRefreshContext({ logActivity: false });
 ensureActivityLoaded();
 </script>
 </body>
@@ -1369,6 +1578,11 @@ async function handleRequest(req, res) {
 
 		if (req.method === "GET" && url.pathname === "/api/inventory") {
 			jsonResponse(res, 200, buildSnapshot().inventoryDto);
+			return;
+		}
+
+		if (req.method === "GET" && url.pathname === "/api/context") {
+			jsonResponse(res, 200, buildSnapshot().contextDto);
 			return;
 		}
 

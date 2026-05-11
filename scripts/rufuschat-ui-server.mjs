@@ -678,6 +678,15 @@ const endpoints = {
 const flashKey = 'rufuschat-ui-flash';
 const activityKey = 'rufuschat-ui-activity';
 const maxActivityEntries = 50;
+const actionButtonIds = ['refresh', 'create-state', 'inject-context', 'create-anchor', 'run-hermes-fake'];
+const initialSnapshot = ${JSON.stringify({
+  hasLatestState: Boolean(latestState),
+  hasCurrentTrace: Boolean(snapshot.traceId),
+  hasLatestAnchor: Boolean(latestAnchor),
+  hasLatestHermesRun: Boolean(latestHermesRun),
+  traceId: snapshot.traceId ?? null,
+})};
+let activeAction = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (character) => ({
@@ -690,7 +699,10 @@ function escapeHtml(value) {
 }
 
 function setStatusMessage(text) {
-  document.getElementById('status-message').textContent = text;
+  const node = document.getElementById('status-message');
+  if (node) {
+    node.textContent = text;
+  }
 }
 
 function setFlash(text) {
@@ -820,48 +832,102 @@ function recordActionSuccess(actionName, kind, response, fallbackMessage) {
   });
 }
 
-function recordActionCancelled(actionName, kind, message) {
+function recordActionCancelled(actionName, kind, message, traceId = null, recommendedAction = null) {
   appendActivityEntry({
     actionName,
     kind,
     status: 'cancelled',
+    traceId,
+    recommendedAction,
     message,
   });
 }
 
-function recordActionError(actionName, kind, errorMessage, traceId) {
+function recordActionError(actionName, kind, errorMessage, traceId = null, recommendedAction = null, needsAttention = true) {
   appendActivityEntry({
     actionName,
     kind,
     status: 'error',
     traceId,
+    recommendedAction,
+    needsAttention,
     message: errorMessage,
   });
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url, { headers: { 'accept': 'application/json' } });
-  if (!response.ok) {
-    throw new Error(url + ' failed with ' + response.status);
+function createUiError(message, extras = {}) {
+  const error = new Error(message);
+  Object.assign(error, extras);
+  return error;
+}
+
+function safeServerMessage(data, statusCode, fallbackMessage) {
+  const candidate = typeof data?.message === 'string' && data.message.trim()
+    ? data.message.trim()
+    : typeof data?.error === 'string' && data.error.trim()
+      ? data.error.trim()
+      : typeof data?.detail === 'string' && data.detail.trim()
+        ? data.detail.trim()
+        : fallbackMessage;
+  return String(candidate).split(String.fromCharCode(10))[0].trim() || fallbackMessage;
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  if (!text.trim()) {
+    return {};
   }
-  return response.json();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw createUiError('Invalid response from server.', {
+      kind: 'malformed_response',
+      status: response.status,
+    });
+  }
+}
+
+async function fetchJson(url) {
+  let response;
+  try {
+    response = await fetch(url, { headers: { 'accept': 'application/json' } });
+  } catch {
+    throw createUiError('Unable to reach the local UI server.', { kind: 'network_failure' });
+  }
+  const data = await readJsonResponse(response);
+  if (!response.ok) {
+    throw createUiError(safeServerMessage(data, response.status, url + ' failed with ' + response.status + '.'), {
+      kind: 'server_error',
+      status: response.status,
+      response: data,
+      traceId: data?.traceId ?? data?.statusDto?.traceId ?? null,
+    });
+  }
+  return data;
 }
 
 async function postJson(url, body) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'accept': 'application/json',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body ?? {}),
-  });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body ?? {}),
+    });
+  } catch {
+    throw createUiError('Unable to reach the local UI server.', { kind: 'network_failure' });
+  }
+  const data = await readJsonResponse(response);
   if (!response.ok) {
-    const error = new Error(data.message ?? data.error ?? (url + ' failed with ' + response.status));
-    error.response = data;
-    throw error;
+    throw createUiError(safeServerMessage(data, response.status, url + ' failed with ' + response.status + '.'), {
+      kind: 'server_error',
+      status: response.status,
+      response: data,
+      traceId: data?.traceId ?? data?.statusDto?.traceId ?? null,
+    });
   }
   return data;
 }
@@ -900,7 +966,82 @@ function ensureActivityLoaded() {
   renderActivityPanel();
 }
 
+function setToolbarDisabled(disabled) {
+  for (const id of actionButtonIds) {
+    const button = document.getElementById(id);
+    if (button) {
+      button.disabled = disabled;
+    }
+  }
+}
+
+function isActionRunning() {
+  return activeAction !== null;
+}
+
+function beginAction(actionName) {
+  if (isActionRunning()) {
+    setStatusMessage('Another action is already running.');
+    return false;
+  }
+  activeAction = actionName;
+  setToolbarDisabled(true);
+  setStatusMessage('Running: ' + actionName);
+  return true;
+}
+
+function endAction() {
+  activeAction = null;
+  setToolbarDisabled(false);
+}
+
+function inferPreconditionHint(actionName) {
+  if (actionName === 'Inject Context') {
+    return initialSnapshot.hasLatestState ? null : 'Try Create State first, then Inject Context.';
+  }
+  if (actionName === 'Create Anchor') {
+    return initialSnapshot.hasCurrentTrace ? null : 'Refresh status or Create State before creating an anchor.';
+  }
+  if (actionName === 'Run Hermes Fake') {
+    return 'Refresh supervision and inspect latest status.';
+  }
+  return null;
+}
+
+function buildErrorMessage(actionName, error) {
+  const rawMessage = error instanceof Error ? error.message : String(error ?? 'Unexpected error.');
+  if (rawMessage === 'Invalid response from server.') {
+    return rawMessage;
+  }
+  if (rawMessage === 'Unable to reach the local UI server.') {
+    return rawMessage;
+  }
+  const fallback = rawMessage.split(String.fromCharCode(10)).shift()?.trim() || 'An unexpected error occurred.';
+  const hint = inferPreconditionHint(actionName);
+  return hint ? fallback + ' ' + hint : fallback;
+}
+
+function buildErrorRecommendedAction(actionName) {
+  return inferPreconditionHint(actionName);
+}
+
+async function runUiAction(actionName, kind, runner) {
+  if (!beginAction(actionName)) {
+    recordActionCancelled(actionName, kind, 'Another action is already running.');
+    return;
+  }
+  try {
+    await runner();
+  } finally {
+    endAction();
+  }
+}
+
 function doRefresh() {
+  if (isActionRunning()) {
+    setStatusMessage('Another action is already running.');
+    return;
+  }
   appendActivityEntry({
     actionName: 'Refresh',
     kind: 'read-only',
@@ -913,110 +1054,131 @@ function doRefresh() {
 async function doState() {
   const actionName = 'Create State';
   const kind = 'mutating';
-  if (!window.confirm('Create State will create RCK artifacts/events. Continue?')) {
-    recordActionCancelled(actionName, kind, 'Create State cancelled.');
-    setStatusMessage('Create State cancelled.');
-    return;
-  }
-  try {
-    const response = await postJson(endpoints.state, {});
-    recordActionSuccess(actionName, kind, response, 'Create State completed.');
-    reloadWithFlash(response.message ?? 'Create State completed.');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const traceId = error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
-    recordActionError(actionName, kind, message, traceId);
-    setStatusMessage(message);
-  }
+  await runUiAction(actionName, kind, async () => {
+    if (!window.confirm('Create State will create RCK artifacts/events. Continue?')) {
+      recordActionCancelled(actionName, kind, 'Create State cancelled.');
+      setStatusMessage('Create State cancelled.');
+      return;
+    }
+    try {
+      const response = await postJson(endpoints.state, {});
+      recordActionSuccess(actionName, kind, response, 'Create State completed.');
+      reloadWithFlash(response.message ?? 'Create State completed.');
+    } catch (error) {
+      const message = buildErrorMessage(actionName, error);
+      const traceId = error?.traceId ?? error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+      recordActionError(actionName, kind, message, traceId, buildErrorRecommendedAction(actionName));
+      setStatusMessage(message);
+    }
+  });
 }
 
 async function doInject() {
   const actionName = 'Inject Context';
   const kind = 'mutating';
-  if (!window.confirm('Inject Context will create a context pack. Continue?')) {
-    recordActionCancelled(actionName, kind, 'Inject Context cancelled.');
-    setStatusMessage('Inject Context cancelled.');
-    return;
-  }
-  try {
-    const response = await postJson(endpoints.inject, {});
-    recordActionSuccess(actionName, kind, response, 'Inject Context completed.');
-    reloadWithFlash(response.message ?? 'Inject Context completed.');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const traceId = error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
-    recordActionError(actionName, kind, message, traceId);
-    setStatusMessage(message);
-  }
+  await runUiAction(actionName, kind, async () => {
+    if (!window.confirm('Inject Context will create a context pack. Continue?')) {
+      recordActionCancelled(actionName, kind, 'Inject Context cancelled.');
+      setStatusMessage('Inject Context cancelled.');
+      return;
+    }
+    try {
+      const response = await postJson(endpoints.inject, {});
+      recordActionSuccess(actionName, kind, response, 'Inject Context completed.');
+      reloadWithFlash(response.message ?? 'Inject Context completed.');
+    } catch (error) {
+      const message = buildErrorMessage(actionName, error);
+      const traceId = error?.traceId ?? error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+      recordActionError(actionName, kind, message, traceId, buildErrorRecommendedAction(actionName));
+      setStatusMessage(message);
+    }
+  });
 }
 
 async function doAnchor() {
   const actionName = 'Create Anchor';
   const kind = 'mutating';
-  const label = requirePrompt('Create Anchor label:');
-  if (!label) {
-    recordActionCancelled(actionName, kind, 'Create Anchor cancelled: label is required.');
-    setStatusMessage('Create Anchor cancelled: label is required.');
-    return;
-  }
-  if (!window.confirm('Create Anchor will create an anchor. Continue?')) {
-    recordActionCancelled(actionName, kind, 'Create Anchor cancelled.');
-    setStatusMessage('Create Anchor cancelled.');
-    return;
-  }
-  try {
-    const response = await postJson(endpoints.anchor, { label });
-    recordActionSuccess(actionName, kind, response, 'Create Anchor completed.');
-    reloadWithFlash(response.message ?? ('Create Anchor completed: ' + label));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const traceId = error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
-    recordActionError(actionName, kind, message, traceId);
-    setStatusMessage(message);
-  }
+  await runUiAction(actionName, kind, async () => {
+    const label = requirePrompt('Create Anchor label:');
+    if (!label) {
+      recordActionCancelled(actionName, kind, 'Create Anchor cancelled: label is required.');
+      setStatusMessage('Create Anchor cancelled: label is required.');
+      return;
+    }
+    if (!window.confirm('Create Anchor will create an anchor. Continue?')) {
+      recordActionCancelled(actionName, kind, 'Create Anchor cancelled.');
+      setStatusMessage('Create Anchor cancelled.');
+      return;
+    }
+    try {
+      const response = await postJson(endpoints.anchor, { label });
+      recordActionSuccess(actionName, kind, response, 'Create Anchor completed.');
+      reloadWithFlash(response.message ?? ('Create Anchor completed: ' + label));
+    } catch (error) {
+      const message = buildErrorMessage(actionName, error);
+      const traceId = error?.traceId ?? error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+      recordActionError(actionName, kind, message, traceId, buildErrorRecommendedAction(actionName));
+      setStatusMessage(message);
+    }
+  });
 }
 
 async function doHermesFake() {
   const actionName = 'Run Hermes Fake';
   const kind = 'mutating';
-  const promptText = requirePrompt('Run Hermes Fake prompt:');
-  if (!promptText) {
-    recordActionCancelled(actionName, kind, 'Run Hermes Fake cancelled: prompt is required.');
-    setStatusMessage('Run Hermes Fake cancelled: prompt is required.');
-    return;
-  }
-  if (!window.confirm('Run Hermes Fake will record a Hermes fake run. Continue?')) {
-    recordActionCancelled(actionName, kind, 'Run Hermes Fake cancelled.');
-    setStatusMessage('Run Hermes Fake cancelled.');
-    return;
-  }
-  try {
-    const response = await postJson(endpoints.hermesFake, { prompt: promptText });
-    recordActionSuccess(actionName, kind, response, 'Run Hermes Fake completed.');
-    reloadWithFlash(response.message ?? 'Run Hermes Fake completed.');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const traceId = error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
-    recordActionError(actionName, kind, message, traceId);
-    setStatusMessage(message);
-  }
+  await runUiAction(actionName, kind, async () => {
+    const promptText = requirePrompt('Run Hermes Fake prompt:');
+    if (!promptText) {
+      recordActionCancelled(actionName, kind, 'Run Hermes Fake cancelled: prompt is required.');
+      setStatusMessage('Run Hermes Fake cancelled: prompt is required.');
+      return;
+    }
+    if (!window.confirm('Run Hermes Fake will record a Hermes fake run. Continue?')) {
+      recordActionCancelled(actionName, kind, 'Run Hermes Fake cancelled.');
+      setStatusMessage('Run Hermes Fake cancelled.');
+      return;
+    }
+    try {
+      const response = await postJson(endpoints.hermesFake, { prompt: promptText });
+      recordActionSuccess(actionName, kind, response, 'Run Hermes Fake completed.');
+      reloadWithFlash(response.message ?? 'Run Hermes Fake completed.');
+    } catch (error) {
+      const message = buildErrorMessage(actionName, error);
+      const traceId = error?.traceId ?? error?.response?.traceId ?? error?.response?.statusDto?.traceId ?? null;
+      recordActionError(actionName, kind, message, traceId, buildErrorRecommendedAction(actionName));
+      setStatusMessage(message);
+    }
+  });
 }
 
-document.getElementById('refresh').addEventListener('click', () => {
-  doRefresh();
+actionButtonIds.forEach((id) => {
+  const button = document.getElementById(id);
+  if (!button) {
+    return;
+  }
+  button.addEventListener('click', () => {
+    if (id === 'refresh') {
+      doRefresh();
+      return;
+    }
+    if (id === 'create-state') {
+      void doState();
+      return;
+    }
+    if (id === 'inject-context') {
+      void doInject();
+      return;
+    }
+    if (id === 'create-anchor') {
+      void doAnchor();
+      return;
+    }
+    if (id === 'run-hermes-fake') {
+      void doHermesFake();
+    }
+  });
 });
-document.getElementById('create-state').addEventListener('click', () => {
-  void doState();
-});
-document.getElementById('inject-context').addEventListener('click', () => {
-  void doInject();
-});
-document.getElementById('create-anchor').addEventListener('click', () => {
-  void doAnchor();
-});
-document.getElementById('run-hermes-fake').addEventListener('click', () => {
-  void doHermesFake();
-});
+
 document.getElementById('clear-activity').addEventListener('click', () => {
   sessionStorage.removeItem(activityKey);
   renderActivityPanel();

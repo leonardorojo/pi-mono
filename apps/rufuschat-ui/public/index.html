@@ -14,32 +14,15 @@
             <div class="eyebrow">Projects</div>
             <h1>RufusChat</h1>
           </div>
-          <button class="button button--ghost" id="new-project-button" type="button">New project</button>
+          <button class="button button--ghost" id="new-chat-button" type="button">New chat</button>
         </div>
 
-        <nav class="project-tree" aria-label="Projects list">
-          <section class="project-group project-group--active">
-            <button class="project-group__title" type="button" aria-expanded="true">PI Agent</button>
-            <div class="project-group__children">
-              <button class="chat-item chat-item--active" type="button" data-project="PI Agent" data-chat="Branch · RufusChat Fase 10">Branch · RufusChat Fase 10</button>
-              <button class="chat-item" type="button" data-project="PI Agent" data-chat="RufusChat Fase 10">RufusChat Fase 10</button>
-              <button class="chat-item" type="button" data-project="PI Agent" data-chat="RufusChat Fase 9">RufusChat Fase 9</button>
-              <button class="chat-item" type="button" data-project="PI Agent" data-chat="Adjust · RufusChat UX">Adjust · RufusChat UX</button>
-              <button class="chat-item" type="button" data-project="PI Agent" data-chat="RufusChat Fase 8">RufusChat Fase 8</button>
-              <button class="chat-item chat-item--muted" type="button">Show more</button>
-            </div>
-          </section>
-
-          <button class="project-link" type="button">CivilPlan</button>
-          <button class="project-link" type="button">Wise</button>
-          <button class="project-link" type="button">CC Analysis</button>
-          <button class="project-link" type="button">Hermes WSL2</button>
-        </nav>
+        <nav class="project-tree" id="project-tree" aria-label="Projects list"></nav>
 
         <div class="sidebar__footer">
           <span>RufusChat UI v0</span>
-          <span>Provider: not connected</span>
-          <span>RCK: background / not wired in 10A</span>
+          <span>Browser-local project/chat state</span>
+          <span>Slash commands stay in the active chat</span>
         </div>
       </aside>
 
@@ -52,7 +35,7 @@
               <span>current chat: <strong id="current-chat">Branch · RufusChat Fase 10</strong></span>
             </div>
           </div>
-          <div class="chat-header__status">Local-first skeleton</div>
+          <div class="chat-header__status">Browser-local session</div>
         </header>
 
         <section class="messages" id="messages" aria-live="polite" aria-label="Messages"></section>

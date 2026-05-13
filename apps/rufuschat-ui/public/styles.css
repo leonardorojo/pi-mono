@@ -115,8 +115,11 @@ textarea:disabled {
 
 .project-tree {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .project-group {
@@ -126,8 +129,12 @@ textarea:disabled {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.project-group--active {
+  background: rgba(79, 140, 255, 0.06);
+  border-color: rgba(79, 140, 255, 0.34);
+}
+
 .project-group__title,
-.project-link,
 .chat-item {
   width: 100%;
   text-align: left;
@@ -141,21 +148,23 @@ textarea:disabled {
   font-size: 0.96rem;
 }
 
+.project-group--active .project-group__title {
+  color: white;
+}
+
 .project-group__children {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.chat-item,
-.project-link {
+.chat-item {
   padding: 0.7rem 0.85rem;
   border-radius: 12px;
   color: rgba(231, 234, 240, 0.88);
 }
 
-.chat-item:hover,
-.project-link:hover {
+.chat-item:hover {
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -164,12 +173,14 @@ textarea:disabled {
   color: white;
 }
 
-.chat-item--muted {
+.empty-state {
+  align-self: center;
+  margin: auto;
+  padding: 1rem 1.2rem;
+  border-radius: 16px;
+  border: 1px dashed var(--panel-border);
   color: var(--muted);
-}
-
-.project-link {
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .sidebar__footer {

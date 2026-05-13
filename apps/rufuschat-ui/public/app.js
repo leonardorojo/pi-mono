@@ -9,16 +9,156 @@ const confirmModal = document.getElementById('confirm-modal');
 const confirmDescription = document.getElementById('confirm-modal-description');
 const confirmCancelButton = document.getElementById('confirm-modal-cancel');
 const confirmConfirmButton = document.getElementById('confirm-modal-confirm');
-const chatItems = Array.from(document.querySelectorAll('.chat-item'));
-const projectGroupTitle = document.querySelector('.project-group__title');
+const projectTreeEl = document.getElementById('project-tree');
+const newChatButton = document.getElementById('new-chat-button');
 
-const idleStatusText = 'Local-first skeleton';
+const idleStatusText = 'Browser-local session';
 const initialAssistantMessage =
-  'I’m RufusChat. This chat is local-first. LLM integration is not connected yet. RCK tracking runs in the background when you explicitly use product actions like /checkpoint or /inject.';
+  'RufusChat local session ready. Select a chat, or use /status, /checkpoint, /inject, /hermes fake.';
+const newChatAssistantMessage =
+  'New local chat created. LLM and semantic memory are not connected yet.';
 
 let confirmResolver = null;
 
+function makeId(prefix) {
+  const random = globalThis.crypto?.randomUUID?.();
+  return `${prefix}-${random ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
 function createMessage(role, text, variant = 'normal') {
+  return {
+    role,
+    text,
+    variant,
+  };
+}
+
+function createChat(title, messages = []) {
+  return {
+    id: makeId('chat'),
+    title,
+    messages: messages.map((message) => createMessage(message.role, message.text, message.variant ?? 'normal')),
+  };
+}
+
+function createProject(name, chats) {
+  return {
+    id: makeId('project'),
+    name,
+    chats,
+  };
+}
+
+function createInitialProjects() {
+  return [
+    createProject('PI Agent', [
+      createChat('Branch · RufusChat Fase 10', [createMessage('assistant', initialAssistantMessage)]),
+      createChat('RufusChat Fase 10'),
+      createChat('RufusChat Fase 9'),
+      createChat('Adjust · RufusChat UX'),
+      createChat('RufusChat Fase 8'),
+    ]),
+    createProject('CivilPlan', [createChat('CivilPlan')]),
+    createProject('Wise', [createChat('Wise')]),
+    createProject('CC Analysis', [createChat('CC Analysis')]),
+    createProject('Hermes WSL2', [createChat('Hermes WSL2')]),
+  ];
+}
+
+const state = {
+  projects: createInitialProjects(),
+  currentProjectId: null,
+  currentChatId: null,
+};
+
+state.currentProjectId = state.projects[0]?.id ?? null;
+state.currentChatId = state.projects[0]?.chats[0]?.id ?? null;
+
+function getProjectById(projectId) {
+  return state.projects.find((project) => project.id === projectId) ?? null;
+}
+
+function getChatById(chatId) {
+  for (const project of state.projects) {
+    const chat = project.chats.find((item) => item.id === chatId);
+    if (chat) {
+      return chat;
+    }
+  }
+
+  return null;
+}
+
+function getCurrentProject() {
+  return getProjectById(state.currentProjectId);
+}
+
+function getCurrentChat() {
+  return getChatById(state.currentChatId);
+}
+
+function scrollToBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function setBusy(isBusy, label = 'Running...') {
+  composerInput.disabled = isBusy;
+  sendButton.disabled = isBusy;
+  newChatButton.disabled = isBusy;
+  statusPill.textContent = isBusy ? label : idleStatusText;
+}
+
+function renderHeader() {
+  const project = getCurrentProject();
+  const chat = getCurrentChat();
+
+  currentProjectEl.textContent = project?.name ?? '—';
+  currentChatEl.textContent = chat?.title ?? '—';
+}
+
+function renderSidebar() {
+  projectTreeEl.replaceChildren();
+
+  for (const project of state.projects) {
+    const section = document.createElement('section');
+    section.className = 'project-group';
+    if (project.id === state.currentProjectId) {
+      section.classList.add('project-group--active');
+    }
+
+    const titleButton = document.createElement('button');
+    titleButton.type = 'button';
+    titleButton.className = 'project-group__title';
+    titleButton.dataset.action = 'select-project';
+    titleButton.dataset.projectId = project.id;
+    titleButton.textContent = project.name;
+    section.appendChild(titleButton);
+
+    const children = document.createElement('div');
+    children.className = 'project-group__children';
+
+    for (const chat of project.chats) {
+      const chatButton = document.createElement('button');
+      chatButton.type = 'button';
+      chatButton.className = 'chat-item';
+      chatButton.dataset.action = 'select-chat';
+      chatButton.dataset.projectId = project.id;
+      chatButton.dataset.chatId = chat.id;
+      chatButton.textContent = chat.title;
+
+      if (project.id === state.currentProjectId && chat.id === state.currentChatId) {
+        chatButton.classList.add('chat-item--active');
+      }
+
+      children.appendChild(chatButton);
+    }
+
+    section.appendChild(children);
+    projectTreeEl.appendChild(section);
+  }
+}
+
+function createMessageElement(role, text, variant = 'normal') {
   const message = document.createElement('article');
   message.className = `message message--${role}${variant === 'error' ? ' message--error' : ''}`;
 
@@ -34,28 +174,91 @@ function createMessage(role, text, variant = 'normal') {
   return message;
 }
 
-function scrollToBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
+function renderMessages() {
+  const chat = getCurrentChat();
+  messagesEl.replaceChildren();
 
-function appendMessage(role, text, variant = 'normal') {
-  messagesEl.appendChild(createMessage(role, text, variant));
+  if (!chat) {
+    const emptyState = document.createElement('div');
+    emptyState.className = 'empty-state';
+    emptyState.textContent = 'Select a chat to start.';
+    messagesEl.appendChild(emptyState);
+    return;
+  }
+
+  if (chat.messages.length === 0) {
+    const emptyState = document.createElement('div');
+    emptyState.className = 'empty-state';
+    emptyState.textContent = 'No messages yet. Start the conversation here.';
+    messagesEl.appendChild(emptyState);
+    scrollToBottom();
+    return;
+  }
+
+  for (const message of chat.messages) {
+    messagesEl.appendChild(createMessageElement(message.role, message.text, message.variant));
+  }
+
   scrollToBottom();
 }
 
-function setBusy(isBusy, label = 'Running...') {
-  composerInput.disabled = isBusy;
-  sendButton.disabled = isBusy;
-  statusPill.textContent = isBusy ? label : idleStatusText;
+function render() {
+  renderHeader();
+  renderSidebar();
+  renderMessages();
 }
 
-function setActiveChat(project, chat) {
-  currentProjectEl.textContent = project;
-  currentChatEl.textContent = chat;
+function setCurrentSelection(projectId, chatId) {
+  const project = getProjectById(projectId);
+  if (!project) {
+    return;
+  }
 
-  chatItems.forEach((item) => {
-    item.classList.toggle('chat-item--active', item.dataset.project === project && item.dataset.chat === chat);
-  });
+  const nextChat = chatId ? project.chats.find((item) => item.id === chatId) : project.chats[0];
+  if (!nextChat) {
+    return;
+  }
+
+  state.currentProjectId = project.id;
+  state.currentChatId = nextChat.id;
+  render();
+  composerInput.focus();
+}
+
+function deriveChatTitle(text) {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return 'New chat';
+  }
+
+  const title = compact.split(' ').slice(0, 4).join(' ');
+  return title.length > 28 ? `${title.slice(0, 28).trimEnd()}…` : title;
+}
+
+function maybeRenameChatFromFirstUserMessage(chat, userText) {
+  if (chat.title !== 'New chat') {
+    return;
+  }
+
+  const userMessages = chat.messages.filter((message) => message.role === 'user');
+  if (userMessages.length !== 1) {
+    return;
+  }
+
+  chat.title = deriveChatTitle(userText);
+}
+
+function appendMessageToChat(chatId, role, text, variant = 'normal') {
+  const chat = getChatById(chatId);
+  if (!chat) {
+    return;
+  }
+
+  chat.messages.push(createMessage(role, text, variant));
+
+  if (chat.id === state.currentChatId) {
+    renderMessages();
+  }
 }
 
 async function readJsonResponse(response) {
@@ -159,125 +362,171 @@ function closeConfirm(confirmed) {
 }
 
 async function confirmAction(message) {
-  return await openConfirm(message);
+  return openConfirm(message);
 }
 
-async function runStatus() {
+async function runStatus(targetChatId) {
   setBusy(true);
   try {
     const data = await getJson('/api/status');
-    appendMessage('assistant', data.message ?? 'Status checked. Health: OK.');
+    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Status checked. Health: OK.');
   } catch (error) {
-    appendMessage('assistant', `Status request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`, 'error');
+    appendMessageToChat(
+      targetChatId,
+      'assistant',
+      `Status request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`,
+      'error',
+    );
   } finally {
     setBusy(false);
   }
 }
 
-async function runCheckpoint(label) {
+async function runCheckpoint(targetChatId, label) {
   if (!(await confirmAction(`Create checkpoint "${label}"?`))) {
-    appendMessage('assistant', 'Checkpoint cancelled.');
+    appendMessageToChat(targetChatId, 'assistant', 'Checkpoint cancelled.');
     return;
   }
 
   setBusy(true);
   try {
     const data = await postJson('/api/checkpoint', { label });
-    appendMessage('assistant', data.message ?? `Checkpoint created: ${label}. RCK recorded this point.`);
+    appendMessageToChat(targetChatId, 'assistant', data.message ?? `Checkpoint created: ${label}.`);
   } catch (error) {
-    appendMessage('assistant', `Checkpoint request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`, 'error');
+    appendMessageToChat(
+      targetChatId,
+      'assistant',
+      `Checkpoint request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`,
+      'error',
+    );
   } finally {
     setBusy(false);
   }
 }
 
-async function runInject() {
+async function runInject(targetChatId) {
   if (!(await confirmAction('Inject safe context for this chat?'))) {
-    appendMessage('assistant', 'Inject cancelled.');
+    appendMessageToChat(targetChatId, 'assistant', 'Inject cancelled.');
     return;
   }
 
   setBusy(true);
   try {
     const data = await postJson('/api/inject', {});
-    appendMessage('assistant', data.message ?? 'Safe context injected.');
+    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Safe context injected.');
   } catch (error) {
-    appendMessage('assistant', `Inject request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`, 'error');
+    appendMessageToChat(
+      targetChatId,
+      'assistant',
+      `Inject request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`,
+      'error',
+    );
   } finally {
     setBusy(false);
   }
 }
 
-async function runHermesFake(prompt) {
+async function runHermesFake(targetChatId, prompt) {
   if (!prompt) {
-    appendMessage('assistant', 'Hermes fake run requires a prompt.');
+    appendMessageToChat(targetChatId, 'assistant', 'Hermes fake run requires a prompt.');
     return;
   }
 
   if (!(await confirmAction(`Run fake Hermes for: ${prompt}`))) {
-    appendMessage('assistant', 'Hermes fake run cancelled.');
+    appendMessageToChat(targetChatId, 'assistant', 'Hermes fake run cancelled.');
     return;
   }
 
   setBusy(true);
   try {
     const data = await postJson('/api/hermes/fake', { prompt });
-    appendMessage('assistant', data.message ?? 'Hermes fake run completed.');
+    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Hermes fake run completed.');
   } catch (error) {
-    appendMessage('assistant', `Hermes fake request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`, 'error');
+    appendMessageToChat(
+      targetChatId,
+      'assistant',
+      `Hermes fake request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`,
+      'error',
+    );
   } finally {
     setBusy(false);
   }
 }
 
-function showLocalFallback(text) {
-  appendMessage(
+function showLocalFallback(targetChatId, text) {
+  appendMessageToChat(
+    targetChatId,
     'assistant',
-    text.startsWith('/') ? 'Command recognized locally. This skeleton only supports placeholder responses in 10A.' : 'LLM is not connected yet. I received your message locally.',
+    text.startsWith('/')
+      ? 'Command recognized locally. This browser-local chat keeps the response in the active chat.'
+      : 'I received your message locally. This browser session does not use LLM or semantic memory yet.',
   );
 }
 
 async function handleUserSubmission(text) {
-  appendMessage('user', text);
+  const targetChatId = state.currentChatId;
+  const chat = getChatById(targetChatId);
+  if (!chat) {
+    return;
+  }
+
+  appendMessageToChat(targetChatId, 'user', text);
+  maybeRenameChatFromFirstUserMessage(chat, text);
+  renderSidebar();
+  renderHeader();
 
   const command = parseSlashCommand(text);
 
   if (command.type === 'plain') {
-    showLocalFallback(text);
+    showLocalFallback(targetChatId, text);
     return;
   }
 
   if (command.type === 'unknown') {
-    appendMessage('assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>.');
+    appendMessageToChat(targetChatId, 'assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>.');
     return;
   }
 
   if (command.type === 'hermes-real') {
-    appendMessage('assistant', 'Hermes real is not connected in this UI. Use /hermes fake <prompt>.');
+    appendMessageToChat(targetChatId, 'assistant', 'Hermes real is not connected in this UI. Use /hermes fake <prompt>.');
     return;
   }
 
   if (command.type === 'hermes-fake-missing-prompt') {
-    appendMessage('assistant', 'Hermes fake run requires a prompt.');
+    appendMessageToChat(targetChatId, 'assistant', 'Hermes fake run requires a prompt.');
     return;
   }
 
   switch (command.type) {
     case 'status':
-      await runStatus();
+      await runStatus(targetChatId);
       return;
     case 'checkpoint':
-      await runCheckpoint(command.label);
+      await runCheckpoint(targetChatId, command.label);
       return;
     case 'inject':
-      await runInject();
+      await runInject(targetChatId);
       return;
     case 'hermes-fake':
-      await runHermesFake(command.prompt);
+      await runHermesFake(targetChatId, command.prompt);
       return;
     default:
-      appendMessage('assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>.');
+      appendMessageToChat(targetChatId, 'assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>.');
   }
+}
+
+function createNewChat() {
+  const project = getCurrentProject();
+  if (!project) {
+    return;
+  }
+
+  const chat = createChat('New chat', [createMessage('assistant', newChatAssistantMessage)]);
+  project.chats.push(chat);
+  state.currentProjectId = project.id;
+  state.currentChatId = chat.id;
+  render();
+  composerInput.focus();
 }
 
 composerForm.addEventListener('submit', (event) => {
@@ -329,22 +578,32 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-chatItems.forEach((item) => {
-  item.addEventListener('click', () => {
-    const project = item.dataset.project;
-    const chat = item.dataset.chat;
+projectTreeEl.addEventListener('click', (event) => {
+  const button = event.target instanceof HTMLElement ? event.target.closest('button[data-action]') : null;
+  if (!(button instanceof HTMLButtonElement)) {
+    return;
+  }
 
-    if (project && chat) {
-      setActiveChat(project, chat);
-    }
-  });
+  const action = button.dataset.action;
+  const projectId = button.dataset.projectId;
+  const chatId = button.dataset.chatId;
+
+  if (!projectId) {
+    return;
+  }
+
+  if (action === 'select-project') {
+    setCurrentSelection(projectId);
+    return;
+  }
+
+  if (action === 'select-chat' && chatId) {
+    setCurrentSelection(projectId, chatId);
+  }
 });
 
-projectGroupTitle?.addEventListener('click', () => {
-  const expanded = projectGroupTitle.getAttribute('aria-expanded') === 'true';
-  projectGroupTitle.setAttribute('aria-expanded', String(!expanded));
-});
+newChatButton.addEventListener('click', createNewChat);
 
-appendMessage('assistant', initialAssistantMessage);
-setActiveChat('PI Agent', 'Branch · RufusChat Fase 10');
+setBusy(false);
+render();
 composerInput.focus();

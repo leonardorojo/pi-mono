@@ -20,7 +20,13 @@ const newChatButton = document.getElementById('new-chat-button');
 const projectContextMenuEl = document.getElementById('project-context-menu');
 const chatContextMenuEl = document.getElementById('chat-context-menu');
 
+const productStateEndpoint = '/api/product-state';
 const idleStatusText = 'Browser-local session';
+const loadingStatusText = 'Loading product state...';
+const savingStatusText = 'Saving product state...';
+const savedStatusText = 'Saved';
+const hydrateFailureText = 'Product state could not be loaded. Using an in-memory session.';
+const saveFailureText = 'Product state could not be saved.';
 const memoryPlaceholder = {
   memoryStatus: 'not-connected',
   semanticSummaryStatus: 'not-generated',
@@ -117,37 +123,69 @@ function promptForName(message, defaultValue = '') {
   return value || null;
 }
 
-function createMessage(role, text, variant = 'normal') {
+function createMessage(role, text, variant = 'normal', overrides = {}) {
+  const timestamp = overrides.createdAt ?? nowIso();
+  const content = typeof overrides.content === 'string' ? overrides.content : text;
+  const messageVariant = overrides.variant ?? variant;
+
   return {
+    id: overrides.id ?? makeId('message'),
     role,
     text,
-    variant,
+    content,
+    variant: messageVariant,
+    kind: overrides.kind ?? (messageVariant === 'error' ? 'error' : 'normal'),
+    createdAt: timestamp,
+    links: overrides.links ?? null,
   };
 }
 
 function createChat(title, messages = [], overrides = {}) {
-  const timestamp = nowIso();
+  const timestamp = overrides.createdAt ?? nowIso();
+  const chatId = overrides.id ?? makeId('chat');
+  const projectId = overrides.projectId ?? null;
+
   return {
-    id: makeId('chat'),
+    id: chatId,
+    projectId,
     title,
-    messages: messages.map((message) => createMessage(message.role, message.text, message.variant ?? 'normal')),
+    kind: overrides.kind ?? 'normal',
+    messages: messages.map((message) =>
+      createMessage(message.role, message.text ?? message.content ?? '', message.variant ?? 'normal', {
+        ...message,
+        projectId,
+      }),
+    ),
     createdAt: timestamp,
-    updatedAt: timestamp,
-    memoryStatus: memoryPlaceholder.memoryStatus,
-    semanticSummaryStatus: memoryPlaceholder.semanticSummaryStatus,
-    linkedRckTraceStatus: memoryPlaceholder.linkedRckTraceStatus,
-    semanticSummaryPreview: memoryPlaceholder.semanticSummaryPreview,
-    linkedRckTraceId: memoryPlaceholder.linkedRckTraceId,
-    linkedRckTrace: { ...tracePlaceholder },
+    updatedAt: overrides.updatedAt ?? timestamp,
+    memoryStatus: overrides.memoryStatus ?? memoryPlaceholder.memoryStatus,
+    semanticSummaryStatus: overrides.semanticSummaryStatus ?? memoryPlaceholder.semanticSummaryStatus,
+    semanticSummaryPreview: overrides.semanticSummaryPreview ?? memoryPlaceholder.semanticSummaryPreview,
+    linkedRckTraceStatus: overrides.linkedRckTraceStatus ?? memoryPlaceholder.linkedRckTraceStatus,
+    linkedRckTraceId: overrides.linkedRckTraceId ?? memoryPlaceholder.linkedRckTraceId,
+    linkedRckTrace: overrides.linkedRckTrace ? { ...overrides.linkedRckTrace } : { ...tracePlaceholder },
     ...overrides,
   };
 }
 
-function createProject(name, chats) {
+function createProject(name, chats = [], overrides = {}) {
+  const timestamp = overrides.createdAt ?? nowIso();
+  const projectId = overrides.id ?? makeId('project');
+
   return {
-    id: makeId('project'),
+    id: projectId,
     name,
-    chats,
+    repoPath: overrides.repoPath ?? null,
+    chats: chats.map((chat) =>
+      createChat(chat.title ?? 'New chat', chat.messages ?? [], {
+        ...chat,
+        id: chat.id,
+        projectId,
+      }),
+    ),
+    createdAt: timestamp,
+    updatedAt: overrides.updatedAt ?? timestamp,
+    ...overrides,
   };
 }
 
@@ -167,14 +205,395 @@ function createInitialProjects() {
   ];
 }
 
-const state = {
+let state = {
+  version: '0',
   projects: createInitialProjects(),
   currentProjectId: null,
   currentChatId: null,
+  createdAt: nowIso(),
+  updatedAt: nowIso(),
 };
 
 state.currentProjectId = state.projects[0]?.id ?? null;
 state.currentChatId = state.projects[0]?.chats[0]?.id ?? null;
+
+let productStateBannerText = idleStatusText;
+let productStateBannerResetTimer = null;
+let productStateHydrating = true;
+let productStateLocalDirty = false;
+let productStateSaveTimer = null;
+let productStateSaveInFlight = false;
+let productStateSaveQueued = false;
+let productStateLastSavedSnapshot = null;
+
+function syncStatusPill() {
+  if (statusPill) {
+    statusPill.textContent = productStateBannerText;
+  }
+}
+
+function setProductStateBanner(text, { resetAfterMs = null } = {}) {
+  productStateBannerText = text;
+  syncStatusPill();
+
+  if (productStateBannerResetTimer) {
+    clearTimeout(productStateBannerResetTimer);
+    productStateBannerResetTimer = null;
+  }
+
+  if (resetAfterMs !== null) {
+    productStateBannerResetTimer = setTimeout(() => {
+      productStateBannerResetTimer = null;
+      productStateBannerText = idleStatusText;
+      syncStatusPill();
+    }, resetAfterMs);
+  }
+}
+
+function touchRootState({ dirty = true } = {}) {
+  state.updatedAt = nowIso();
+  if (dirty) {
+    productStateLocalDirty = true;
+  }
+}
+
+function touchProject(project, { dirty = true } = {}) {
+  if (project) {
+    project.updatedAt = nowIso();
+  }
+
+  if (dirty) {
+    productStateLocalDirty = true;
+  }
+}
+
+function touchChat(chat, { dirty = true } = {}) {
+  if (chat) {
+    chat.updatedAt = nowIso();
+  }
+
+  if (dirty) {
+    productStateLocalDirty = true;
+  }
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function sanitizeNullableString(value) {
+  return typeof value === 'string' ? value : null;
+}
+
+function sanitizeMessageLinks(links) {
+  if (!isPlainObject(links)) {
+    return null;
+  }
+
+  const output = {};
+  let hasAny = false;
+
+  for (const field of ['rckTraceId', 'contextPackId', 'checkpointId']) {
+    if (links[field] === undefined) {
+      continue;
+    }
+
+    if (links[field] === null || typeof links[field] === 'string') {
+      output[field] = links[field];
+      hasAny = true;
+    }
+  }
+
+  return hasAny ? output : null;
+}
+
+function normalizeChatKind(kind) {
+  return kind === 'phase' || kind === 'decision' || kind === 'debug' ? kind : 'normal';
+}
+
+function normalizeMessageKind(kind, variant) {
+  if (kind === 'command' || kind === 'command-result' || kind === 'error' || kind === 'placeholder') {
+    return kind;
+  }
+
+  return variant === 'error' ? 'error' : 'normal';
+}
+
+function uiMessageFromProductMessage(message) {
+  const content = typeof message?.content === 'string' ? message.content : typeof message?.text === 'string' ? message.text : '';
+  const kind = normalizeMessageKind(message?.kind, message?.variant);
+  const variant = kind === 'error' ? 'error' : typeof message?.variant === 'string' ? message.variant : 'normal';
+
+  return createMessage(message?.role ?? 'user', content, variant, {
+    id: typeof message?.id === 'string' ? message.id : undefined,
+    content,
+    kind,
+    createdAt: typeof message?.createdAt === 'string' ? message.createdAt : undefined,
+    links: sanitizeMessageLinks(message?.links),
+  });
+}
+
+function uiChatFromProductChat(chat, projectIdFallback) {
+  const now = nowIso();
+  const linkedRckTrace = isPlainObject(chat?.linkedRckTrace)
+    ? { ...tracePlaceholder, ...chat.linkedRckTrace }
+    : { ...tracePlaceholder };
+
+  return createChat(chat?.title ?? 'New chat', Array.isArray(chat?.messages) ? chat.messages.map(uiMessageFromProductMessage) : [], {
+    id: typeof chat?.id === 'string' ? chat.id : undefined,
+    projectId: typeof chat?.projectId === 'string' ? chat.projectId : projectIdFallback,
+    kind: normalizeChatKind(chat?.kind),
+    createdAt: typeof chat?.createdAt === 'string' ? chat.createdAt : now,
+    updatedAt: typeof chat?.updatedAt === 'string' ? chat.updatedAt : now,
+    memoryStatus: typeof chat?.memoryStatus === 'string' ? chat.memoryStatus : memoryPlaceholder.memoryStatus,
+    semanticSummaryStatus: typeof chat?.semanticSummaryStatus === 'string' ? chat.semanticSummaryStatus : memoryPlaceholder.semanticSummaryStatus,
+    semanticSummaryPreview: typeof chat?.semanticSummaryPreview === 'string' ? chat.semanticSummaryPreview : null,
+    linkedRckTraceStatus: typeof chat?.linkedRckTraceStatus === 'string' ? chat.linkedRckTraceStatus : linkedRckTrace.status,
+    linkedRckTraceId: sanitizeNullableString(chat?.linkedRckTraceId),
+    linkedRckTrace,
+  });
+}
+
+function uiProjectFromProductProject(project) {
+  const now = nowIso();
+  const projectId = typeof project?.id === 'string' ? project.id : makeId('project');
+
+  return createProject(project?.name ?? 'New project', Array.isArray(project?.chats) ? project.chats.map((chat) => uiChatFromProductChat(chat, projectId)) : [], {
+    id: projectId,
+    repoPath: project?.repoPath ?? null,
+    createdAt: typeof project?.createdAt === 'string' ? project.createdAt : now,
+    updatedAt: typeof project?.updatedAt === 'string' ? project.updatedAt : now,
+  });
+}
+
+function replaceStateFromProductState(productState) {
+  const now = nowIso();
+  const projects = Array.isArray(productState?.projects)
+    ? productState.projects.map((project) => uiProjectFromProductProject(project))
+    : [];
+
+  state = {
+    version: typeof productState?.version === 'string' ? productState.version : '0',
+    projects,
+    currentProjectId: typeof productState?.currentProjectId === 'string' ? productState.currentProjectId : null,
+    currentChatId: typeof productState?.currentChatId === 'string' ? productState.currentChatId : null,
+    createdAt: typeof productState?.createdAt === 'string' ? productState.createdAt : now,
+    updatedAt: typeof productState?.updatedAt === 'string' ? productState.updatedAt : now,
+  };
+}
+
+function buildProductStatePayload() {
+  const now = nowIso();
+
+  return {
+    version: typeof state.version === 'string' ? state.version : '0',
+    projects: state.projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      repoPath: project.repoPath ?? null,
+      chats: project.chats.map((chat) => ({
+        id: chat.id,
+        projectId: chat.projectId ?? project.id,
+        title: chat.title,
+        kind: normalizeChatKind(chat.kind),
+        messages: chat.messages.map((message) => ({
+          id: message.id ?? makeId('message'),
+          role: message.role,
+          content: typeof message.content === 'string' ? message.content : typeof message.text === 'string' ? message.text : '',
+          createdAt: typeof message.createdAt === 'string' ? message.createdAt : now,
+          ...(normalizeMessageKind(message.kind, message.variant) === 'normal' ? {} : { kind: normalizeMessageKind(message.kind, message.variant) }),
+          ...(sanitizeMessageLinks(message.links) ? { links: sanitizeMessageLinks(message.links) } : {}),
+        })),
+        createdAt: typeof chat.createdAt === 'string' ? chat.createdAt : now,
+        updatedAt: typeof chat.updatedAt === 'string' ? chat.updatedAt : now,
+        memoryStatus: typeof chat.memoryStatus === 'string' ? chat.memoryStatus : memoryPlaceholder.memoryStatus,
+        semanticSummaryStatus: typeof chat.semanticSummaryStatus === 'string' ? chat.semanticSummaryStatus : memoryPlaceholder.semanticSummaryStatus,
+        semanticSummaryPreview: typeof chat.semanticSummaryPreview === 'string' ? chat.semanticSummaryPreview : null,
+        linkedRckTraceStatus: typeof chat.linkedRckTraceStatus === 'string' ? chat.linkedRckTraceStatus : memoryPlaceholder.linkedRckTraceStatus,
+        linkedRckTrace: isPlainObject(chat.linkedRckTrace)
+          ? {
+              status: typeof chat.linkedRckTrace.status === 'string' ? chat.linkedRckTrace.status : tracePlaceholder.status,
+              traceId: sanitizeNullableString(chat.linkedRckTrace.traceId),
+              provider: chat.linkedRckTrace.provider ?? tracePlaceholder.provider,
+              futureProvider: chat.linkedRckTrace.futureProvider ?? tracePlaceholder.futureProvider,
+              mode: chat.linkedRckTrace.mode ?? tracePlaceholder.mode,
+            }
+          : { ...tracePlaceholder },
+      })),
+      createdAt: typeof project.createdAt === 'string' ? project.createdAt : now,
+      updatedAt: typeof project.updatedAt === 'string' ? project.updatedAt : now,
+    })),
+    currentProjectId: typeof state.currentProjectId === 'string' ? state.currentProjectId : null,
+    currentChatId: typeof state.currentChatId === 'string' ? state.currentChatId : null,
+    createdAt: typeof state.createdAt === 'string' ? state.createdAt : now,
+    updatedAt: typeof state.updatedAt === 'string' ? state.updatedAt : now,
+  };
+}
+
+function getProductStateSnapshot() {
+  return JSON.stringify(buildProductStatePayload());
+}
+
+function markProductStateChanged() {
+  touchRootState();
+  scheduleProductStateSave();
+}
+
+function scheduleProductStateSave({ immediate = false } = {}) {
+  if (productStateHydrating) {
+    productStateSaveQueued = true;
+    return;
+  }
+
+  if (immediate) {
+    clearTimeout(productStateSaveTimer);
+    productStateSaveTimer = null;
+    void saveProductStateNow();
+    return;
+  }
+
+  clearTimeout(productStateSaveTimer);
+  productStateSaveTimer = setTimeout(() => {
+    productStateSaveTimer = null;
+    void saveProductStateNow();
+  }, 500);
+}
+
+async function saveProductStateNow() {
+  if (productStateHydrating) {
+    productStateSaveQueued = true;
+    return;
+  }
+
+  const snapshot = getProductStateSnapshot();
+  if (snapshot === productStateLastSavedSnapshot) {
+    return;
+  }
+
+  if (productStateSaveInFlight) {
+    productStateSaveQueued = true;
+    return;
+  }
+
+  productStateSaveInFlight = true;
+  setProductStateBanner(savingStatusText);
+
+  try {
+    const response = await fetch(productStateEndpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: snapshot,
+    });
+    const data = await readJsonResponse(response);
+
+    if (!response.ok) {
+      throw new Error(data?.message ?? data?.error ?? saveFailureText);
+    }
+
+    if (typeof data?.state?.updatedAt === 'string') {
+      state.updatedAt = data.state.updatedAt;
+    }
+
+    productStateLocalDirty = false;
+    productStateLastSavedSnapshot = JSON.stringify(data?.state ?? buildProductStatePayload());
+    setProductStateBanner(savedStatusText, { resetAfterMs: 1200 });
+  } catch {
+    setProductStateBanner(saveFailureText);
+  } finally {
+    productStateSaveInFlight = false;
+
+    if (productStateSaveQueued) {
+      productStateSaveQueued = false;
+      scheduleProductStateSave({ immediate: true });
+    }
+  }
+}
+
+function applySelectionFallback({ persist = true } = {}) {
+  if (state.projects.length === 0) {
+    const project = createDefaultProject();
+    state.projects.push(project);
+    state.currentProjectId = project.id;
+    state.currentChatId = project.chats[0]?.id ?? null;
+    touchRootState({ dirty: persist });
+    if (persist) {
+      markProductStateChanged();
+    }
+    return true;
+  }
+
+  const project = getProjectById(state.currentProjectId) ?? state.projects[0];
+  if (!project) {
+    return false;
+  }
+
+  let chat = getChatById(state.currentChatId);
+  if (!chat || !project.chats.some((item) => item.id === chat?.id)) {
+    chat = project.chats[0] ?? null;
+  }
+
+  let changed = false;
+  if (!chat) {
+    chat = createDefaultChat();
+    chat.projectId = project.id;
+    project.chats.push(chat);
+    changed = true;
+  }
+
+  if (state.currentProjectId !== project.id) {
+    state.currentProjectId = project.id;
+    changed = true;
+  }
+
+  if (state.currentChatId !== chat.id) {
+    state.currentChatId = chat.id;
+    changed = true;
+  }
+
+  if (changed) {
+    touchRootState({ dirty: persist });
+    if (persist) {
+      markProductStateChanged();
+    }
+  }
+
+  return changed;
+}
+
+async function hydrateProductState() {
+  setProductStateBanner(loadingStatusText);
+
+  try {
+    const data = await getJson(productStateEndpoint);
+    if (productStateLocalDirty) {
+      setProductStateBanner(idleStatusText);
+      return;
+    }
+
+    replaceStateFromProductState(data?.state);
+    const selectionAdjusted = applySelectionFallback({ persist: false });
+    productStateLocalDirty = false;
+    productStateLastSavedSnapshot = getProductStateSnapshot();
+    productStateHydrating = false;
+    setProductStateBanner(idleStatusText);
+    render();
+    renderSlashMenu();
+    if (selectionAdjusted) {
+      markProductStateChanged();
+    }
+  } catch {
+    productStateHydrating = false;
+    setProductStateBanner(hydrateFailureText);
+    render();
+    renderSlashMenu();
+  } finally {
+    productStateHydrating = false;
+    if (productStateSaveQueued || productStateLocalDirty) {
+      productStateSaveQueued = false;
+      scheduleProductStateSave({ immediate: true });
+    }
+  }
+}
 
 function getProjectById(projectId) {
   return state.projects.find((project) => project.id === projectId) ?? null;
@@ -225,32 +644,8 @@ function ensureProjectListHasItems() {
   return null;
 }
 
-function ensureSelection() {
-  if (state.projects.length === 0) {
-    const project = createDefaultProject();
-    state.projects.push(project);
-    state.currentProjectId = project.id;
-    state.currentChatId = project.chats[0]?.id ?? null;
-    return;
-  }
-
-  const project = getProjectById(state.currentProjectId) ?? state.projects[0];
-  if (!project) {
-    return;
-  }
-
-  let chat = getChatById(state.currentChatId);
-  if (!chat || !project.chats.some((item) => item.id === chat?.id)) {
-    chat = project.chats[0] ?? null;
-  }
-
-  if (!chat) {
-    chat = createDefaultChat();
-    project.chats.push(chat);
-  }
-
-  state.currentProjectId = project.id;
-  state.currentChatId = chat.id;
+function ensureSelection({ persist = true } = {}) {
+  return applySelectionFallback({ persist });
 }
 
 function getProjectByIdOrDefault(projectId) {
@@ -284,7 +679,7 @@ function setBusy(isBusy, label = 'Running...') {
   if (newChatButton) {
     newChatButton.disabled = isBusy;
   }
-  statusPill.textContent = isBusy ? label : idleStatusText;
+  statusPill.textContent = isBusy ? label : productStateBannerText;
 
   if (isBusy) {
     hideSlashMenu();
@@ -505,8 +900,9 @@ function openChatContextMenu(projectId, chatId, anchorEl) {
 }
 
 function createChatInProject(project, title = 'New chat', messages = [createMessage('assistant', newChatAssistantMessage)]) {
-  const chat = createChat(title, messages);
+  const chat = createChat(title, messages, { projectId: project.id });
   project.chats.push(chat);
+  touchProject(project);
   return chat;
 }
 
@@ -530,6 +926,8 @@ function renameProject(projectId) {
   }
 
   project.name = nextName;
+  touchProject(project);
+  markProductStateChanged();
   render();
 }
 
@@ -566,6 +964,9 @@ function renameChat(chatId) {
   }
 
   chat.title = nextTitle;
+  touchChat(chat);
+  touchProject(getProjectByChatId(chat.id));
+  markProductStateChanged();
   render();
 }
 
@@ -586,6 +987,7 @@ async function deleteProject(projectId) {
 
   const wasActive = project.id === state.currentProjectId;
   state.projects.splice(projectIndex, 1);
+  touchRootState();
 
   if (state.projects.length === 0) {
     const fallbackProject = createProjectWithInitialChat('New project');
@@ -599,6 +1001,7 @@ async function deleteProject(projectId) {
   }
 
   ensureSelection();
+  markProductStateChanged();
   render();
 }
 
@@ -624,6 +1027,8 @@ async function deleteChat(projectId, chatId) {
 
   const wasActive = project.id === state.currentProjectId && chat.id === state.currentChatId;
   project.chats.splice(chatIndex, 1);
+  touchProject(project);
+  touchRootState();
 
   if (project.chats.length === 0) {
     const fallbackChat = createDefaultChat();
@@ -638,6 +1043,7 @@ async function deleteChat(projectId, chatId) {
   }
 
   ensureSelection();
+  markProductStateChanged();
   render();
 }
 
@@ -774,7 +1180,7 @@ function renderMessages({ autoScroll = false } = {}) {
   }
 
   for (const message of chat.messages) {
-    messagesEl.appendChild(createMessageElement(message.role, message.text, message.variant));
+    messagesEl.appendChild(createMessageElement(message.role, message.content ?? message.text ?? '', message.variant));
   }
 
   if (autoScroll) {
@@ -803,6 +1209,7 @@ function setCurrentSelection(projectId, chatId) {
   state.currentProjectId = project.id;
   state.currentChatId = nextChat.id;
   hideContextMenus();
+  markProductStateChanged();
   render();
   renderSlashMenu();
   composerInput.focus();
@@ -833,16 +1240,21 @@ function maybeRenameChatFromFirstUserMessage(chat, userText) {
   }
 
   chat.title = deriveChatTitle(userText);
+  touchChat(chat);
+  touchProject(getProjectByChatId(chat.id));
+  markProductStateChanged();
 }
 
-function appendMessageToChat(chatId, role, text, variant = 'normal') {
+function appendMessageToChat(chatId, role, text, variant = 'normal', overrides = {}) {
   const chat = getChatById(chatId);
   if (!chat) {
     return;
   }
 
-  chat.messages.push(createMessage(role, text, variant));
-  chat.updatedAt = nowIso();
+  chat.messages.push(createMessage(role, text, variant, overrides));
+  touchChat(chat);
+  touchProject(getProjectByChatId(chat.id));
+  markProductStateChanged();
 
   if (chat.id === state.currentChatId) {
     renderMessages({ autoScroll: true });
@@ -972,7 +1384,7 @@ async function runStatus(targetChatId) {
   setBusy(true);
   try {
     const data = await getJson('/api/status');
-    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Status checked. Health: OK.');
+    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Status checked. Health: OK.', 'normal', { kind: 'command-result' });
   } catch (error) {
     appendMessageToChat(
       targetChatId,
@@ -994,7 +1406,7 @@ async function runCheckpoint(targetChatId, label) {
   setBusy(true);
   try {
     const data = await postJson('/api/checkpoint', { label });
-    appendMessageToChat(targetChatId, 'assistant', data.message ?? `Checkpoint created: ${label}.`);
+    appendMessageToChat(targetChatId, 'assistant', data.message ?? `Checkpoint created: ${label}.`, 'normal', { kind: 'command-result' });
   } catch (error) {
     appendMessageToChat(
       targetChatId,
@@ -1016,7 +1428,7 @@ async function runInject(targetChatId) {
   setBusy(true);
   try {
     const data = await postJson('/api/inject', {});
-    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Safe context injected.');
+    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Safe context injected.', 'normal', { kind: 'command-result' });
   } catch (error) {
     appendMessageToChat(
       targetChatId,
@@ -1031,7 +1443,7 @@ async function runInject(targetChatId) {
 
 async function runHermesFake(targetChatId, prompt) {
   if (!prompt) {
-    appendMessageToChat(targetChatId, 'assistant', 'Hermes fake run requires a prompt.');
+    appendMessageToChat(targetChatId, 'assistant', 'Hermes fake run requires a prompt.', 'normal', { kind: 'command-result' });
     return;
   }
 
@@ -1043,7 +1455,7 @@ async function runHermesFake(targetChatId, prompt) {
   setBusy(true);
   try {
     const data = await postJson('/api/hermes/fake', { prompt });
-    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Hermes fake run completed.');
+    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Hermes fake run completed.', 'normal', { kind: 'command-result' });
   } catch (error) {
     appendMessageToChat(
       targetChatId,
@@ -1061,6 +1473,8 @@ function runTracePlaceholder(targetChatId, mode = 'trace') {
     targetChatId,
     'assistant',
     mode === 'trace-link' ? traceLinkPlaceholderMessage : traceLinkedPlaceholderMessage,
+    'normal',
+    { kind: 'placeholder' },
   );
 }
 
@@ -1071,6 +1485,8 @@ function showLocalFallback(targetChatId, text) {
     text.startsWith('/')
       ? 'Command recognized locally. This browser-local chat keeps the response in the active chat.'
       : 'I received your message locally. This browser session does not use LLM or semantic memory yet.',
+    'normal',
+    { kind: 'command-result' },
   );
 }
 
@@ -1094,17 +1510,17 @@ async function handleUserSubmission(text) {
   }
 
   if (command.type === 'unknown') {
-    appendMessageToChat(targetChatId, 'assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>, /trace, /trace link, /help.');
+    appendMessageToChat(targetChatId, 'assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>, /trace, /trace link, /help.', 'error', { kind: 'error' });
     return;
   }
 
   if (command.type === 'hermes-real') {
-    appendMessageToChat(targetChatId, 'assistant', 'Hermes real is not connected in this UI. Use /hermes fake <prompt>.');
+    appendMessageToChat(targetChatId, 'assistant', 'Hermes real is not connected in this UI. Use /hermes fake <prompt>.', 'error', { kind: 'error' });
     return;
   }
 
   if (command.type === 'help') {
-    appendMessageToChat(targetChatId, 'assistant', buildHelpMessage());
+    appendMessageToChat(targetChatId, 'assistant', buildHelpMessage(), 'normal', { kind: 'command-result' });
     return;
   }
 
@@ -1132,7 +1548,7 @@ async function handleUserSubmission(text) {
       await runHermesFake(targetChatId, command.prompt);
       return;
     default:
-      appendMessageToChat(targetChatId, 'assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>.');
+      appendMessageToChat(targetChatId, 'assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>.', 'error', { kind: 'error' });
   }
 }
 
@@ -1371,7 +1787,12 @@ if (slashMenuEl) {
   });
 }
 
-setBusy(false);
-render();
-renderSlashMenu();
-composerInput.focus();
+async function bootstrapApp() {
+  setBusy(false);
+  render();
+  renderSlashMenu();
+  composerInput.focus();
+  await hydrateProductState();
+}
+
+void bootstrapApp();

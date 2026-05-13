@@ -180,7 +180,7 @@ The `linked` and `placeholder` states are documented for future evolution only.
 
 - 11A only defines the boundary and schema.
 - 11B will implement backend-local JSON read/write.
-- 11C will hydrate and save the UI from that backend state.
+- 11C hydrates and saves the UI from that backend state.
 - 11D will validate the persistence UX.
 - The schema should remain stable enough that future migrations can be explicit and versioned.
 - If the schema evolves, prefer a versioned migration path instead of implicit shape drift.

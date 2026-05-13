@@ -37,7 +37,10 @@
             <div class="chat-session-shell" aria-label="Chat session memory state">
               <span>Memory: <strong id="current-memory-status">not connected</strong></span>
               <span>Summary: <strong id="current-summary-status">not generated</strong></span>
-              <span>RCK trace: <strong id="current-rck-trace-status">not linked</strong></span>
+              <span class="chat-session-shell__trace">
+                <span>RCK trace: <strong id="current-rck-trace-status">not linked</strong></span>
+                <button class="chat-session-shell__chip" id="current-trace-chip" type="button">Trace: not linked</button>
+              </span>
             </div>
           </div>
           <div class="chat-header__status">Browser-local session</div>

@@ -1,4 +1,4 @@
-# RufusChat UI skeleton (Fase 10A)
+# RufusChat UI skeleton (Fase 10E)
 
 This app is the ChatGPT-like UI skeleton for RufusChat.
 
@@ -11,7 +11,7 @@ What is included
 - Placeholder slash commands: /checkpoint, /inject, /status, /hermes
 - Dark theme with a ChatGPT-like layout
 
-What is not connected in 10A
+What is not connected in 10E
 - No LLM calls
 - No OpenAI calls
 - No Hermes execution
@@ -20,6 +20,12 @@ What is not connected in 10A
 - No persistence or storage changes
 - No project memory
 - No technical RCK dashboard in the UI
+
+What 10E adds
+- A chat-linked RCK trace placeholder in the session shell
+- A visible but non-functional `Trace: not linked` chip in the header
+- A placeholder `/trace` command that does not create or link any real trace
+- No real trace management yet
 
 Relationship to existing prototype
 - `scripts/rufuschat-ui-server.mjs` remains the validated Fase 8 prototype server

@@ -7,6 +7,7 @@ const currentChatEl = document.getElementById('current-chat');
 const memoryStatusEl = document.getElementById('current-memory-status');
 const summaryStatusEl = document.getElementById('current-summary-status');
 const rckTraceStatusEl = document.getElementById('current-rck-trace-status');
+const traceChipEl = document.getElementById('current-trace-chip');
 const statusPill = document.querySelector('.chat-header__status');
 const confirmModal = document.getElementById('confirm-modal');
 const confirmDescription = document.getElementById('confirm-modal-description');
@@ -23,10 +24,22 @@ const memoryPlaceholder = {
   semanticSummaryPreview: null,
   linkedRckTraceId: null,
 };
+const tracePlaceholder = {
+  status: 'not-linked',
+  traceId: null,
+  provider: 'pi-rck-bridge',
+  futureProvider: 'rck-core-kernel',
+  mode: 'placeholder',
+};
 const localIntroMessage =
   'This chat is local. LLM and semantic memory are not connected yet. RCK tracking happens only when you confirm slash actions.';
 const newChatAssistantMessage =
   'New local chat created. LLM and semantic memory are not connected yet.';
+const traceLinkedPlaceholderMessage =
+  'Trace linking is not connected yet. This chat is currently not linked to an RCK Trace. Future versions will link chats to RCK Core Trace DAGs.';
+const traceLinkPlaceholderMessage =
+  'Trace linking is a placeholder in 10E. No RCK trace was created or linked.';
+const traceChipMessage = 'Trace linking is not connected yet.';
 
 let confirmResolver = null;
 
@@ -60,6 +73,7 @@ function createChat(title, messages = [], overrides = {}) {
     linkedRckTraceStatus: memoryPlaceholder.linkedRckTraceStatus,
     semanticSummaryPreview: memoryPlaceholder.semanticSummaryPreview,
     linkedRckTraceId: memoryPlaceholder.linkedRckTraceId,
+    linkedRckTrace: { ...tracePlaceholder },
     ...overrides,
   };
 }
@@ -120,6 +134,20 @@ function getCurrentChat() {
   return getChatById(state.currentChatId);
 }
 
+function formatStatusLabel(status) {
+  return (status ?? '').replace(/-/g, ' ');
+}
+
+function getLinkedRckTrace(chat) {
+  return chat?.linkedRckTrace ?? {
+    status: chat?.linkedRckTraceStatus ?? tracePlaceholder.status,
+    traceId: chat?.linkedRckTraceId ?? tracePlaceholder.traceId,
+    provider: tracePlaceholder.provider,
+    futureProvider: tracePlaceholder.futureProvider,
+    mode: tracePlaceholder.mode,
+  };
+}
+
 function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -134,12 +162,22 @@ function setBusy(isBusy, label = 'Running...') {
 function renderHeader() {
   const project = getCurrentProject();
   const chat = getCurrentChat();
+  const linkedRckTrace = getLinkedRckTrace(chat);
 
   currentProjectEl.textContent = project?.name ?? '—';
   currentChatEl.textContent = chat?.title ?? '—';
-  memoryStatusEl.textContent = chat?.memoryStatus ?? memoryPlaceholder.memoryStatus;
-  summaryStatusEl.textContent = chat?.semanticSummaryStatus ?? memoryPlaceholder.semanticSummaryStatus;
-  rckTraceStatusEl.textContent = chat?.linkedRckTraceStatus ?? memoryPlaceholder.linkedRckTraceStatus;
+  memoryStatusEl.textContent = formatStatusLabel(chat?.memoryStatus ?? memoryPlaceholder.memoryStatus);
+  summaryStatusEl.textContent = formatStatusLabel(chat?.semanticSummaryStatus ?? memoryPlaceholder.semanticSummaryStatus);
+  rckTraceStatusEl.textContent = formatStatusLabel(linkedRckTrace.status ?? memoryPlaceholder.linkedRckTraceStatus);
+
+  if (traceChipEl) {
+    traceChipEl.textContent = `Trace: ${formatStatusLabel(linkedRckTrace.status ?? tracePlaceholder.status)}`;
+    traceChipEl.title = `Provider: ${linkedRckTrace.provider} · Future: ${linkedRckTrace.futureProvider} · Mode: ${linkedRckTrace.mode}`;
+    traceChipEl.setAttribute(
+      'aria-label',
+      `Trace: ${formatStatusLabel(linkedRckTrace.status ?? tracePlaceholder.status)}. Provider: ${linkedRckTrace.provider}. Future: ${linkedRckTrace.futureProvider}. Mode: ${linkedRckTrace.mode}.`,
+    );
+  }
 }
 
 function renderSidebar() {
@@ -266,6 +304,10 @@ function maybeRenameChatFromFirstUserMessage(chat, userText) {
     return;
   }
 
+  if (userText.trim().startsWith('/')) {
+    return;
+  }
+
   const userMessages = chat.messages.filter((message) => message.role === 'user');
   if (userMessages.length !== 1) {
     return;
@@ -349,6 +391,14 @@ function parseSlashCommand(text) {
     }
     case '/inject':
       return { type: 'inject' };
+    case '/trace': {
+      const mode = restTokens[0]?.toLowerCase();
+      if (mode === 'link') {
+        return { type: 'trace-link' };
+      }
+
+      return { type: 'trace' };
+    }
     case '/hermes': {
       const mode = restTokens[0]?.toLowerCase();
       if (mode !== 'fake') {
@@ -480,6 +530,14 @@ async function runHermesFake(targetChatId, prompt) {
   }
 }
 
+function runTracePlaceholder(targetChatId, mode = 'trace') {
+  appendMessageToChat(
+    targetChatId,
+    'assistant',
+    mode === 'trace-link' ? traceLinkPlaceholderMessage : traceLinkedPlaceholderMessage,
+  );
+}
+
 function showLocalFallback(targetChatId, text) {
   appendMessageToChat(
     targetChatId,
@@ -516,6 +574,11 @@ async function handleUserSubmission(text) {
 
   if (command.type === 'hermes-real') {
     appendMessageToChat(targetChatId, 'assistant', 'Hermes real is not connected in this UI. Use /hermes fake <prompt>.');
+    return;
+  }
+
+  if (command.type === 'trace' || command.type === 'trace-link') {
+    runTracePlaceholder(targetChatId, command.type);
     return;
   }
 
@@ -630,6 +693,17 @@ projectTreeEl.addEventListener('click', (event) => {
 });
 
 newChatButton.addEventListener('click', createNewChat);
+
+if (traceChipEl) {
+  traceChipEl.addEventListener('click', () => {
+    const chat = getCurrentChat();
+    if (!chat) {
+      return;
+    }
+
+    appendMessageToChat(chat.id, 'assistant', traceChipMessage);
+  });
+}
 
 setBusy(false);
 render();

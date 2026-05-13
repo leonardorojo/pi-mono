@@ -109,3 +109,15 @@ The goal is to establish the contract and boundary before implementing a larger 
 It reflects the current product-surface status in the UI and exposes a safe `/api/rufuschat` view for the prototype.
 
 Full migration from the prototype server into the extension surface is deferred to a later phase.
+
+## Project / Chat / RCK boundary
+
+See `project-chat-rck-boundary.md` for the explicit ownership and relationship model between:
+
+- Project
+- Chat Session
+- Conversation Memory
+- RCK Trace DAG
+- Context Pack
+
+That boundary document is the canonical reference for avoiding confusion between transcript, safe context, and audited RCK state.

@@ -29,6 +29,7 @@ html,
 body {
   margin: 0;
   min-height: 100%;
+  height: 100%;
   background:
     radial-gradient(circle at top, rgba(76, 121, 255, 0.08), transparent 34%),
     radial-gradient(circle at 78% 2%, rgba(118, 88, 255, 0.04), transparent 18%),
@@ -60,7 +61,9 @@ textarea:disabled {
 .app-shell {
   display: grid;
   grid-template-columns: 288px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -70,12 +73,18 @@ textarea:disabled {
   padding: 18px 16px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 12%), var(--sidebar);
   border-right: 1px solid var(--panel-border);
+  min-height: 0;
   overflow: hidden;
 }
 
 .sidebar__header {
   display: grid;
   gap: 12px;
+}
+
+.sidebar__actions {
+  display: grid;
+  gap: 8px;
 }
 
 .eyebrow {
@@ -124,6 +133,7 @@ textarea:disabled {
   box-shadow: 0 12px 28px rgba(63, 118, 255, 0.3);
 }
 
+#new-project-button,
 #new-chat-button {
   width: 100%;
   justify-content: center;
@@ -134,7 +144,9 @@ textarea:disabled {
   flex: 1;
   flex-direction: column;
   gap: 6px;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding-right: 2px;
 }
 
@@ -151,12 +163,39 @@ textarea:disabled {
   background: transparent;
 }
 
+.project-group__header,
+.chat-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .project-group__title,
 .chat-item {
   width: 100%;
   text-align: left;
   color: var(--text);
   background: transparent;
+  flex: 1;
+}
+
+.project-group__menu,
+.chat-item__menu {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(233, 237, 245, 0.9);
+  display: inline-grid;
+  place-items: center;
+}
+
+.project-group__menu:hover,
+.chat-item__menu:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .project-group__title {
@@ -216,7 +255,8 @@ textarea:disabled {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -312,6 +352,7 @@ textarea:disabled {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
   overflow-y: auto;
   align-items: stretch;
 }
@@ -384,6 +425,48 @@ textarea:disabled {
 .slash-menu__badge--placeholder {
   background: rgba(149, 130, 255, 0.14);
   color: #d8d0ff;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  gap: 4px;
+  width: 228px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 22, 31, 0.98);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(12px);
+  overflow: auto;
+}
+
+.context-menu[hidden] {
+  display: none;
+}
+
+.context-menu__item {
+  width: 100%;
+  padding: 0.72rem 0.85rem;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.context-menu__item:hover {
+  background: rgba(79, 140, 255, 0.08);
+}
+
+.context-menu__item--destructive {
+  color: #ffb3b3;
+}
+
+.context-menu__item--destructive:hover {
+  background: rgba(255, 94, 94, 0.12);
 }
 
 .message {
@@ -489,22 +572,24 @@ textarea:disabled {
 
 @media (max-width: 960px) {
   body {
-    overflow: auto;
+    overflow: hidden;
   }
 
   .app-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(220px, 34vh) minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 100dvh;
   }
 
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--panel-border);
-    max-height: 34vh;
+    max-height: none;
   }
 
   .chat-pane {
-    min-height: calc(66vh);
-    overflow: visible;
+    min-height: 0;
   }
 
   .chat-header,

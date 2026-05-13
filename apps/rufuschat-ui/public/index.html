@@ -14,7 +14,10 @@
             <div class="eyebrow">Projects</div>
             <h1>RufusChat</h1>
           </div>
-          <button class="button button--ghost" id="new-chat-button" type="button">New chat</button>
+          <div class="sidebar__actions">
+            <button class="button button--ghost" id="new-project-button" type="button">New project</button>
+            <button class="button button--ghost" id="new-chat-button" type="button">New chat</button>
+          </div>
         </div>
 
         <nav class="project-tree" id="project-tree" aria-label="Projects list"></nav>
@@ -60,6 +63,9 @@
         </form>
       </main>
     </div>
+
+    <div class="context-menu" id="project-context-menu" hidden aria-label="Project actions"></div>
+    <div class="context-menu" id="chat-context-menu" hidden aria-label="Chat actions"></div>
 
     <div class="confirm-modal" id="confirm-modal" hidden>
       <div class="confirm-modal__backdrop" data-confirm-cancel></div>

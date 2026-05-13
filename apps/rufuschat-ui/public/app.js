@@ -15,7 +15,10 @@ const confirmCancelButton = document.getElementById('confirm-modal-cancel');
 const confirmConfirmButton = document.getElementById('confirm-modal-confirm');
 const projectTreeEl = document.getElementById('project-tree');
 const slashMenuEl = document.getElementById('slash-menu');
+const newProjectButton = document.getElementById('new-project-button');
 const newChatButton = document.getElementById('new-chat-button');
+const projectContextMenuEl = document.getElementById('project-context-menu');
+const chatContextMenuEl = document.getElementById('chat-context-menu');
 
 const idleStatusText = 'Browser-local session';
 const memoryPlaceholder = {
@@ -104,6 +107,16 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function promptForName(message, defaultValue = '') {
+  const response = window.prompt(message, defaultValue);
+  if (response === null) {
+    return null;
+  }
+
+  const value = response.trim();
+  return value || null;
+}
+
 function createMessage(role, text, variant = 'normal') {
   return {
     role,
@@ -186,6 +199,64 @@ function getCurrentChat() {
   return getChatById(state.currentChatId);
 }
 
+function getProjectIndexById(projectId) {
+  return state.projects.findIndex((project) => project.id === projectId);
+}
+
+function getProjectByChatId(chatId) {
+  return state.projects.find((project) => project.chats.some((chat) => chat.id === chatId)) ?? null;
+}
+
+function createDefaultChat() {
+  return createChat('New chat', [createMessage('assistant', newChatAssistantMessage)]);
+}
+
+function createDefaultProject() {
+  return createProject('New project', [createDefaultChat()]);
+}
+
+function ensureProjectListHasItems() {
+  if (state.projects.length === 0) {
+    const project = createDefaultProject();
+    state.projects.push(project);
+    return project;
+  }
+
+  return null;
+}
+
+function ensureSelection() {
+  if (state.projects.length === 0) {
+    const project = createDefaultProject();
+    state.projects.push(project);
+    state.currentProjectId = project.id;
+    state.currentChatId = project.chats[0]?.id ?? null;
+    return;
+  }
+
+  const project = getProjectById(state.currentProjectId) ?? state.projects[0];
+  if (!project) {
+    return;
+  }
+
+  let chat = getChatById(state.currentChatId);
+  if (!chat || !project.chats.some((item) => item.id === chat?.id)) {
+    chat = project.chats[0] ?? null;
+  }
+
+  if (!chat) {
+    chat = createDefaultChat();
+    project.chats.push(chat);
+  }
+
+  state.currentProjectId = project.id;
+  state.currentChatId = chat.id;
+}
+
+function getProjectByIdOrDefault(projectId) {
+  return getProjectById(projectId) ?? state.projects[0] ?? null;
+}
+
 function formatStatusLabel(status) {
   return (status ?? '').replace(/-/g, ' ');
 }
@@ -207,7 +278,12 @@ function scrollToBottom() {
 function setBusy(isBusy, label = 'Running...') {
   composerInput.disabled = isBusy;
   sendButton.disabled = isBusy;
-  newChatButton.disabled = isBusy;
+  if (newProjectButton) {
+    newProjectButton.disabled = isBusy;
+  }
+  if (newChatButton) {
+    newChatButton.disabled = isBusy;
+  }
   statusPill.textContent = isBusy ? label : idleStatusText;
 
   if (isBusy) {
@@ -246,18 +322,34 @@ function renderSidebar() {
       section.classList.add('project-group--active');
     }
 
+    const header = document.createElement('div');
+    header.className = 'project-group__header';
+
     const titleButton = document.createElement('button');
     titleButton.type = 'button';
     titleButton.className = 'project-group__title';
     titleButton.dataset.action = 'select-project';
     titleButton.dataset.projectId = project.id;
     titleButton.textContent = project.name;
-    section.appendChild(titleButton);
+
+    const projectMenuButton = document.createElement('button');
+    projectMenuButton.type = 'button';
+    projectMenuButton.className = 'project-group__menu';
+    projectMenuButton.dataset.action = 'open-project-menu';
+    projectMenuButton.dataset.projectId = project.id;
+    projectMenuButton.textContent = '…';
+    projectMenuButton.setAttribute('aria-label', `Project actions for ${project.name}`);
+
+    header.append(titleButton, projectMenuButton);
+    section.appendChild(header);
 
     const children = document.createElement('div');
     children.className = 'project-group__children';
 
     for (const chat of project.chats) {
+      const chatRow = document.createElement('div');
+      chatRow.className = 'chat-item-row';
+
       const chatButton = document.createElement('button');
       chatButton.type = 'button';
       chatButton.className = 'chat-item';
@@ -270,12 +362,258 @@ function renderSidebar() {
         chatButton.classList.add('chat-item--active');
       }
 
-      children.appendChild(chatButton);
+      const chatMenuButton = document.createElement('button');
+      chatMenuButton.type = 'button';
+      chatMenuButton.className = 'chat-item__menu';
+      chatMenuButton.dataset.action = 'open-chat-menu';
+      chatMenuButton.dataset.projectId = project.id;
+      chatMenuButton.dataset.chatId = chat.id;
+      chatMenuButton.textContent = '…';
+      chatMenuButton.setAttribute('aria-label', `Chat actions for ${chat.title}`);
+
+      chatRow.append(chatButton, chatMenuButton);
+      children.appendChild(chatRow);
     }
 
     section.appendChild(children);
     projectTreeEl.appendChild(section);
   }
+}
+
+let activeContextMenu = null;
+
+function hideContextMenus() {
+  activeContextMenu = null;
+
+  for (const menuEl of [projectContextMenuEl, chatContextMenuEl]) {
+    if (!menuEl) {
+      continue;
+    }
+
+    menuEl.hidden = true;
+    menuEl.replaceChildren();
+    menuEl.style.left = '';
+    menuEl.style.top = '';
+    menuEl.style.visibility = '';
+  }
+}
+
+function positionContextMenu(menuEl, anchorEl) {
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const menuRect = menuEl.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const margin = 12;
+
+  let left = anchorRect.right - menuRect.width;
+  let top = anchorRect.bottom + 8;
+
+  if (left + menuRect.width > viewportWidth - margin) {
+    left = viewportWidth - menuRect.width - margin;
+  }
+
+  if (left < margin) {
+    left = margin;
+  }
+
+  if (top + menuRect.height > viewportHeight - margin) {
+    top = anchorRect.top - menuRect.height - 8;
+  }
+
+  if (top < margin) {
+    top = margin;
+  }
+
+  menuEl.style.left = `${left}px`;
+  menuEl.style.top = `${top}px`;
+  menuEl.style.visibility = 'visible';
+}
+
+function renderContextMenu(menuEl, items, anchorEl, context) {
+  if (!menuEl) {
+    return;
+  }
+
+  hideContextMenus();
+
+  menuEl.replaceChildren();
+  menuEl.hidden = false;
+  menuEl.style.visibility = 'hidden';
+  menuEl.dataset.contextType = context.type;
+
+  for (const item of items) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `context-menu__item${item.destructive ? ' context-menu__item--destructive' : ''}`;
+    button.dataset.contextAction = item.action;
+    button.textContent = item.label;
+    menuEl.appendChild(button);
+  }
+
+  activeContextMenu = { type: context.type, projectId: context.projectId, chatId: context.chatId, menuEl };
+  positionContextMenu(menuEl, anchorEl);
+}
+
+function openProjectContextMenu(projectId, anchorEl) {
+  renderContextMenu(
+    projectContextMenuEl,
+    [
+      { action: 'rename-project', label: 'Rename project' },
+      { action: 'new-chat', label: 'New chat' },
+      { action: 'delete-project', label: 'Delete project', destructive: true },
+    ],
+    anchorEl,
+    { type: 'project', projectId },
+  );
+}
+
+function openChatContextMenu(projectId, chatId, anchorEl) {
+  renderContextMenu(
+    chatContextMenuEl,
+    [
+      { action: 'rename-chat', label: 'Rename chat' },
+      { action: 'delete-chat', label: 'Delete chat', destructive: true },
+    ],
+    anchorEl,
+    { type: 'chat', projectId, chatId },
+  );
+}
+
+function createChatInProject(project, title = 'New chat', messages = [createMessage('assistant', newChatAssistantMessage)]) {
+  const chat = createChat(title, messages);
+  project.chats.push(chat);
+  return chat;
+}
+
+function createProjectWithInitialChat(name) {
+  return createProject(name, [createDefaultChat()]);
+}
+
+function selectProjectAndChat(projectId, chatId = null) {
+  setCurrentSelection(projectId, chatId ?? undefined);
+}
+
+function renameProject(projectId) {
+  const project = getProjectById(projectId);
+  if (!project) {
+    return;
+  }
+
+  const nextName = promptForName('Rename project', project.name);
+  if (!nextName) {
+    return;
+  }
+
+  project.name = nextName;
+  render();
+}
+
+function createNewProject() {
+  const name = promptForName('New project', 'New project');
+  if (!name) {
+    return;
+  }
+
+  const project = createProjectWithInitialChat(name);
+  state.projects.push(project);
+  selectProjectAndChat(project.id, project.chats[0]?.id ?? null);
+}
+
+function createNewChatForProject(projectId) {
+  const project = getProjectById(projectId);
+  if (!project) {
+    return;
+  }
+
+  const chat = createChatInProject(project);
+  selectProjectAndChat(project.id, chat.id);
+}
+
+function renameChat(chatId) {
+  const chat = getChatById(chatId);
+  if (!chat) {
+    return;
+  }
+
+  const nextTitle = promptForName('Rename chat', chat.title);
+  if (!nextTitle) {
+    return;
+  }
+
+  chat.title = nextTitle;
+  render();
+}
+
+async function deleteProject(projectId) {
+  const projectIndex = getProjectIndexById(projectId);
+  if (projectIndex === -1) {
+    return;
+  }
+
+  const project = state.projects[projectIndex];
+  if (!project) {
+    return;
+  }
+
+  if (!(await confirmAction(`Delete project "${project.name}"?`))) {
+    return;
+  }
+
+  const wasActive = project.id === state.currentProjectId;
+  state.projects.splice(projectIndex, 1);
+
+  if (state.projects.length === 0) {
+    const fallbackProject = createProjectWithInitialChat('New project');
+    state.projects.push(fallbackProject);
+    state.currentProjectId = fallbackProject.id;
+    state.currentChatId = fallbackProject.chats[0]?.id ?? null;
+  } else if (wasActive) {
+    const nextProject = state.projects[projectIndex] ?? state.projects[projectIndex - 1] ?? state.projects[0];
+    state.currentProjectId = nextProject.id;
+    state.currentChatId = nextProject.chats[0]?.id ?? createChatInProject(nextProject).id;
+  }
+
+  ensureSelection();
+  render();
+}
+
+async function deleteChat(projectId, chatId) {
+  const project = getProjectById(projectId);
+  if (!project) {
+    return;
+  }
+
+  const chatIndex = project.chats.findIndex((chat) => chat.id === chatId);
+  if (chatIndex === -1) {
+    return;
+  }
+
+  const chat = project.chats[chatIndex];
+  if (!chat) {
+    return;
+  }
+
+  if (!(await confirmAction(`Delete chat "${chat.title}"?`))) {
+    return;
+  }
+
+  const wasActive = project.id === state.currentProjectId && chat.id === state.currentChatId;
+  project.chats.splice(chatIndex, 1);
+
+  if (project.chats.length === 0) {
+    const fallbackChat = createDefaultChat();
+    project.chats.push(fallbackChat);
+    if (project.id === state.currentProjectId) {
+      state.currentChatId = fallbackChat.id;
+    }
+  } else if (wasActive) {
+    const nextChat = project.chats[chatIndex] ?? project.chats[chatIndex - 1] ?? project.chats[0];
+    state.currentProjectId = project.id;
+    state.currentChatId = nextChat.id;
+  }
+
+  ensureSelection();
+  render();
 }
 
 function createMessageElement(role, text, variant = 'normal') {
@@ -433,6 +771,7 @@ function setCurrentSelection(projectId, chatId) {
 
   state.currentProjectId = project.id;
   state.currentChatId = nextChat.id;
+  hideContextMenus();
   render();
   renderSlashMenu();
   composerInput.focus();
@@ -769,16 +1108,14 @@ async function handleUserSubmission(text) {
 function createNewChat() {
   const project = getCurrentProject();
   if (!project) {
+    const fallbackProject = createDefaultProject();
+    state.projects.push(fallbackProject);
+    selectProjectAndChat(fallbackProject.id, fallbackProject.chats[0]?.id ?? null);
     return;
   }
 
-  const chat = createChat('New chat', [createMessage('assistant', newChatAssistantMessage)]);
-  project.chats.push(chat);
-  state.currentProjectId = project.id;
-  state.currentChatId = chat.id;
-  render();
-  renderSlashMenu();
-  composerInput.focus();
+  const chat = createChatInProject(project);
+  selectProjectAndChat(project.id, chat.id);
 }
 
 composerForm.addEventListener('submit', (event) => {
@@ -858,16 +1195,127 @@ projectTreeEl.addEventListener('click', (event) => {
   }
 
   if (action === 'select-project') {
+    hideContextMenus();
     setCurrentSelection(projectId);
     return;
   }
 
   if (action === 'select-chat' && chatId) {
+    hideContextMenus();
     setCurrentSelection(projectId, chatId);
+    return;
+  }
+
+  if (action === 'open-project-menu') {
+    openProjectContextMenu(projectId, button);
+    return;
+  }
+
+  if (action === 'open-chat-menu' && chatId) {
+    openChatContextMenu(projectId, chatId, button);
   }
 });
 
-newChatButton.addEventListener('click', createNewChat);
+if (newProjectButton) {
+  newProjectButton.addEventListener('click', createNewProject);
+}
+
+if (newChatButton) {
+  newChatButton.addEventListener('click', createNewChat);
+}
+
+if (projectContextMenuEl) {
+  projectContextMenuEl.addEventListener('click', async (event) => {
+    const button = event.target instanceof HTMLElement ? event.target.closest('button[data-context-action]') : null;
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    const action = button.dataset.contextAction;
+    const context = activeContextMenu;
+    hideContextMenus();
+
+    if (!context?.projectId) {
+      return;
+    }
+
+    switch (action) {
+      case 'rename-project':
+        renameProject(context.projectId);
+        break;
+      case 'new-chat':
+        createNewChatForProject(context.projectId);
+        break;
+      case 'delete-project':
+        await deleteProject(context.projectId);
+        break;
+      default:
+        break;
+    }
+  });
+}
+
+if (chatContextMenuEl) {
+  chatContextMenuEl.addEventListener('click', async (event) => {
+    const button = event.target instanceof HTMLElement ? event.target.closest('button[data-context-action]') : null;
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    const action = button.dataset.contextAction;
+    const context = activeContextMenu;
+    hideContextMenus();
+
+    if (!context?.projectId || !context?.chatId) {
+      return;
+    }
+
+    switch (action) {
+      case 'rename-chat':
+        renameChat(context.chatId);
+        break;
+      case 'delete-chat':
+        await deleteChat(context.projectId, context.chatId);
+        break;
+      default:
+        break;
+    }
+  });
+}
+
+document.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (!target) {
+    return;
+  }
+
+  if (target.closest('.context-menu')) {
+    return;
+  }
+
+  if (target.closest('button[data-action="open-project-menu"], button[data-action="open-chat-menu"]')) {
+    return;
+  }
+
+  hideContextMenus();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (!confirmResolver && event.key === 'Escape' && activeContextMenu) {
+    event.preventDefault();
+    hideContextMenus();
+    return;
+  }
+
+  if (!confirmResolver) {
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeConfirm(false);
+  }
+});
 
 if (traceChipEl) {
   traceChipEl.addEventListener('click', () => {

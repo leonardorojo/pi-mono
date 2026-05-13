@@ -340,6 +340,14 @@ function renderSidebar() {
     projectMenuButton.textContent = '…';
     projectMenuButton.setAttribute('aria-label', `Project actions for ${project.name}`);
 
+    if (
+      activeContextMenu?.type === 'project' &&
+      activeContextMenu.projectId === project.id &&
+      activeContextMenu.anchorEl instanceof HTMLButtonElement
+    ) {
+      projectMenuButton.classList.add('is-context-menu-open');
+    }
+
     header.append(titleButton, projectMenuButton);
     section.appendChild(header);
 
@@ -371,6 +379,15 @@ function renderSidebar() {
       chatMenuButton.textContent = '…';
       chatMenuButton.setAttribute('aria-label', `Chat actions for ${chat.title}`);
 
+      if (
+        activeContextMenu?.type === 'chat' &&
+        activeContextMenu.projectId === project.id &&
+        activeContextMenu.chatId === chat.id &&
+        activeContextMenu.anchorEl instanceof HTMLButtonElement
+      ) {
+        chatMenuButton.classList.add('is-context-menu-open');
+      }
+
       chatRow.append(chatButton, chatMenuButton);
       children.appendChild(chatRow);
     }
@@ -383,6 +400,10 @@ function renderSidebar() {
 let activeContextMenu = null;
 
 function hideContextMenus() {
+  if (activeContextMenu?.anchorEl instanceof HTMLElement) {
+    activeContextMenu.anchorEl.classList.remove('is-context-menu-open');
+  }
+
   activeContextMenu = null;
 
   for (const menuEl of [projectContextMenuEl, chatContextMenuEl]) {
@@ -436,6 +457,10 @@ function renderContextMenu(menuEl, items, anchorEl, context) {
 
   hideContextMenus();
 
+  if (anchorEl instanceof HTMLElement) {
+    anchorEl.classList.add('is-context-menu-open');
+  }
+
   menuEl.replaceChildren();
   menuEl.hidden = false;
   menuEl.style.visibility = 'hidden';
@@ -450,7 +475,7 @@ function renderContextMenu(menuEl, items, anchorEl, context) {
     menuEl.appendChild(button);
   }
 
-  activeContextMenu = { type: context.type, projectId: context.projectId, chatId: context.chatId, menuEl };
+  activeContextMenu = { type: context.type, projectId: context.projectId, chatId: context.chatId, menuEl, anchorEl };
   positionContextMenu(menuEl, anchorEl);
 }
 
@@ -723,7 +748,7 @@ function insertCommandText(insertText) {
   composerInput.setSelectionRange(cursor, cursor);
 }
 
-function renderMessages() {
+function renderMessages({ autoScroll = false } = {}) {
   const chat = getCurrentChat();
   messagesEl.replaceChildren();
 
@@ -740,7 +765,11 @@ function renderMessages() {
     emptyState.className = 'empty-state';
     emptyState.textContent = 'No messages yet. Start the conversation here.';
     messagesEl.appendChild(emptyState);
-    scrollToBottom();
+
+    if (autoScroll) {
+      requestAnimationFrame(scrollToBottom);
+    }
+
     return;
   }
 
@@ -748,7 +777,9 @@ function renderMessages() {
     messagesEl.appendChild(createMessageElement(message.role, message.text, message.variant));
   }
 
-  scrollToBottom();
+  if (autoScroll) {
+    requestAnimationFrame(scrollToBottom);
+  }
 }
 
 function render() {
@@ -814,7 +845,7 @@ function appendMessageToChat(chatId, role, text, variant = 'normal') {
   chat.updatedAt = nowIso();
 
   if (chat.id === state.currentChatId) {
-    renderMessages();
+    renderMessages({ autoScroll: true });
   }
 }
 

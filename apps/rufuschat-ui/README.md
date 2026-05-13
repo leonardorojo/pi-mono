@@ -56,6 +56,16 @@ What 10E adds
 - `apps/rufuschat-ui/` is the official product UI path
 - The prototype is frozen as a validation reference unless a critical bug or comparison is needed
 
+## Product data persistence
+
+Fase 11A defines the Product Data boundary only.
+
+- Boundary document: [`PRODUCT_DATA_PERSISTENCE.md`](./PRODUCT_DATA_PERSISTENCE.md)
+- Storage decision: backend-local JSON file
+- Future runtime path: `apps/rufuschat-ui/.data/rufuschat-product-state.json`
+- 11A does **not** implement runtime persistence
+- 11B and 11C will handle the backend-local JSON implementation and UI hydrate/save flow
+
 Run it
 From the repo root:
 

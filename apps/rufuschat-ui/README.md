@@ -41,12 +41,20 @@ PORT=4173 node apps/rufuschat-ui/server.mjs
 Then open:
 - http://127.0.0.1:4173/
 
+Backend endpoints in 10B
+- `GET /api/status`
+- `POST /api/checkpoint`
+- `POST /api/inject`
+- `POST /api/hermes/fake`
+
 Implementation notes
 - The server uses only Node built-ins
 - Static assets live in `public/`
-- The chat behavior is entirely local in the browser
-- Slash commands return safe placeholder messages only
+- The chat behavior is local in the browser
+- Mutating actions require confirmation in the UI
+- Slash commands return safe placeholder or controlled backend messages only
+- No raw JSON, stdout/stderr, or evidence dumps are shown in the chat UI
 
 Next steps
-- 10B: wire a controlled local bridge for product actions without exposing technical internals
-- 10C: connect the real RCK/Hermes plumbing behind product actions while keeping the UI conversational
+- 10B: connect controlled product actions through the slash command endpoints
+- 10C: wire real RCK/Hermes plumbing behind product actions while keeping the UI conversational

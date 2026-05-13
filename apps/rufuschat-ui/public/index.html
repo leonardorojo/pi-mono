@@ -68,6 +68,20 @@
       </main>
     </div>
 
+    <div class="confirm-modal" id="confirm-modal" hidden>
+      <div class="confirm-modal__backdrop" data-confirm-cancel></div>
+      <section class="confirm-modal__panel" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-description">
+        <div>
+          <h2 id="confirm-modal-title">Confirm action</h2>
+          <p id="confirm-modal-description"></p>
+        </div>
+        <div class="confirm-modal__actions">
+          <button class="button button--ghost" type="button" id="confirm-modal-cancel">Cancel</button>
+          <button class="button button--primary" type="button" id="confirm-modal-confirm">Confirm</button>
+        </div>
+      </section>
+    </div>
+
     <script src="/app.js" type="module"></script>
   </body>
 </html>

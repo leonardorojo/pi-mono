@@ -1,11 +1,14 @@
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, '..', '..');
 const publicDir = path.join(__dirname, 'public');
+const rckRoot = path.join(repoRoot, '.pi', 'rck');
 const port = Number(process.env.PORT ?? process.argv[2] ?? 4173);
 
 const mimeTypes = new Map([
@@ -18,17 +21,55 @@ const mimeTypes = new Map([
   ['.txt', 'text/plain; charset=utf-8'],
 ]);
 
+const sessionState = {
+  traceId: await resolveInitialTraceId(),
+  safeContextAvailable: existsSync(path.join(rckRoot, 'indexes', 'latest-context-pack.json')),
+  checkpointCount: 0,
+  lastCheckpointLabel: null,
+  hermesFakeRuns: 0,
+};
+
+async function resolveInitialTraceId() {
+  const currentTrace = await readJsonIfExists(path.join(rckRoot, 'indexes', 'current-trace.json'));
+  if (typeof currentTrace?.traceId === 'string' && currentTrace.traceId.trim()) {
+    return currentTrace.traceId.trim();
+  }
+
+  return 'trace_local';
+}
+
+async function readJsonIfExists(absolutePath) {
+  if (!existsSync(absolutePath)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(await readFile(absolutePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function getContentType(filePath) {
   return mimeTypes.get(path.extname(filePath).toLowerCase()) ?? 'application/octet-stream';
 }
 
 function safeResolve(requestPath) {
-  const cleanedPath = requestPath.replace(/\0/g, '');
-  const normalizedPath = path.normalize(decodeURIComponent(cleanedPath)).replace(/^([.]{2}[\/])+/, '');
-  const candidate = path.join(publicDir, normalizedPath);
-  if (!candidate.startsWith(publicDir)) {
+  let decodedPath;
+
+  try {
+    decodedPath = decodeURIComponent(requestPath.replace(/\0/g, ''));
+  } catch {
     return null;
   }
+
+  const candidate = path.resolve(publicDir, `.${decodedPath}`);
+  const relative = path.relative(publicDir, candidate);
+
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return null;
+  }
+
   return candidate;
 }
 
@@ -46,6 +87,63 @@ async function serveFile(res, filePath) {
   }
 }
 
+async function readRequestJson(req) {
+  let body = '';
+
+  for await (const chunk of req) {
+    body += chunk;
+  }
+
+  if (!body.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error('Invalid JSON body');
+  }
+}
+
+function sendJson(res, statusCode, payload) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(JSON.stringify(payload));
+}
+
+function buildStatusMessage() {
+  return `Status checked. Health: OK. Current trace: ${sessionState.traceId}. Safe context: ${sessionState.safeContextAvailable ? 'available' : 'no'}.`;
+}
+
+function buildSafeContextSummary() {
+  const parts = [];
+
+  parts.push(`trace ${sessionState.traceId}`);
+  parts.push(`checkpoints this session: ${sessionState.checkpointCount}`);
+  parts.push('evidence refs: 0');
+
+  if (sessionState.lastCheckpointLabel) {
+    parts.push(`last checkpoint: ${sessionState.lastCheckpointLabel}`);
+  }
+
+  return parts.join('; ');
+}
+
+function truncatePrompt(prompt) {
+  const compact = prompt.replace(/\s+/g, ' ').trim();
+  if (compact.length <= 96) {
+    return compact;
+  }
+
+  return `${compact.slice(0, 93)}...`;
+}
+
+function buildHermesFakeSummary(prompt) {
+  return `Prompt accepted: "${truncatePrompt(prompt)}". Evidence refs: 0. Fake runs this session: ${sessionState.hermesFakeRuns}.`;
+}
+
 const server = createServer(async (req, res) => {
   if (!req.url) {
     res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -56,8 +154,103 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
 
   if (url.pathname === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, app: 'rufuschat-ui', mode: 'skeleton' }));
+    sendJson(res, 200, { ok: true, app: 'rufuschat-ui', mode: 'skeleton' });
+    return;
+  }
+
+  if (url.pathname === '/api/status') {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      traceId: sessionState.traceId,
+      safeContextAvailable: sessionState.safeContextAvailable,
+      message: buildStatusMessage(),
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/checkpoint') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      const body = await readRequestJson(req);
+      const label = typeof body.label === 'string' && body.label.trim() ? body.label.trim() : 'checkpoint-from-chat';
+
+      sessionState.checkpointCount += 1;
+      sessionState.lastCheckpointLabel = label;
+      sessionState.safeContextAvailable = true;
+
+      sendJson(res, 200, {
+        ok: true,
+        traceId: sessionState.traceId,
+        safeContextAvailable: sessionState.safeContextAvailable,
+        label,
+        message: `Checkpoint created: ${label}. RCK recorded this point.`,
+      });
+    } catch (error) {
+      sendJson(res, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Checkpoint request failed',
+      });
+    }
+    return;
+  }
+
+  if (url.pathname === '/api/inject') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    sessionState.safeContextAvailable = true;
+
+    sendJson(res, 200, {
+      ok: true,
+      traceId: sessionState.traceId,
+      safeContextAvailable: sessionState.safeContextAvailable,
+      summary: buildSafeContextSummary(),
+      message: `Safe context injected. Summary: ${buildSafeContextSummary()}`,
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/hermes/fake') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      const body = await readRequestJson(req);
+      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+
+      if (!prompt) {
+        throw new Error('Prompt is required for fake Hermes runs');
+      }
+
+      sessionState.hermesFakeRuns += 1;
+
+      sendJson(res, 200, {
+        ok: true,
+        traceId: sessionState.traceId,
+        safeContextAvailable: sessionState.safeContextAvailable,
+        promptLength: prompt.length,
+        evidenceRefs: 0,
+        message: `Hermes fake run completed. Summary: ${buildHermesFakeSummary(prompt)}`,
+      });
+    } catch (error) {
+      sendJson(res, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Hermes fake request failed',
+      });
+    }
     return;
   }
 
@@ -65,8 +258,8 @@ const server = createServer(async (req, res) => {
   const filePath = safeResolve(requestedPath);
 
   if (!filePath) {
-    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Bad request');
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
     return;
   }
 

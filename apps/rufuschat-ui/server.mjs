@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { isProductStateValidationError, loadProductState, saveProductState } from './product-state-store.mjs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..', '..');
@@ -170,6 +172,52 @@ const server = createServer(async (req, res) => {
       safeContextAvailable: sessionState.safeContextAvailable,
       message: buildStatusMessage(),
     });
+    return;
+  }
+
+  if (url.pathname === '/api/product-state') {
+    if (req.method === 'GET') {
+      try {
+        const state = await loadProductState();
+        sendJson(res, 200, { ok: true, state });
+      } catch {
+        sendJson(res, 500, { ok: false, message: 'Unable to load product state.' });
+      }
+
+      return;
+    }
+
+    if (req.method === 'PUT') {
+      try {
+        const body = await readRequestJson(req);
+        const state = await saveProductState(body);
+        sendJson(res, 200, { ok: true, state });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Invalid JSON body') {
+          sendJson(res, 400, {
+            ok: false,
+            message: 'Invalid product state.',
+            issues: ['Request body must be valid JSON.'],
+          });
+          return;
+        }
+
+        if (isProductStateValidationError(error)) {
+          sendJson(res, 400, {
+            ok: false,
+            message: 'Invalid product state.',
+            issues: error.issues ?? [],
+          });
+          return;
+        }
+
+        sendJson(res, 500, { ok: false, message: 'Unable to save product state.' });
+      }
+
+      return;
+    }
+
+    sendJson(res, 405, { ok: false, error: 'Method not allowed' });
     return;
   }
 

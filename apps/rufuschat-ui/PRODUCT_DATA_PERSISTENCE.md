@@ -98,7 +98,7 @@ The schema below is the contract for the future persisted JSON document.
 
 ```ts
 type ProductState = {
-  version: 0;
+  version: string; // serialized as '0' in v0
   projects: Project[];
   currentProjectId: string | null;
   currentChatId: string | null;

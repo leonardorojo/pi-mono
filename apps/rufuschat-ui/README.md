@@ -64,7 +64,7 @@ Fase 11A defines the Product Data boundary only.
 - Storage decision: backend-local JSON file
 - Future runtime path: `apps/rufuschat-ui/.data/rufuschat-product-state.json`
 - 11A does **not** implement runtime persistence
-- 11B and 11C will handle the backend-local JSON implementation and UI hydrate/save flow
+- 11B implements the backend-local JSON store; 11C will handle the UI hydrate/save flow
 
 Run it
 From the repo root:

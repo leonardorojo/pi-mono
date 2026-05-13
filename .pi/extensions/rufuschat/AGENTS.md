@@ -18,6 +18,8 @@ Keep it small and explicit.
 - Do not read `.pi/rck` directly from RufusChat UI.
 - Use the provider boundary for future RCK Core integration.
 - Do not invoke RufusLab.RCK.Cli directly from UI without an adapter.
+- Do not build a raw DAG viewer against `.pi/rck`.
+- Trace DAG views must come from safe provider projections.
 - Do not conflate chat memory with RCK trace.
 - Do not treat context packs as raw transcripts.
 - Do not silently inject context without a user decision.

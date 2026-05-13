@@ -92,6 +92,7 @@ export interface RckProvider {
 	listTraces(context: RckProviderRequestContext): Promise<RckProviderResult<unknown>>;
 	getTrace(context: RckProviderRequestContext, traceId: string): Promise<RckProviderResult<unknown>>;
 	getTraceTimeline(context: RckProviderRequestContext, traceId: string): Promise<RckProviderResult<unknown>>;
+	getTraceDagProjection(context: RckProviderRequestContext, traceId: string): Promise<RckProviderResult<unknown>>;
 	createState(context: RckProviderRequestContext, request: unknown): Promise<RckProviderResult<unknown>>;
 	createDelta(context: RckProviderRequestContext, request: unknown): Promise<RckProviderResult<unknown>>;
 	createAnchor(context: RckProviderRequestContext, request: unknown): Promise<RckProviderResult<unknown>>;

@@ -134,3 +134,13 @@ Future provider:
 - RufusLab.RCK.Cli
 
 The adapter contract is what lets the UI/product surface evolve without coupling directly to provider storage or CLI output.
+
+## Trace DAG view placeholder
+
+See `trace-dag-view-placeholder.md` for the conceptual shape of the future Trace DAG view.
+
+Current UI today:
+- linear cards for latest state, latest anchor, and latest context
+
+Future UI target:
+- a safe Trace DAG projection that comes from `RckProvider`, not from raw storage

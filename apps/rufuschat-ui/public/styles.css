@@ -276,6 +276,77 @@ textarea:disabled {
   overflow-y: auto;
 }
 
+.slash-menu {
+  width: min(100%, var(--max-width));
+  margin: 0 auto;
+  padding: 0 24px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.slash-menu[hidden] {
+  display: none;
+}
+
+.slash-menu__item {
+  text-align: left;
+  border-radius: 16px;
+  padding: 0.82rem 0.95rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow);
+}
+
+.slash-menu__item:hover {
+  background: rgba(79, 140, 255, 0.08);
+  border-color: rgba(79, 140, 255, 0.28);
+}
+
+.slash-menu__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.slash-menu__name {
+  font-weight: 650;
+}
+
+.slash-menu__description {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.slash-menu__badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.22rem 0.56rem;
+  font-size: 0.72rem;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.slash-menu__badge--read-only {
+  background: rgba(79, 140, 255, 0.12);
+  color: #bcd1ff;
+}
+
+.slash-menu__badge--mutating {
+  background: rgba(255, 170, 66, 0.14);
+  color: #ffd3a2;
+}
+
+.slash-menu__badge--placeholder {
+  background: rgba(149, 130, 255, 0.14);
+  color: #d8d0ff;
+}
+
+.message {
 .message {
   max-width: 100%;
   padding: 1rem 1.1rem;
@@ -373,6 +444,7 @@ textarea:disabled {
 
   .chat-header,
   .messages,
+  .slash-menu,
   .composer {
     width: min(100%, var(--max-width));
   }
@@ -446,6 +518,7 @@ textarea:disabled {
   }
 
   .messages,
+  .slash-menu,
   .composer {
     padding-left: 16px;
     padding-right: 16px;

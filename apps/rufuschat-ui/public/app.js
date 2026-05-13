@@ -14,6 +14,7 @@ const confirmDescription = document.getElementById('confirm-modal-description');
 const confirmCancelButton = document.getElementById('confirm-modal-cancel');
 const confirmConfirmButton = document.getElementById('confirm-modal-confirm');
 const projectTreeEl = document.getElementById('project-tree');
+const slashMenuEl = document.getElementById('slash-menu');
 const newChatButton = document.getElementById('new-chat-button');
 
 const idleStatusText = 'Browser-local session';
@@ -40,6 +41,57 @@ const traceLinkedPlaceholderMessage =
 const traceLinkPlaceholderMessage =
   'Trace linking is a placeholder in 10E. No RCK trace was created or linked.';
 const traceChipMessage = 'Trace linking is not connected yet.';
+const commandCatalog = [
+  {
+    name: '/status',
+    kind: 'read-only',
+    description: 'Check safe project/RCK status.',
+    insertText: '/status',
+    usage: '/status',
+  },
+  {
+    name: '/checkpoint',
+    kind: 'mutating',
+    description: 'Create a governed checkpoint for this chat/work.',
+    insertText: '/checkpoint ',
+    usage: '/checkpoint <label>',
+  },
+  {
+    name: '/inject',
+    kind: 'mutating',
+    description: 'Inject safe context into this chat.',
+    insertText: '/inject',
+    usage: '/inject',
+  },
+  {
+    name: '/hermes fake',
+    kind: 'mutating',
+    description: 'Run a safe fake Hermes inspection.',
+    insertText: '/hermes fake ',
+    usage: '/hermes fake <prompt>',
+  },
+  {
+    name: '/trace',
+    kind: 'read-only',
+    description: 'Show trace-link placeholder information.',
+    insertText: '/trace',
+    usage: '/trace',
+  },
+  {
+    name: '/trace link',
+    kind: 'placeholder',
+    description: 'Trace linking placeholder. Does not create a real trace yet.',
+    insertText: '/trace link',
+    usage: '/trace link',
+  },
+  {
+    name: '/help',
+    kind: 'read-only',
+    description: 'Show available RufusChat commands.',
+    insertText: '/help',
+    usage: '/help',
+  },
+];
 
 let confirmResolver = null;
 
@@ -157,6 +209,10 @@ function setBusy(isBusy, label = 'Running...') {
   sendButton.disabled = isBusy;
   newChatButton.disabled = isBusy;
   statusPill.textContent = isBusy ? label : idleStatusText;
+
+  if (isBusy) {
+    hideSlashMenu();
+  }
 }
 
 function renderHeader() {
@@ -238,6 +294,97 @@ function createMessageElement(role, text, variant = 'normal') {
   return message;
 }
 
+let slashMenuSuppressed = false;
+
+function getSlashMenuQuery() {
+  const value = composerInput.value;
+  if (!value.startsWith('/')) {
+    return null;
+  }
+
+  return value.slice(1).trim().toLowerCase();
+}
+
+function getMatchingCommands(query) {
+  if (!query) {
+    return commandCatalog;
+  }
+
+  return commandCatalog.filter((command) => {
+    const haystack = `${command.name} ${command.kind} ${command.description} ${command.usage}`.toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function hideSlashMenu({ suppress = false } = {}) {
+  if (suppress) {
+    slashMenuSuppressed = true;
+  }
+
+  if (slashMenuEl) {
+    slashMenuEl.hidden = true;
+    slashMenuEl.replaceChildren();
+  }
+}
+
+function renderSlashMenu() {
+  if (!slashMenuEl) {
+    return;
+  }
+
+  const query = getSlashMenuQuery();
+  if (composerInput.disabled || slashMenuSuppressed || query === null) {
+    hideSlashMenu();
+    return;
+  }
+
+  const commands = getMatchingCommands(query);
+  slashMenuEl.replaceChildren();
+
+  if (commands.length === 0) {
+    hideSlashMenu();
+    return;
+  }
+
+  for (const command of commands) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'slash-menu__item slash-menu__item--' + command.kind;
+    item.dataset.insertText = command.insertText;
+
+    const row = document.createElement('div');
+    row.className = 'slash-menu__row';
+
+    const name = document.createElement('span');
+    name.className = 'slash-menu__name';
+    name.textContent = command.name;
+
+    const badge = document.createElement('span');
+    badge.className = `slash-menu__badge slash-menu__badge--${command.kind}`;
+    badge.textContent = command.kind;
+
+    row.append(name, badge);
+
+    const description = document.createElement('div');
+    description.className = 'slash-menu__description';
+    description.textContent = command.description;
+
+    item.append(row, description);
+    slashMenuEl.appendChild(item);
+  }
+
+  slashMenuEl.hidden = false;
+}
+
+function insertCommandText(insertText) {
+  composerInput.value = insertText;
+  slashMenuSuppressed = false;
+  renderSlashMenu();
+  composerInput.focus();
+  const cursor = composerInput.value.length;
+  composerInput.setSelectionRange(cursor, cursor);
+}
+
 function renderMessages() {
   const chat = getCurrentChat();
   messagesEl.replaceChildren();
@@ -272,6 +419,7 @@ function render() {
   renderMessages();
 }
 
+
 function setCurrentSelection(projectId, chatId) {
   const project = getProjectById(projectId);
   if (!project) {
@@ -286,6 +434,7 @@ function setCurrentSelection(projectId, chatId) {
   state.currentProjectId = project.id;
   state.currentChatId = nextChat.id;
   render();
+  renderSlashMenu();
   composerInput.focus();
 }
 
@@ -373,6 +522,11 @@ async function postJson(pathname, body) {
   return data;
 }
 
+function buildHelpMessage() {
+  const lines = commandCatalog.map((command) => `- ${command.usage} — ${command.kind} — ${command.description}`);
+  return `Available RufusChat commands:\n${lines.join('\n')}`;
+}
+
 function parseSlashCommand(text) {
   const trimmed = text.trim();
   if (!trimmed.startsWith('/')) {
@@ -391,6 +545,8 @@ function parseSlashCommand(text) {
     }
     case '/inject':
       return { type: 'inject' };
+    case '/help':
+      return { type: 'help' };
     case '/trace': {
       const mode = restTokens[0]?.toLowerCase();
       if (mode === 'link') {
@@ -568,12 +724,17 @@ async function handleUserSubmission(text) {
   }
 
   if (command.type === 'unknown') {
-    appendMessageToChat(targetChatId, 'assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>.');
+    appendMessageToChat(targetChatId, 'assistant', 'Command not recognized. Available commands: /status, /checkpoint, /inject, /hermes fake <prompt>, /trace, /trace link, /help.');
     return;
   }
 
   if (command.type === 'hermes-real') {
     appendMessageToChat(targetChatId, 'assistant', 'Hermes real is not connected in this UI. Use /hermes fake <prompt>.');
+    return;
+  }
+
+  if (command.type === 'help') {
+    appendMessageToChat(targetChatId, 'assistant', buildHelpMessage());
     return;
   }
 
@@ -616,6 +777,7 @@ function createNewChat() {
   state.currentProjectId = project.id;
   state.currentChatId = chat.id;
   render();
+  renderSlashMenu();
   composerInput.focus();
 }
 
@@ -628,15 +790,28 @@ composerForm.addEventListener('submit', (event) => {
 
   const text = composerInput.value.trim();
   if (!text) {
+    hideSlashMenu();
     return;
   }
 
   composerInput.value = '';
+  hideSlashMenu();
   void handleUserSubmission(text);
   composerInput.focus();
 });
 
+composerInput.addEventListener('input', () => {
+  slashMenuSuppressed = false;
+  renderSlashMenu();
+});
+
 composerInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !slashMenuEl.hidden) {
+    event.preventDefault();
+    hideSlashMenu({ suppress: true });
+    return;
+  }
+
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
     composerForm.requestSubmit();
@@ -705,6 +880,19 @@ if (traceChipEl) {
   });
 }
 
+if (slashMenuEl) {
+  slashMenuEl.addEventListener('click', (event) => {
+    const button = event.target instanceof HTMLElement ? event.target.closest('button[data-insert-text]') : null;
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    const insertText = button.dataset.insertText ?? '';
+    insertCommandText(insertText);
+  });
+}
+
 setBusy(false);
 render();
+renderSlashMenu();
 composerInput.focus();

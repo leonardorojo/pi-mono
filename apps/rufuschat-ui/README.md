@@ -8,8 +8,22 @@ What is included
 - Left sidebar with Projects / Chats structure
 - Center chat rail with header, message history, and composer
 - Local message handling for plain text input
-- Placeholder slash commands: /checkpoint, /inject, /status, /hermes
+- Placeholder slash commands: /checkpoint, /inject, /status, /hermes, /trace, /help
+- Lightweight slash menu for discovering commands
 - Dark theme with a ChatGPT-like layout
+
+Command catalog
+- /status — read-only — Check safe project/RCK status.
+- /checkpoint <label> — mutating — Create a governed checkpoint for this chat/work.
+- /inject — mutating — Inject safe context into this chat.
+- /hermes fake <prompt> — mutating — Run a safe fake Hermes inspection.
+- /trace — read-only — Show trace-link placeholder information.
+- /trace link — placeholder — Does not create a real trace yet.
+- /help — read-only — Show the available command list.
+
+Notes
+- Mutating commands require confirmation in the UI.
+- The slash menu is only a discovery aid and does not execute anything by itself.
 
 What is not connected in 10E
 - No LLM calls
@@ -59,8 +73,10 @@ Implementation notes
 - The chat behavior is local in the browser
 - Mutating actions require confirmation in the UI
 - Slash commands return safe placeholder or controlled backend messages only
+- `/help` lists the current command catalog
+- The slash menu is only a discovery aid and does not run anything by itself
 - No raw JSON, stdout/stderr, or evidence dumps are shown in the chat UI
 
 Next steps
-- 10B: connect controlled product actions through the slash command endpoints
-- 10C: wire real RCK/Hermes plumbing behind product actions while keeping the UI conversational
+- Keep polishing the command experience while preserving the local-only browser model
+- Any real backend wiring remains out of scope for this UI skeleton

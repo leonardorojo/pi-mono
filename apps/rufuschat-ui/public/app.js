@@ -534,9 +534,9 @@ function applySelectionFallback({ persist = true } = {}) {
 
   let changed = false;
   if (!chat) {
-    chat = createDefaultChat();
-    chat.projectId = project.id;
+    chat = createEmptyChat('New chat', project.id);
     project.chats.push(chat);
+    touchProject(project);
     changed = true;
   }
 
@@ -551,9 +551,10 @@ function applySelectionFallback({ persist = true } = {}) {
   }
 
   if (changed) {
-    touchRootState({ dirty: persist });
     if (persist) {
       markProductStateChanged();
+    } else {
+      touchRootState({ dirty: false });
     }
   }
 
@@ -644,18 +645,17 @@ function getChatsForProject(project) {
   });
 }
 
-function createDefaultChat() {
-  return createChat('New chat', [createMessage('assistant', newChatAssistantMessage)]);
-}
-
 function createEmptyChat(title = 'New chat', projectId = null) {
   return createChat(title, [], { projectId });
 }
 
-function createDefaultProject() {
-  return createProject('New project', [createDefaultChat()]);
+function createDefaultChat() {
+  return createEmptyChat('New chat');
 }
 
+function createDefaultProject() {
+  return createProject('RufusChat', [createDefaultChat()]);
+}
 function ensureProjectListHasItems() {
   if (state.projects.length === 0) {
     const project = createDefaultProject();
@@ -930,7 +930,7 @@ function createChatInProject(project, title = 'New chat', messages = [createMess
 }
 
 function createProjectWithInitialChat(name) {
-  return createProject(name, [createDefaultChat()]);
+  return createProject(name, [createEmptyChat('New chat')]);
 }
 
 function selectProjectAndChat(projectId, chatId = null) {
@@ -1013,14 +1013,22 @@ async function deleteProject(projectId) {
   touchRootState();
 
   if (state.projects.length === 0) {
-    const fallbackProject = createProjectWithInitialChat('New project');
+    const fallbackProject = createDefaultProject();
     state.projects.push(fallbackProject);
     state.currentProjectId = fallbackProject.id;
     state.currentChatId = fallbackProject.chats[0]?.id ?? null;
   } else if (wasActive) {
     const nextProject = state.projects[projectIndex] ?? state.projects[projectIndex - 1] ?? state.projects[0];
     state.currentProjectId = nextProject.id;
-    state.currentChatId = nextProject.chats[0]?.id ?? createChatInProject(nextProject).id;
+    const nextChats = getChatsForProject(nextProject);
+    if (nextChats.length === 0) {
+      const fallbackChat = createEmptyChat('New chat', nextProject.id);
+      nextProject.chats.push(fallbackChat);
+      touchProject(nextProject);
+      state.currentChatId = fallbackChat.id;
+    } else {
+      state.currentChatId = nextChats[0].id;
+    }
   }
 
   ensureSelection();
@@ -1243,20 +1251,39 @@ function render() {
 
 
 function setCurrentSelection(projectId, chatId) {
-  const project = getProjectById(projectId);
+  const project = getProjectById(projectId) ?? state.projects[0];
   if (!project) {
     return;
   }
 
-  const nextChat = chatId ? project.chats.find((item) => item.id === chatId) : project.chats[0];
+  let nextChat = chatId ? project.chats.find((item) => item.id === chatId) : null;
   if (!nextChat) {
-    return;
+    nextChat = getChatsForProject(project)[0] ?? null;
   }
 
-  state.currentProjectId = project.id;
-  state.currentChatId = nextChat.id;
+  let changed = false;
+  if (!nextChat) {
+    nextChat = createEmptyChat('New chat', project.id);
+    project.chats.push(nextChat);
+    touchProject(project);
+    changed = true;
+  }
+
+  if (state.currentProjectId !== project.id) {
+    state.currentProjectId = project.id;
+    changed = true;
+  }
+
+  if (state.currentChatId !== nextChat.id) {
+    state.currentChatId = nextChat.id;
+    changed = true;
+  }
+
+  if (changed) {
+    markProductStateChanged();
+  }
+
   hideContextMenus();
-  markProductStateChanged();
   render();
   renderSlashMenu();
   composerInput.focus();

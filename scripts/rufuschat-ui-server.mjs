@@ -15,6 +15,10 @@ const piTestPath = join(repoRoot, "pi-test.sh");
 const rpcArgs = ["--offline", "--mode", "rpc", "--no-tools", "--no-extensions", "--extension", ".pi/extensions/rck-bridge/index.ts"];
 const actionTimeoutMs = Number.parseInt(process.env.RUFUSCHAT_UI_ACTION_TIMEOUT_MS ?? "45000", 10);
 
+await import("tsx");
+
+const { rufuschatExtensionMetadata } = await import("../.pi/extensions/rufuschat/rufuschat-extension-metadata.ts");
+
 function safeReadJson(filePath) {
 	try {
 		return JSON.parse(readFileSync(filePath, "utf8"));
@@ -546,6 +550,7 @@ function buildSnapshot() {
 	return {
 		storageExists,
 		traceId,
+		rufuschat: rufuschatExtensionMetadata,
 		statusDto,
 		contextDto,
 		supervisionDto,
@@ -554,6 +559,13 @@ function buildSnapshot() {
 			ok: true,
 			traceId,
 			storageExists,
+			productSurface: rufuschatExtensionMetadata.displayName,
+			extensionStatus: rufuschatExtensionMetadata.status,
+			rckProvider: rufuschatExtensionMetadata.rckProvider,
+			futureRckProvider: rufuschatExtensionMetadata.futureRckProvider,
+			prototype: rufuschatExtensionMetadata.currentPrototype,
+			currentPrototype: rufuschatExtensionMetadata.currentPrototype,
+			safety: rufuschatExtensionMetadata.safety,
 			generatedAt: new Date().toISOString(),
 		},
 	};
@@ -609,7 +621,7 @@ function renderSafeContextItems(items) {
 }
 
 function renderHtml(snapshot) {
-	const { statusDto, supervisionDto, inventoryDto, health, contextDto } = snapshot;
+	const { statusDto, supervisionDto, inventoryDto, health, contextDto, rufuschat } = snapshot;
 	const latestState = statusDto.latestState;
 	const latestContextPack = statusDto.latestContextPack;
 	const latestAnchor = statusDto.latestAnchor;
@@ -684,6 +696,8 @@ footer { padding: 0 24px 20px; color: var(--muted); }
     <span>traceId: <span class="mono">${renderValue(statusDto.traceId)}</span></span>
     <span>health: ${renderBadge(health.ok ? "ok" : "error")}</span>
     <span>storage: ${snapshot.storageExists ? "present" : "absent"}</span>
+    <span>RufusChat Extension: <span class="mono">${renderValue(rufuschat.status)}</span></span>
+    <span>RCK provider: <span class="mono">${renderValue(rufuschat.rckProvider)}</span></span>
     <span>generatedAt: <span class="mono">${renderValue(statusDto.generatedAt)}</span></span>
   </div>
 </header>
@@ -777,7 +791,7 @@ footer { padding: 0 24px 20px; color: var(--muted); }
   </section>
 </main>
 <footer>
-  API: <span class="mono">/health</span>, <span class="mono">/api/status</span>, <span class="mono">/api/supervision</span>, <span class="mono">/api/inventory</span>, <span class="mono">/api/context</span>
+  API: <span class="mono">/health</span>, <span class="mono">/api/status</span>, <span class="mono">/api/supervision</span>, <span class="mono">/api/inventory</span>, <span class="mono">/api/context</span>, <span class="mono">/api/rufuschat</span>
 </footer>
 <script>
 const endpoints = {
@@ -1563,6 +1577,20 @@ async function handleRequest(req, res) {
 
 		if (req.method === "GET" && url.pathname === "/health") {
 			jsonResponse(res, 200, buildSnapshot().health);
+			return;
+		}
+
+		if (req.method === "GET" && url.pathname === "/api/rufuschat") {
+			jsonResponse(res, 200, {
+				name: rufuschatExtensionMetadata.name,
+				displayName: rufuschatExtensionMetadata.displayName,
+				status: rufuschatExtensionMetadata.status,
+				rckProvider: rufuschatExtensionMetadata.rckProvider,
+				futureRckProvider: rufuschatExtensionMetadata.futureRckProvider,
+				prototype: rufuschatExtensionMetadata.currentPrototype,
+				currentPrototype: rufuschatExtensionMetadata.currentPrototype,
+				safety: rufuschatExtensionMetadata.safety,
+			});
 			return;
 		}
 

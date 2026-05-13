@@ -100,5 +100,12 @@ That includes, at minimum:
 
 ## Current foundation scope
 
-This directory currently contains only foundation documentation and a placeholder extension entrypoint.
+This directory currently contains foundation documentation, a shared metadata module, and a placeholder extension entrypoint.
 The goal is to establish the contract and boundary before implementing a larger product surface.
+
+## Current prototype integration
+
+`scripts/rufuschat-ui-server.mjs` now consumes the RufusChat extension metadata boundary in a minimal way.
+It reflects the current product-surface status in the UI and exposes a safe `/api/rufuschat` view for the prototype.
+
+Full migration from the prototype server into the extension surface is deferred to a later phase.

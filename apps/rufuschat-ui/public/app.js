@@ -529,7 +529,7 @@ function applySelectionFallback({ persist = true } = {}) {
 
   let chat = getChatById(state.currentChatId);
   if (!chat || !project.chats.some((item) => item.id === chat?.id)) {
-    chat = project.chats[0] ?? null;
+    chat = getChatsForProject(project)[0] ?? null;
   }
 
   let changed = false;
@@ -626,8 +626,30 @@ function getProjectByChatId(chatId) {
   return state.projects.find((project) => project.chats.some((chat) => chat.id === chatId)) ?? null;
 }
 
+function getChatsForProject(project) {
+  if (!project) {
+    return [];
+  }
+
+  return [...project.chats].sort((left, right) => {
+    const leftUpdatedAt = typeof left.updatedAt === 'string' ? left.updatedAt : '';
+    const rightUpdatedAt = typeof right.updatedAt === 'string' ? right.updatedAt : '';
+    if (leftUpdatedAt !== rightUpdatedAt) {
+      return rightUpdatedAt.localeCompare(leftUpdatedAt);
+    }
+
+    const leftCreatedAt = typeof left.createdAt === 'string' ? left.createdAt : '';
+    const rightCreatedAt = typeof right.createdAt === 'string' ? right.createdAt : '';
+    return rightCreatedAt.localeCompare(leftCreatedAt);
+  });
+}
+
 function createDefaultChat() {
   return createChat('New chat', [createMessage('assistant', newChatAssistantMessage)]);
+}
+
+function createEmptyChat(title = 'New chat', projectId = null) {
+  return createChat(title, [], { projectId });
 }
 
 function createDefaultProject() {
@@ -749,7 +771,7 @@ function renderSidebar() {
     const children = document.createElement('div');
     children.className = 'project-group__children';
 
-    for (const chat of project.chats) {
+    for (const chat of getChatsForProject(project)) {
       const chatRow = document.createElement('div');
       chatRow.className = 'chat-item-row';
 
@@ -892,6 +914,7 @@ function openChatContextMenu(projectId, chatId, anchorEl) {
     chatContextMenuEl,
     [
       { action: 'rename-chat', label: 'Rename chat' },
+      { action: 'clear-chat', label: 'Clear messages', destructive: true },
       { action: 'delete-chat', label: 'Delete chat', destructive: true },
     ],
     anchorEl,
@@ -1031,18 +1054,42 @@ async function deleteChat(projectId, chatId) {
   touchRootState();
 
   if (project.chats.length === 0) {
-    const fallbackChat = createDefaultChat();
+    const fallbackChat = createEmptyChat('New chat', project.id);
     project.chats.push(fallbackChat);
     if (project.id === state.currentProjectId) {
       state.currentChatId = fallbackChat.id;
     }
   } else if (wasActive) {
-    const nextChat = project.chats[chatIndex] ?? project.chats[chatIndex - 1] ?? project.chats[0];
+    const sortedChats = getChatsForProject(project);
+    const nextChat = sortedChats[0] ?? project.chats[chatIndex] ?? project.chats[chatIndex - 1] ?? project.chats[0];
     state.currentProjectId = project.id;
     state.currentChatId = nextChat.id;
   }
 
   ensureSelection();
+  markProductStateChanged();
+  render();
+}
+
+async function clearChatMessages(projectId, chatId) {
+  const project = getProjectById(projectId);
+  if (!project) {
+    return;
+  }
+
+  const chat = project.chats.find((item) => item.id === chatId);
+  if (!chat) {
+    return;
+  }
+
+  if (!(await confirmAction(`Clear all messages in chat "${chat.title}"?`))) {
+    return;
+  }
+
+  chat.messages = [];
+  touchChat(chat);
+  touchProject(project);
+  touchRootState();
   markProductStateChanged();
   render();
 }
@@ -1169,7 +1216,7 @@ function renderMessages({ autoScroll = false } = {}) {
   if (chat.messages.length === 0) {
     const emptyState = document.createElement('div');
     emptyState.className = 'empty-state';
-    emptyState.textContent = 'No messages yet. Start the conversation here.';
+    emptyState.textContent = 'Start a conversation in this chat.';
     messagesEl.appendChild(emptyState);
 
     if (autoScroll) {
@@ -1720,6 +1767,9 @@ if (chatContextMenuEl) {
     switch (action) {
       case 'rename-chat':
         renameChat(context.chatId);
+        break;
+      case 'clear-chat':
+        await clearChatMessages(context.projectId, context.chatId);
         break;
       case 'delete-chat':
         await deleteChat(context.projectId, context.chatId);

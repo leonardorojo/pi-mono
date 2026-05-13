@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// RufusChat legacy prototype.
+// This script validated primary RCK/Hermes UI interactions during phases 8A–8E.
+// The official product UI path is apps/rufuschat-ui/.
+// Do not add new product features here unless explicitly doing prototype maintenance.
 import { createServer } from "node:http";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { spawn } from "node:child_process";

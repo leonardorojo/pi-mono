@@ -4,6 +4,16 @@ This app is the ChatGPT-like UI skeleton for RufusChat.
 
 It is intentionally local-only and does not connect to the LLM, OpenAI, Hermes execution, or the RCK backend yet. The goal of 10A is to lock the final product shape before wiring any real automation.
 
+## Product path
+
+- `apps/rufuschat-ui` is the official RufusChat UI v0 path.
+- It follows a ChatGPT-like UX:
+  - sidebar projects/chats
+  - central chat
+  - slash commands
+  - backend RCK/Hermes invisible
+- Future work should target `apps/rufuschat-ui` unless explicitly doing prototype maintenance.
+
 What is included
 - Left sidebar with Projects / Chats structure
 - Center chat rail with header, message history, and composer
@@ -41,9 +51,10 @@ What 10E adds
 - A placeholder `/trace` command that does not create or link any real trace
 - No real trace management yet
 
-Relationship to existing prototype
+## Relationship to existing prototype
 - `scripts/rufuschat-ui-server.mjs` remains the validated Fase 8 prototype server
-- `apps/rufuschat-ui/` is the new skeleton for the final UI direction
+- `apps/rufuschat-ui/` is the official product UI path
+- The prototype is frozen as a validation reference unless a critical bug or comparison is needed
 
 Run it
 From the repo root:

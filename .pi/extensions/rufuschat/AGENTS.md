@@ -7,6 +7,9 @@ Keep it small and explicit.
 
 ## Rules
 
+- Do not route new RufusChat product UI work to `scripts/rufuschat-ui-server.mjs`.
+- Use `apps/rufuschat-ui` for product UX.
+- Use `scripts/rufuschat-ui-server.mjs` only for prototype maintenance.
 - Do not couple UI code directly to `.pi/rck/` layout details.
 - Do not expose raw evidence by default.
 - Do not add real Hermes execution here.

@@ -52,6 +52,12 @@ Future provider chain:
 
 That future layer should preserve the same safe contract while moving operational truth into the kernel and CLI surface.
 
+## Product UI path
+
+- `apps/rufuschat-ui` is the current product surface.
+- `scripts/rufuschat-ui-server.mjs` is the legacy prototype.
+- Extension/provider contracts remain the architectural boundary.
+
 ## Relationship to `scripts/rufuschat-ui-server.mjs`
 
 `scripts/rufuschat-ui-server.mjs` is the current prototype validation shell.

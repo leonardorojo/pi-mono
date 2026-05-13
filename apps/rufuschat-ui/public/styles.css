@@ -221,6 +221,20 @@ textarea:disabled {
   font-size: 0.92rem;
 }
 
+.chat-session-shell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.chat-session-shell strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .chat-header__status {
   color: var(--muted);
   font-size: 0.88rem;
@@ -399,6 +413,10 @@ textarea:disabled {
 
   .chat-header {
     flex-direction: column;
+  }
+
+  .chat-session-shell {
+    gap: 8px 12px;
   }
 
   .messages,

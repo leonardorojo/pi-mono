@@ -4,6 +4,9 @@ const composerInput = document.getElementById('composer-input');
 const sendButton = composerForm.querySelector('button[type="submit"]');
 const currentProjectEl = document.getElementById('current-project');
 const currentChatEl = document.getElementById('current-chat');
+const memoryStatusEl = document.getElementById('current-memory-status');
+const summaryStatusEl = document.getElementById('current-summary-status');
+const rckTraceStatusEl = document.getElementById('current-rck-trace-status');
 const statusPill = document.querySelector('.chat-header__status');
 const confirmModal = document.getElementById('confirm-modal');
 const confirmDescription = document.getElementById('confirm-modal-description');
@@ -13,8 +16,15 @@ const projectTreeEl = document.getElementById('project-tree');
 const newChatButton = document.getElementById('new-chat-button');
 
 const idleStatusText = 'Browser-local session';
-const initialAssistantMessage =
-  'RufusChat local session ready. Select a chat, or use /status, /checkpoint, /inject, /hermes fake.';
+const memoryPlaceholder = {
+  memoryStatus: 'not-connected',
+  semanticSummaryStatus: 'not-generated',
+  linkedRckTraceStatus: 'not-linked',
+  semanticSummaryPreview: null,
+  linkedRckTraceId: null,
+};
+const localIntroMessage =
+  'This chat is local. LLM and semantic memory are not connected yet. RCK tracking happens only when you confirm slash actions.';
 const newChatAssistantMessage =
   'New local chat created. LLM and semantic memory are not connected yet.';
 
@@ -25,6 +35,10 @@ function makeId(prefix) {
   return `${prefix}-${random ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 }
 
+function nowIso() {
+  return new Date().toISOString();
+}
+
 function createMessage(role, text, variant = 'normal') {
   return {
     role,
@@ -33,11 +47,20 @@ function createMessage(role, text, variant = 'normal') {
   };
 }
 
-function createChat(title, messages = []) {
+function createChat(title, messages = [], overrides = {}) {
+  const timestamp = nowIso();
   return {
     id: makeId('chat'),
     title,
     messages: messages.map((message) => createMessage(message.role, message.text, message.variant ?? 'normal')),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    memoryStatus: memoryPlaceholder.memoryStatus,
+    semanticSummaryStatus: memoryPlaceholder.semanticSummaryStatus,
+    linkedRckTraceStatus: memoryPlaceholder.linkedRckTraceStatus,
+    semanticSummaryPreview: memoryPlaceholder.semanticSummaryPreview,
+    linkedRckTraceId: memoryPlaceholder.linkedRckTraceId,
+    ...overrides,
   };
 }
 
@@ -52,16 +75,16 @@ function createProject(name, chats) {
 function createInitialProjects() {
   return [
     createProject('PI Agent', [
-      createChat('Branch · RufusChat Fase 10', [createMessage('assistant', initialAssistantMessage)]),
-      createChat('RufusChat Fase 10'),
-      createChat('RufusChat Fase 9'),
-      createChat('Adjust · RufusChat UX'),
-      createChat('RufusChat Fase 8'),
+      createChat('Branch · RufusChat Fase 10', [createMessage('assistant', localIntroMessage)]),
+      createChat('RufusChat Fase 10', [createMessage('assistant', localIntroMessage)]),
+      createChat('RufusChat Fase 9', [createMessage('assistant', localIntroMessage)]),
+      createChat('Adjust · RufusChat UX', [createMessage('assistant', localIntroMessage)]),
+      createChat('RufusChat Fase 8', [createMessage('assistant', localIntroMessage)]),
     ]),
-    createProject('CivilPlan', [createChat('CivilPlan')]),
-    createProject('Wise', [createChat('Wise')]),
-    createProject('CC Analysis', [createChat('CC Analysis')]),
-    createProject('Hermes WSL2', [createChat('Hermes WSL2')]),
+    createProject('CivilPlan', [createChat('CivilPlan', [createMessage('assistant', localIntroMessage)])]),
+    createProject('Wise', [createChat('Wise', [createMessage('assistant', localIntroMessage)])]),
+    createProject('CC Analysis', [createChat('CC Analysis', [createMessage('assistant', localIntroMessage)])]),
+    createProject('Hermes WSL2', [createChat('Hermes WSL2', [createMessage('assistant', localIntroMessage)])]),
   ];
 }
 
@@ -114,6 +137,9 @@ function renderHeader() {
 
   currentProjectEl.textContent = project?.name ?? '—';
   currentChatEl.textContent = chat?.title ?? '—';
+  memoryStatusEl.textContent = chat?.memoryStatus ?? memoryPlaceholder.memoryStatus;
+  summaryStatusEl.textContent = chat?.semanticSummaryStatus ?? memoryPlaceholder.semanticSummaryStatus;
+  rckTraceStatusEl.textContent = chat?.linkedRckTraceStatus ?? memoryPlaceholder.linkedRckTraceStatus;
 }
 
 function renderSidebar() {
@@ -255,6 +281,7 @@ function appendMessageToChat(chatId, role, text, variant = 'normal') {
   }
 
   chat.messages.push(createMessage(role, text, variant));
+  chat.updatedAt = nowIso();
 
   if (chat.id === state.currentChatId) {
     renderMessages();

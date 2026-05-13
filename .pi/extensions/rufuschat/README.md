@@ -121,3 +121,16 @@ See `project-chat-rck-boundary.md` for the explicit ownership and relationship m
 - Context Pack
 
 That boundary document is the canonical reference for avoiding confusion between transcript, safe context, and audited RCK state.
+
+## RCK Core adapter contract
+
+See `rck-core-adapter-contract.md` for the stable adapter boundary between RufusChat and the RCK provider layer.
+
+Current provider:
+- Pi RCK Bridge
+
+Future provider:
+- RCK Core Kernel
+- RufusLab.RCK.Cli
+
+The adapter contract is what lets the UI/product surface evolve without coupling directly to provider storage or CLI output.

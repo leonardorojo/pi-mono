@@ -7,6 +7,8 @@ The UI should talk to a RufusChatBackendAdapter, and the adapter should talk to 
 
 This is a contract sketch, not a runtime implementation.
 
+See also `rck-core-adapter-contract.md` for the provider boundary that the product surface should target.
+
 ## Boundary chain
 
 ```text

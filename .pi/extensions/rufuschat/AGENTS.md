@@ -14,6 +14,10 @@ Keep it small and explicit.
 - Do not implement storage mutations without confirmation gates.
 - Keep the current bridge/provider boundary replaceable.
 - Prefer safe DTOs and adapter contracts over direct state shape reuse.
+- Do not couple UI directly to pi-rck-bridge.
+- Do not read `.pi/rck` directly from RufusChat UI.
+- Use the provider boundary for future RCK Core integration.
+- Do not invoke RufusLab.RCK.Cli directly from UI without an adapter.
 - Do not conflate chat memory with RCK trace.
 - Do not treat context packs as raw transcripts.
 - Do not silently inject context without a user decision.

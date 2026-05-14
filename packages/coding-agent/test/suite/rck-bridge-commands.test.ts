@@ -83,7 +83,9 @@ describe("RCK bridge commands", () => {
 		const customEntries = getCustomEntries(harness);
 		expect(
 			customEntries.some(
-				(entry) => entry.customType === "rck-bridge.state.created" && (entry.data as { eventType?: string } | undefined)?.eventType === "StatePackCreated",
+				(entry) =>
+					entry.customType === "rck-bridge.state.created" &&
+					(entry.data as { eventType?: string } | undefined)?.eventType === "StatePackCreated",
 			),
 		).toBe(true);
 		expect(customEntries.some((entry) => entry.customType === "rck-bridge.hermes.recorded")).toBe(false);
@@ -116,7 +118,9 @@ describe("RCK bridge commands", () => {
 		const customMessages = getCustomMessages(harness);
 		const missingStateMessage = customMessages.find((message) => message.customType === "rck-bridge.context.missing");
 		expect(missingStateMessage).toBeDefined();
-		expect(String(missingStateMessage?.content)).toContain("No RCK state available for /rck inject. Run /state first.");
+		expect(String(missingStateMessage?.content)).toContain(
+			"No RCK state available for /rck inject. Run /state first.",
+		);
 	});
 
 	it("executes /state then /rck inject and records a safe context pack", async () => {
@@ -128,7 +132,6 @@ describe("RCK bridge commands", () => {
 		expect(runner).toBeDefined();
 		await runner!.getCommand("state")!.handler("design bridge state", runner!.createCommandContext());
 		await runner!.getCommand("rck")!.handler("inject", runner!.createCommandContext());
-
 
 		const rckRoot = join(harness.tempDir, ".pi", "rck");
 		const contextPackFiles = readdirSync(join(rckRoot, "context-packs"));
@@ -157,7 +160,9 @@ describe("RCK bridge commands", () => {
 		};
 		expect(currentTrace.traceId).toBe(latestContext.traceId);
 
-		const contextPackJson = JSON.parse(readFileSync(join(rckRoot, "context-packs", contextPackFiles[0]), "utf-8")) as {
+		const contextPackJson = JSON.parse(
+			readFileSync(join(rckRoot, "context-packs", contextPackFiles[0]), "utf-8"),
+		) as {
 			artifactType: string;
 			allowedToInject: boolean;
 			contextPackId: string;
@@ -259,7 +264,13 @@ describe("RCK bridge commands", () => {
 		const customEntries = getCustomEntries(harness);
 		expect(customEntries.some((entry) => entry.customType === "rck-bridge.anchor.registered")).toBe(true);
 		const customMessages = getCustomMessages(harness);
-		expect(customMessages.some((message) => message.customType === "rck-bridge.anchor.registered" && String(message.content).includes("RCK anchor ready: phase-3b-started"))).toBe(true);
+		expect(
+			customMessages.some(
+				(message) =>
+					message.customType === "rck-bridge.anchor.registered" &&
+					String(message.content).includes("RCK anchor ready: phase-3b-started"),
+			),
+		).toBe(true);
 	});
 
 	it("executes /state then /rck anchor and links to the latest state", async () => {
@@ -329,9 +340,14 @@ describe("RCK bridge commands", () => {
 		expect(anchorEventJson.payload.statePath).toBe(latestState.currentStatePath);
 
 		const customMessages = getCustomMessages(harness);
-		expect(customMessages.some((message) => message.customType === "rck-bridge.anchor.registered" && String(message.content).includes("linked to latest state"))).toBe(true);
+		expect(
+			customMessages.some(
+				(message) =>
+					message.customType === "rck-bridge.anchor.registered" &&
+					String(message.content).includes("linked to latest state"),
+			),
+		).toBe(true);
 	});
-
 
 	it("executes /rck supervise without storage and stays read-only", async () => {
 		harness = await createHarnessWithExtensions({
@@ -347,7 +363,9 @@ describe("RCK bridge commands", () => {
 
 		const customMessages = getCustomMessages(harness);
 		const superviseMessage = customMessages.find(
-			(message) => message.customType === "rck-bridge-status" && String(message.content).includes("No RCK storage found. Run /state or /hermes first."),
+			(message) =>
+				message.customType === "rck-bridge-status" &&
+				String(message.content).includes("No RCK storage found. Run /state or /hermes first."),
 		);
 		expect(superviseMessage).toBeDefined();
 		expect(String(superviseMessage?.content)).toContain("No RCK storage found. Run /state or /hermes first.");
@@ -498,27 +516,15 @@ describe("RCK bridge commands", () => {
 		expect(stderrFiles).toHaveLength(0);
 		expect(eventFiles).toHaveLength(2);
 
-		const eventRecords = eventFiles.map((file) =>
-			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
-				eventType: string;
-				traceId: string;
-				requestEventId?: string;
-				mode?: string;
-				status?: string;
-				blockedReason?: string;
-				stdoutRef?: { kind?: string; path?: string };
-				stderrRef?: { kind?: string; path?: string };
-				stdoutTruncated?: boolean;
-				stderrTruncated?: boolean;
-				stdoutByteLength?: number;
-				stderrByteLength?: number;
-				errorKind?: string;
-				payload?: {
+		const eventRecords = eventFiles.map(
+			(file) =>
+				JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
+					eventType: string;
+					traceId: string;
+					requestEventId?: string;
 					mode?: string;
 					status?: string;
 					blockedReason?: string;
-					promptSummary?: string;
-					timeoutMs?: number;
 					stdoutRef?: { kind?: string; path?: string };
 					stderrRef?: { kind?: string; path?: string };
 					stdoutTruncated?: boolean;
@@ -526,10 +532,23 @@ describe("RCK bridge commands", () => {
 					stdoutByteLength?: number;
 					stderrByteLength?: number;
 					errorKind?: string;
-					safeSummary?: string;
-					requestEventId?: string;
-				};
-			},
+					payload?: {
+						mode?: string;
+						status?: string;
+						blockedReason?: string;
+						promptSummary?: string;
+						timeoutMs?: number;
+						stdoutRef?: { kind?: string; path?: string };
+						stderrRef?: { kind?: string; path?: string };
+						stdoutTruncated?: boolean;
+						stderrTruncated?: boolean;
+						stdoutByteLength?: number;
+						stderrByteLength?: number;
+						errorKind?: string;
+						safeSummary?: string;
+						requestEventId?: string;
+					};
+				},
 		);
 		const requestedEvent = eventRecords.find((event) => event.eventType === "HermesRunRequested");
 		const recordedEvent = eventRecords.find((event) => event.eventType === "HermesRunRecorded");
@@ -577,17 +596,17 @@ describe("RCK bridge commands", () => {
 		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.mode).toBe("fake");
 		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.status).toBe("succeeded");
 		expect((recordedEntry?.data as { blockedReason?: string } | undefined)?.blockedReason).toBeUndefined();
-		expect((recordedEntry?.data as { stdoutRef?: { kind?: string; path?: string } } | undefined)?.stdoutRef?.kind).toBe(
-			"stdout",
-		);
+		expect(
+			(recordedEntry?.data as { stdoutRef?: { kind?: string; path?: string } } | undefined)?.stdoutRef?.kind,
+		).toBe("stdout");
 		expect((recordedEntry?.data as { stderrRef?: unknown } | undefined)?.stderrRef).toBeUndefined();
 
 		const stdoutFile = stdoutFiles[0];
 		const stdoutContent = readFileSync(join(stdoutDir, stdoutFile), "utf-8");
 		expect(stdoutContent).toContain("mock-hermes-stdout: inspect mock bridge");
-		expect((recordedEntry?.data as { stdoutRef?: { path?: string; byteLength?: number } } | undefined)?.stdoutRef?.path).toBe(
-			`.pi/rck/evidence/hermes/stdout/${stdoutFile}`,
-		);
+		expect(
+			(recordedEntry?.data as { stdoutRef?: { path?: string; byteLength?: number } } | undefined)?.stdoutRef?.path,
+		).toBe(`.pi/rck/evidence/hermes/stdout/${stdoutFile}`);
 		expect((recordedEntry?.data as { safeSummary?: string } | undefined)?.safeSummary).toContain("mode=fake");
 		expect((recordedEntry?.data as { safeSummary?: string } | undefined)?.safeSummary).toContain("status=succeeded");
 
@@ -603,9 +622,9 @@ describe("RCK bridge commands", () => {
 		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
 		expect((statusMessage?.details as { mock?: boolean; stdoutRef?: unknown } | undefined)?.mock).toBe(true);
 		expect((statusMessage?.details as { eventType?: string } | undefined)?.eventType).toBe("HermesRunRecorded");
-		expect((statusMessage?.details as { stdoutRef?: { kind?: string; path?: string } } | undefined)?.stdoutRef?.kind).toBe(
-			"stdout",
-		);
+		expect(
+			(statusMessage?.details as { stdoutRef?: { kind?: string; path?: string } } | undefined)?.stdoutRef?.kind,
+		).toBe("stdout");
 	});
 
 	it("executes /hermes inspect mock bridge fail and records stderr evidence", async () => {
@@ -629,12 +648,23 @@ describe("RCK bridge commands", () => {
 		expect(stderrFiles).toHaveLength(1);
 		expect(eventFiles).toHaveLength(2);
 
-		const eventRecords = eventFiles.map((file) =>
-			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
-				eventType: string;
-				requestEventId?: string;
-				payload?: { mode?: string; status?: string; blockedReason?: string; stderrRef?: { kind?: string }; stdoutTruncated?: boolean; stderrTruncated?: boolean; stdoutByteLength?: number; stderrByteLength?: number; errorKind?: string };
-			},
+		const eventRecords = eventFiles.map(
+			(file) =>
+				JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
+					eventType: string;
+					requestEventId?: string;
+					payload?: {
+						mode?: string;
+						status?: string;
+						blockedReason?: string;
+						stderrRef?: { kind?: string };
+						stdoutTruncated?: boolean;
+						stderrTruncated?: boolean;
+						stdoutByteLength?: number;
+						stderrByteLength?: number;
+						errorKind?: string;
+					};
+				},
 		);
 		const requestedEvent = eventRecords.find((event) => event.eventType === "HermesRunRequested");
 		const recordedEvent = eventRecords.find((event) => event.eventType === "HermesRunRecorded");
@@ -650,9 +680,9 @@ describe("RCK bridge commands", () => {
 		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.mode).toBe("fake");
 		expect((recordedEntry?.data as { status?: string } | undefined)?.status).toBe("failed");
 		expect((recordedEntry?.data as { stdoutRef?: unknown } | undefined)?.stdoutRef).toBeUndefined();
-		expect((recordedEntry?.data as { stderrRef?: { kind?: string; path?: string } } | undefined)?.stderrRef?.kind).toBe(
-			"stderr",
-		);
+		expect(
+			(recordedEntry?.data as { stderrRef?: { kind?: string; path?: string } } | undefined)?.stderrRef?.kind,
+		).toBe("stderr");
 
 		const stderrFile = stderrFiles[0];
 		const stderrContent = readFileSync(join(stderrDir, stderrFile), "utf-8");
@@ -663,7 +693,8 @@ describe("RCK bridge commands", () => {
 
 		const customMessages = getCustomMessages(harness);
 		const statusMessage = customMessages.find(
-			(message) => message.customType === "rck-bridge-status" && String(message.content).includes("Hermes fake run recorded"),
+			(message) =>
+				message.customType === "rck-bridge-status" && String(message.content).includes("Hermes fake run recorded"),
 		);
 		expect(statusMessage).toBeDefined();
 		expect(String(statusMessage?.content)).not.toContain(stderrContent);
@@ -688,14 +719,14 @@ describe("RCK bridge commands", () => {
 		expect(existsSync(stderrDir) ? readdirSync(stderrDir) : []).toHaveLength(0);
 		expect(readdirSync(eventDir)).toHaveLength(2);
 
-
-		const eventRecords = readdirSync(eventDir).map((file) =>
-			JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
-				eventType: string;
-				traceId: string;
-				requestEventId?: string;
-				payload?: { mode?: string; status?: string; blockedReason?: string; requestEventId?: string };
-			},
+		const eventRecords = readdirSync(eventDir).map(
+			(file) =>
+				JSON.parse(readFileSync(join(eventDir, file), "utf-8")) as {
+					eventType: string;
+					traceId: string;
+					requestEventId?: string;
+					payload?: { mode?: string; status?: string; blockedReason?: string; requestEventId?: string };
+				},
 		);
 		const requestedEvent = eventRecords.find((event) => event.eventType === "HermesRunRequested");
 		const recordedEvent = eventRecords.find((event) => event.eventType === "HermesRunRecorded");
@@ -719,8 +750,12 @@ describe("RCK bridge commands", () => {
 		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.mode).toBe("real");
 		expect((recordedEntry?.data as { mode?: string; status?: string } | undefined)?.status).toBe("aborted");
 		expect((recordedEntry?.data as { blockedReason?: string } | undefined)?.blockedReason).toBe("real-mode-disabled");
-		expect((recordedEntry?.data as { stdoutRef?: unknown; stderrRef?: unknown } | undefined)?.stdoutRef).toBeUndefined();
-		expect((recordedEntry?.data as { stdoutRef?: unknown; stderrRef?: unknown } | undefined)?.stderrRef).toBeUndefined();
+		expect(
+			(recordedEntry?.data as { stdoutRef?: unknown; stderrRef?: unknown } | undefined)?.stdoutRef,
+		).toBeUndefined();
+		expect(
+			(recordedEntry?.data as { stdoutRef?: unknown; stderrRef?: unknown } | undefined)?.stderrRef,
+		).toBeUndefined();
 		expect((recordedEntry?.data as { safeSummary?: string } | undefined)?.safeSummary).toContain(
 			"blockedReason=real-mode-disabled",
 		);
@@ -734,14 +769,15 @@ describe("RCK bridge commands", () => {
 		);
 		expect(statusMessage).toBeDefined();
 		expect(String(statusMessage?.content)).not.toMatch(/mock-hermes-stdout|mock-hermes-stderr/i);
-		expect((statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.mode).toBe(
-			"real",
-		);
-		expect((statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.status).toBe(
-			"aborted",
-		);
-		expect((statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.blockedReason).toBe(
-			"real-mode-disabled",
-		);
+		expect(
+			(statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.mode,
+		).toBe("real");
+		expect(
+			(statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)?.status,
+		).toBe("aborted");
+		expect(
+			(statusMessage?.details as { mode?: string; status?: string; blockedReason?: string } | undefined)
+				?.blockedReason,
+		).toBe("real-mode-disabled");
 	});
 });

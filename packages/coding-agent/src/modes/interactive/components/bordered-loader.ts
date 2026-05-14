@@ -1,4 +1,4 @@
-import { CancellableLoader, Container, Loader, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { CancellableLoader, Container, Loader, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
@@ -61,6 +61,8 @@ export class BorderedLoader extends Container {
 	dispose(): void {
 		if ("dispose" in this.loader && typeof this.loader.dispose === "function") {
 			this.loader.dispose();
+		} else if ("stop" in this.loader && typeof this.loader.stop === "function") {
+			this.loader.stop();
 		}
 	}
 }

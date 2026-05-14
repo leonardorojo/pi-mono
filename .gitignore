@@ -16,6 +16,7 @@ packages/*/dist-firefox/
 .vscode/
 .zed/
 .idea/
+.claude/
 *.swp
 *.swo
 *~
@@ -36,3 +37,6 @@ packages/coding-agent/binaries/
 todo.md
 plans/
 apps/rufuschat-ui/.data/
+.pi/hf-sessions/
+.pi/hf-sessions-backup/
+collect.sh

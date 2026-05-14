@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
+import { type AgentMessage, uuidv7 } from "@earendil-works/pi-agent-core";
+import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,
@@ -196,6 +196,10 @@ export type ReadonlySessionManager = Pick<
 	| "getTree"
 	| "getSessionName"
 >;
+
+function createSessionId(): string {
+	return uuidv7();
+}
 
 /** Generate a unique short ID (8 hex chars, collision-checked) */
 function generateId(byId: { has(id: string): boolean }): string {
@@ -707,7 +711,7 @@ export class SessionManager {
 			}
 
 			const header = this.fileEntries.find((e) => e.type === "session") as SessionHeader | undefined;
-			this.sessionId = header?.id ?? randomUUID();
+			this.sessionId = header?.id ?? createSessionId();
 
 			if (migrateToCurrentVersion(this.fileEntries)) {
 				this._rewriteFile();
@@ -723,7 +727,7 @@ export class SessionManager {
 	}
 
 	newSession(options?: NewSessionOptions): string | undefined {
-		this.sessionId = options?.id ?? randomUUID();
+		this.sessionId = options?.id ?? createSessionId();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
 			type: "session",
@@ -1172,7 +1176,7 @@ export class SessionManager {
 		// Filter out LabelEntry from path - we'll recreate them from the resolved map
 		const pathWithoutLabels = path.filter((e) => e.type !== "label");
 
-		const newSessionId = randomUUID();
+		const newSessionId = createSessionId();
 		const timestamp = new Date().toISOString();
 		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
 		const newSessionFile = join(this.getSessionDir(), `${fileTimestamp}_${newSessionId}.jsonl`);
@@ -1270,12 +1274,13 @@ export class SessionManager {
 	 * Open a specific session file.
 	 * @param path Path to session file
 	 * @param sessionDir Optional session directory for /new or /branch. If omitted, derives from file's parent.
+	 * @param cwdOverride Optional cwd override instead of the session header cwd.
 	 */
-	static open(path: string, sessionDir?: string): SessionManager {
+	static open(path: string, sessionDir?: string, cwdOverride?: string): SessionManager {
 		// Extract cwd from session header if possible, otherwise use process.cwd()
 		const entries = loadEntriesFromFile(path);
 		const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
-		const cwd = header?.cwd ?? process.cwd();
+		const cwd = cwdOverride ?? header?.cwd ?? process.cwd();
 		// If no sessionDir provided, derive from file's parent directory
 		const dir = sessionDir ?? resolve(path, "..");
 		return new SessionManager(cwd, dir, path, true);
@@ -1324,7 +1329,7 @@ export class SessionManager {
 		}
 
 		// Create new session file with new ID but forked content
-		const newSessionId = randomUUID();
+		const newSessionId = createSessionId();
 		const timestamp = new Date().toISOString();
 		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
 		const newSessionFile = join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);

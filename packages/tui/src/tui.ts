@@ -5,10 +5,33 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { performance } from "node:perf_hooks";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
-import { getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
-import { extractSegments, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.js";
+import { deleteKittyImage, getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
+import { extractSegments, normalizeTerminalOutput, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.js";
+
+const KITTY_SEQUENCE_PREFIX = "\x1b_G";
+
+function extractKittyImageIds(line: string): number[] {
+	const sequenceStart = line.indexOf(KITTY_SEQUENCE_PREFIX);
+	if (sequenceStart === -1) return [];
+
+	const paramsStart = sequenceStart + KITTY_SEQUENCE_PREFIX.length;
+	const paramsEnd = line.indexOf(";", paramsStart);
+	if (paramsEnd === -1) return [];
+
+	const params = line.slice(paramsStart, paramsEnd);
+	for (const param of params.split(",")) {
+		const [key, value] = param.split("=", 2);
+		if (key !== "i" || value === undefined) continue;
+		const id = Number(value);
+		if (Number.isInteger(id) && id > 0 && id <= 0xffffffff) {
+			return [id];
+		}
+	}
+	return [];
+}
 
 /**
  * Component interface - all components must implement this
@@ -201,7 +224,10 @@ export class Container implements Component {
 	render(width: number): string[] {
 		const lines: string[] = [];
 		for (const child of this.children) {
-			lines.push(...child.render(width));
+			const childLines = child.render(width);
+			for (const line of childLines) {
+				lines.push(line);
+			}
 		}
 		return lines;
 	}
@@ -213,6 +239,7 @@ export class Container implements Component {
 export class TUI extends Container {
 	public terminal: Terminal;
 	private previousLines: string[] = [];
+	private previousKittyImageIds = new Set<number>();
 	private previousWidth = 0;
 	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
@@ -221,6 +248,9 @@ export class TUI extends Container {
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
 	private renderRequested = false;
+	private renderTimer: NodeJS.Timeout | undefined;
+	private lastRenderAt = 0;
+	private static readonly MIN_RENDER_INTERVAL_MS = 16;
 	private cursorRow = 0; // Logical cursor row (end of rendered content)
 	private hardwareCursorRow = 0; // Actual terminal cursor row (may differ due to IME positioning)
 	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
@@ -442,6 +472,10 @@ export class TUI extends Container {
 
 	stop(): void {
 		this.stopped = true;
+		if (this.renderTimer) {
+			clearTimeout(this.renderTimer);
+			this.renderTimer = undefined;
+		}
 		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
 		if (this.previousLines.length > 0) {
 			const targetRow = this.previousLines.length; // Line after the last content
@@ -467,13 +501,44 @@ export class TUI extends Container {
 			this.hardwareCursorRow = 0;
 			this.maxLinesRendered = 0;
 			this.previousViewportTop = 0;
+			if (this.renderTimer) {
+				clearTimeout(this.renderTimer);
+				this.renderTimer = undefined;
+			}
+			this.renderRequested = true;
+			process.nextTick(() => {
+				if (this.stopped || !this.renderRequested) {
+					return;
+				}
+				this.renderRequested = false;
+				this.lastRenderAt = performance.now();
+				this.doRender();
+			});
+			return;
 		}
 		if (this.renderRequested) return;
 		this.renderRequested = true;
-		process.nextTick(() => {
+		process.nextTick(() => this.scheduleRender());
+	}
+
+	private scheduleRender(): void {
+		if (this.stopped || this.renderTimer || !this.renderRequested) {
+			return;
+		}
+		const elapsed = performance.now() - this.lastRenderAt;
+		const delay = Math.max(0, TUI.MIN_RENDER_INTERVAL_MS - elapsed);
+		this.renderTimer = setTimeout(() => {
+			this.renderTimer = undefined;
+			if (this.stopped || !this.renderRequested) {
+				return;
+			}
 			this.renderRequested = false;
+			this.lastRenderAt = performance.now();
 			this.doRender();
-		});
+			if (this.renderRequested) {
+				this.scheduleRender();
+			}
+		}, delay);
 	}
 
 	private handleInput(data: string): void {
@@ -758,10 +823,52 @@ export class TUI extends Container {
 		for (let i = 0; i < lines.length; i++) {
 			const line = lines[i];
 			if (!isImageLine(line)) {
-				lines[i] = line + reset;
+				lines[i] = normalizeTerminalOutput(line) + reset;
 			}
 		}
 		return lines;
+	}
+
+	private collectKittyImageIds(lines: string[]): Set<number> {
+		const ids = new Set<number>();
+		for (const line of lines) {
+			for (const id of extractKittyImageIds(line)) {
+				ids.add(id);
+			}
+		}
+		return ids;
+	}
+
+	private deleteKittyImages(ids: Iterable<number>): string {
+		let buffer = "";
+		for (const id of ids) {
+			buffer += deleteKittyImage(id);
+		}
+		return buffer;
+	}
+
+	private expandLastChangedForKittyImages(firstChanged: number, lastChanged: number): number {
+		let expandedLastChanged = lastChanged;
+		for (let i = firstChanged; i < this.previousLines.length; i++) {
+			if (extractKittyImageIds(this.previousLines[i]).length > 0) {
+				expandedLastChanged = Math.max(expandedLastChanged, i);
+			}
+		}
+		return expandedLastChanged;
+	}
+
+	private deleteChangedKittyImages(firstChanged: number, lastChanged: number): string {
+		if (firstChanged < 0 || lastChanged < firstChanged) return "";
+
+		const ids = new Set<number>();
+		const maxLine = Math.min(lastChanged, this.previousLines.length - 1);
+		for (let i = firstChanged; i <= maxLine; i++) {
+			for (const id of extractKittyImageIds(this.previousLines[i] ?? "")) {
+				ids.add(id);
+			}
+		}
+
+		return this.deleteKittyImages(ids);
 	}
 
 	/** Splice overlay content into a base line at a specific column. Single-pass optimized. */
@@ -876,7 +983,10 @@ export class TUI extends Container {
 		const fullRender = (clear: boolean): void => {
 			this.fullRedrawCount += 1;
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			if (clear) buffer += "\x1b[2J\x1b[H\x1b[3J"; // Clear screen, home, then clear scrollback
+			if (clear) {
+				buffer += this.deleteKittyImages(this.previousKittyImageIds);
+				buffer += "\x1b[2J\x1b[H\x1b[3J"; // Clear screen, home, then clear scrollback
+			}
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
@@ -895,6 +1005,7 @@ export class TUI extends Container {
 			this.previousViewportTop = Math.max(0, bufferLength - height);
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
+			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
 			this.previousWidth = width;
 			this.previousHeight = height;
 		};
@@ -961,6 +1072,9 @@ export class TUI extends Container {
 			}
 			lastChanged = newLines.length - 1;
 		}
+		if (firstChanged !== -1) {
+			lastChanged = this.expandLastChangedForKittyImages(firstChanged, lastChanged);
+		}
 		const appendStart = appendedLines && firstChanged === this.previousLines.length && firstChanged > 0;
 
 		// No changes - but still need to update hardware cursor position if it moved
@@ -975,6 +1089,7 @@ export class TUI extends Container {
 		if (firstChanged >= newLines.length) {
 			if (this.previousLines.length > newLines.length) {
 				let buffer = "\x1b[?2026h";
+				buffer += this.deleteChangedKittyImages(firstChanged, lastChanged);
 				// Move to end of new content (clamp to 0 for empty content)
 				const targetRow = Math.max(0, newLines.length - 1);
 				if (targetRow < prevViewportTop) {
@@ -1010,6 +1125,7 @@ export class TUI extends Container {
 			}
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
+			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
 			this.previousWidth = width;
 			this.previousHeight = height;
 			this.previousViewportTop = prevViewportTop;
@@ -1027,6 +1143,7 @@ export class TUI extends Container {
 		// Render from first changed line to end
 		// Build buffer with all updates wrapped in synchronized output
 		let buffer = "\x1b[?2026h"; // Begin synchronized output
+		buffer += this.deleteChangedKittyImages(firstChanged, lastChanged);
 		const prevViewportBottom = prevViewportTop + height - 1;
 		const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged;
 		if (moveTargetRow > prevViewportBottom) {
@@ -1157,6 +1274,7 @@ export class TUI extends Container {
 		this.positionHardwareCursor(cursorPos, newLines.length);
 
 		this.previousLines = newLines;
+		this.previousKittyImageIds = this.collectKittyImageIds(newLines);
 		this.previousWidth = width;
 		this.previousHeight = height;
 	}

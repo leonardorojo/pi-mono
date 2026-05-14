@@ -1,13 +1,13 @@
 import { icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
+import type { Agent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import { StringEnum, type ToolCall } from "@earendil-works/pi-ai";
 import { Button } from "@mariozechner/mini-lit/dist/Button.js";
-import type { Agent, AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
-import { StringEnum, type ToolCall } from "@mariozechner/pi-ai";
-import { type Static, Type } from "@sinclair/typebox";
 import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { X } from "lucide";
+import { type Static, Type } from "typebox";
 import type { ArtifactMessage } from "../../components/Messages.js";
 import { ArtifactsRuntimeProvider } from "../../components/sandbox/ArtifactsRuntimeProvider.js";
 import { AttachmentsRuntimeProvider } from "../../components/sandbox/AttachmentsRuntimeProvider.js";
@@ -29,6 +29,11 @@ import { MarkdownArtifact } from "./MarkdownArtifact.js";
 import { PdfArtifact } from "./PdfArtifact.js";
 import { SvgArtifact } from "./SvgArtifact.js";
 import { TextArtifact } from "./TextArtifact.js";
+
+type AgentToolWithName<
+	TParameters extends typeof artifactsParamsSchema = typeof artifactsParamsSchema,
+	TDetails = unknown,
+> = AgentTool<TParameters, TDetails> & { name: string; description: string; parameters: TParameters };
 
 // Simple artifact model
 export interface Artifact {
@@ -269,7 +274,7 @@ export class ArtifactsPanel extends LitElement {
 	}
 
 	// Build the AgentTool (no details payload; return only output strings)
-	public get tool(): AgentTool<typeof artifactsParamsSchema, undefined> {
+	public get tool(): AgentToolWithName<typeof artifactsParamsSchema, undefined> {
 		return {
 			label: "Artifacts",
 			name: "artifacts",

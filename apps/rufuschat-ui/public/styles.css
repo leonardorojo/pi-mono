@@ -674,8 +674,110 @@ textarea:disabled {
 }
 
 .message__body {
-  width: fit-content;
-  max-width: 100%;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.message__body--context-pack {
+  width: min(100%, 640px);
+}
+
+.context-pack-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025));
+  box-shadow: var(--shadow-soft);
+}
+
+.context-pack-card--injected {
+  border-color: rgba(148, 255, 193, 0.22);
+}
+
+.context-pack-card--cancelled {
+  border-color: rgba(255, 92, 92, 0.22);
+}
+
+.context-pack-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.context-pack-card__eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.64rem;
+  color: var(--muted-strong);
+}
+
+.context-pack-card__title {
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+.context-pack-card__id {
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted-strong);
+  font-size: 0.74rem;
+}
+
+.context-pack-card__summary {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.context-pack-card__safety {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.context-pack-card__footer {
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+}
+
+.context-pack-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.context-pack-card__action {
+  width: auto;
+}
+
+.context-pack-card__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0.46rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.context-pack-card__status--injected {
+  border-color: rgba(148, 255, 193, 0.24);
+  color: #b9f6ca;
+}
+
+.context-pack-card__status--cancelled {
+  border-color: rgba(255, 92, 92, 0.24);
+  color: #ff9a9a;
 }
 
 .message--assistant .message__body,

@@ -169,4 +169,5 @@ It does not implement `/inject` runtime behavior.
 - RCK audits.
 - RufusChat remains the conversation surface.
 - The UI should stay ChatGPT-like, not become a technical RCK console.
+- 13B adds a placeholder candidate UX for `/inject`; runtime sources remain fake / safe.
 - Any runtime injection behavior belongs to later phases.

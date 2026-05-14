@@ -8,7 +8,8 @@ It is intentionally local-only and does not connect to the LLM, OpenAI, Hermes e
 
 - Boundary document: [`CONTEXT_PACK.md`](./CONTEXT_PACK.md)
 - Fase 13A is documentation / contract only
-- `/inject` runtime behavior is reserved for later phases
+- Fase 13B adds a placeholder `/inject` candidate UX in the browser
+- `/inject` runtime behavior remains safe / fake and does not read real sources
 - Context Pack is a safe abstraction for future context injection, not a technical RCK dashboard
 
 ## Product path

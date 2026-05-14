@@ -49,6 +49,14 @@ const tracePlaceholder = {
   futureProvider: 'rck-core-kernel',
   mode: 'placeholder',
 };
+const contextPackCandidateSummaryLines = [
+  'Current chat context placeholder',
+  'ProductState metadata placeholder',
+  'No RCK evidence included',
+];
+const contextPackCandidateSafetyLines = ['Placeholder only', 'No raw evidence included', 'No .pi/rck read'];
+const contextPackInjectedMessage = 'Context pack injected.';
+const contextPackCancelledMessage = 'Context pack candidate cancelled.';
 const localIntroMessage =
   'This chat is local. LLM and semantic memory are not connected yet. RCK tracking happens only when you confirm slash actions.';
 const newChatAssistantMessage =
@@ -76,7 +84,7 @@ const commandCatalog = [
   {
     name: '/inject',
     kind: 'mutating',
-    description: 'Inject safe context into this chat.',
+    description: 'Prepare a safe Context Pack candidate for this chat.',
     insertText: '/inject',
     usage: '/inject',
   },
@@ -119,6 +127,102 @@ function makeId(prefix) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function makeContextPackId() {
+  return `cp_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function isContextPackCandidateContent(content) {
+  return typeof content === 'string' && content.startsWith('Context pack candidate prepared.');
+}
+
+function isContextPackInjectedContent(content) {
+  return typeof content === 'string' && content.startsWith(contextPackInjectedMessage);
+}
+
+function isContextPackCancelledContent(content) {
+  return typeof content === 'string' && content.startsWith(contextPackCancelledMessage);
+}
+
+function getMessageContextPackId(message) {
+  return typeof message?.links?.contextPackId === 'string' ? message.links.contextPackId : null;
+}
+
+function getContextPackLifecycleByChat(chat) {
+  const lifecycle = new Map();
+
+  for (const message of chat?.messages ?? []) {
+    const contextPackId = getMessageContextPackId(message);
+    if (!contextPackId) {
+      continue;
+    }
+
+    const content = typeof message?.content === 'string' ? message.content : '';
+    if (isContextPackCandidateContent(content)) {
+      lifecycle.set(contextPackId, 'candidate');
+    } else if (isContextPackInjectedContent(content)) {
+      lifecycle.set(contextPackId, 'injected');
+    } else if (isContextPackCancelledContent(content)) {
+      lifecycle.set(contextPackId, 'cancelled');
+    }
+  }
+
+  return lifecycle;
+}
+
+function createContextPackCandidateContent(contextPackId) {
+  return [
+    'Context pack candidate prepared.',
+    'Summary:',
+    ...contextPackCandidateSummaryLines.map((line) => `- ${line}`),
+    '',
+    'Placeholder only. No raw evidence included. No .pi/rck read.',
+    `Context pack ID: ${contextPackId}`,
+  ].join('\n');
+}
+
+function createContextPackResultContent(contextPackId, status) {
+  const prefix = status === 'cancelled' ? contextPackCancelledMessage : contextPackInjectedMessage;
+  const statusLine = status === 'cancelled' ? 'Status: cancelled.' : 'Status: injected.';
+
+  return [prefix, statusLine, `Context pack ID: ${contextPackId}`, 'No raw evidence included.', 'No .pi/rck read.'].join('\n');
+}
+
+function isContextPackCandidateMessage(message) {
+  return getMessageContextPackId(message) !== null && isContextPackCandidateContent(message?.content);
+}
+
+function createContextPackCandidateControls(chatId, contextPackId, status) {
+  const container = document.createElement('div');
+  container.className = 'context-pack-card__actions';
+
+  if (status === 'injected' || status === 'cancelled') {
+    const statusChip = document.createElement('span');
+    statusChip.className = `context-pack-card__status context-pack-card__status--${status}`;
+    statusChip.textContent = status === 'injected' ? 'Injected' : 'Cancelled';
+    container.appendChild(statusChip);
+    return container;
+  }
+
+  const injectButton = document.createElement('button');
+  injectButton.type = 'button';
+  injectButton.className = 'button button--primary button--compact context-pack-card__action';
+  injectButton.textContent = 'Inject';
+  injectButton.addEventListener('click', () => {
+    finalizeContextPackCandidate(chatId, contextPackId, 'inject');
+  });
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'button button--ghost button--compact context-pack-card__action';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', () => {
+    finalizeContextPackCandidate(chatId, contextPackId, 'cancel');
+  });
+
+  container.append(injectButton, cancelButton);
+  return container;
 }
 
 function promptForName(message, defaultValue = '') {
@@ -1349,9 +1453,53 @@ async function clearChatMessages(projectId, chatId) {
   render();
 }
 
-function createMessageElement(role, text, variant = 'normal') {
-  const message = document.createElement('article');
-  message.className = `message message--${role}${variant === 'error' ? ' message--error' : ''}`;
+function createContextPackCandidateCard(chatId, contextPackId, status) {
+  const card = document.createElement('div');
+  card.className = `context-pack-card context-pack-card--${status}`;
+
+  const header = document.createElement('div');
+  header.className = 'context-pack-card__header';
+
+  const eyebrow = document.createElement('div');
+  eyebrow.className = 'context-pack-card__eyebrow';
+  eyebrow.textContent = 'Context Pack candidate';
+
+  const title = document.createElement('div');
+  title.className = 'context-pack-card__title';
+  title.textContent = status === 'candidate' ? 'Placeholder only' : status === 'injected' ? 'Injected' : 'Cancelled';
+
+  const id = document.createElement('code');
+  id.className = 'context-pack-card__id';
+  id.textContent = contextPackId;
+
+  header.append(eyebrow, title, id);
+
+  const summary = document.createElement('p');
+  summary.className = 'context-pack-card__summary';
+  summary.textContent = contextPackCandidateSummaryLines.join('. ') + '.';
+
+  const safety = document.createElement('ul');
+  safety.className = 'context-pack-card__safety';
+  for (const line of contextPackCandidateSafetyLines) {
+    const item = document.createElement('li');
+    item.textContent = line;
+    safety.appendChild(item);
+  }
+
+  const footer = document.createElement('div');
+  footer.className = 'context-pack-card__footer';
+  footer.textContent = 'User approval required before injection.';
+
+  card.append(header, summary, safety, footer, createContextPackCandidateControls(chatId, contextPackId, status));
+  return card;
+}
+
+function createMessageElement(message, contextPackLifecycleById = new Map()) {
+  const role = message.role;
+  const text = message.content ?? message.text ?? '';
+  const variant = message.variant ?? 'normal';
+  const messageEl = document.createElement('article');
+  messageEl.className = `message message--${role}${variant === 'error' ? ' message--error' : ''}`;
 
   const roleLabel = document.createElement('span');
   roleLabel.className = 'message__role';
@@ -1359,10 +1507,18 @@ function createMessageElement(role, text, variant = 'normal') {
 
   const body = document.createElement('div');
   body.className = 'message__body';
-  body.textContent = text;
 
-  message.append(roleLabel, body);
-  return message;
+  const contextPackId = getMessageContextPackId(message);
+  if (isContextPackCandidateMessage(message) && contextPackId) {
+    const status = contextPackLifecycleById.get(contextPackId) ?? 'candidate';
+    body.classList.add('message__body--context-pack');
+    body.appendChild(createContextPackCandidateCard(getCurrentChat()?.id ?? state.currentChatId, contextPackId, status));
+  } else {
+    body.textContent = text;
+  }
+
+  messageEl.append(roleLabel, body);
+  return messageEl;
 }
 
 let slashMenuSuppressed = false;
@@ -1459,6 +1615,7 @@ function insertCommandText(insertText) {
 function renderMessages({ autoScroll = false } = {}) {
   const chat = getCurrentChat();
   messagesInnerEl.replaceChildren();
+  const contextPackLifecycleById = getContextPackLifecycleByChat(chat);
 
   if (!chat) {
     const emptyState = document.createElement('div');
@@ -1482,7 +1639,7 @@ function renderMessages({ autoScroll = false } = {}) {
   }
 
   for (const message of chat.messages) {
-    messagesInnerEl.appendChild(createMessageElement(message.role, message.content ?? message.text ?? '', message.variant));
+    messagesInnerEl.appendChild(createMessageElement(message, contextPackLifecycleById));
   }
 
   if (autoScroll) {
@@ -1741,26 +1898,32 @@ async function runCheckpoint(targetChatId, label) {
   }
 }
 
-async function runInject(targetChatId) {
-  if (!(await confirmAction('Inject safe context for this chat?'))) {
-    appendMessageToChat(targetChatId, 'assistant', 'Inject cancelled.');
+function finalizeContextPackCandidate(targetChatId, contextPackId, decision) {
+  const chat = getChatById(targetChatId);
+  if (!chat) {
     return;
   }
 
-  setBusy(true);
-  try {
-    const data = await postJson('/api/inject', {});
-    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Safe context injected.', 'normal', { kind: 'command-result' });
-  } catch (error) {
-    appendMessageToChat(
-      targetChatId,
-      'assistant',
-      `Inject request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`,
-      'error',
-    );
-  } finally {
-    setBusy(false);
+  if (decision === 'inject') {
+    appendMessageToChat(targetChatId, 'assistant', createContextPackResultContent(contextPackId, 'injected'), 'normal', {
+      kind: 'command-result',
+      links: { contextPackId },
+    });
+    return;
   }
+
+  appendMessageToChat(targetChatId, 'assistant', createContextPackResultContent(contextPackId, 'cancelled'), 'normal', {
+    kind: 'command-result',
+    links: { contextPackId },
+  });
+}
+
+async function runInject(targetChatId) {
+  const contextPackId = makeContextPackId();
+  appendMessageToChat(targetChatId, 'assistant', createContextPackCandidateContent(contextPackId), 'normal', {
+    kind: 'placeholder',
+    links: { contextPackId },
+  });
 }
 
 async function runHermesFake(targetChatId, prompt) {

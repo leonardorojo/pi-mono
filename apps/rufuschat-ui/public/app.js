@@ -123,6 +123,7 @@ const commandCatalog = [
 
 let confirmResolver = null;
 let contextPackSummaryChipEl = document.getElementById('current-context-pack-chip');
+let checkpointSummaryChipEl = document.getElementById('current-checkpoint-chip');
 
 function makeId(prefix) {
   const random = globalThis.crypto?.randomUUID?.();
@@ -151,6 +152,122 @@ function isContextPackCancelledContent(content) {
 
 function getMessageContextPackId(message) {
   return typeof message?.links?.contextPackId === 'string' ? message.links.contextPackId : null;
+}
+
+function getMessageCheckpointId(message) {
+  return typeof message?.links?.checkpointId === 'string' ? message.links.checkpointId : null;
+}
+
+function makeCheckpointId() {
+  return `chk_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function ensureChatCheckpointHistory(chat) {
+  if (!Array.isArray(chat?.checkpoints)) {
+    if (chat) {
+      chat.checkpoints = [];
+    }
+    return chat?.checkpoints ?? [];
+  }
+
+  return chat.checkpoints;
+}
+
+function getChatCheckpointHistoryItem(chat, checkpointId) {
+  return ensureChatCheckpointHistory(chat).find((item) => item?.checkpointId === checkpointId) ?? null;
+}
+
+function createChatCheckpointHistoryItem(checkpointId, label, sourceMessageId = null) {
+  const timestamp = nowIso();
+
+  return {
+    checkpointId,
+    status: 'created',
+    label,
+    summary: 'Product checkpoint only. No RCK anchor was created. No raw evidence stored.',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    sourceMessageId,
+    resultMessageId: null,
+    sourceKind: 'product',
+    safeMetadata: {
+      productOnly: true,
+      command: '/checkpoint',
+    },
+  };
+}
+
+function upsertChatCheckpointHistoryItem(chat, checkpointId, updates = {}) {
+  const history = ensureChatCheckpointHistory(chat);
+  let item = getChatCheckpointHistoryItem(chat, checkpointId);
+
+  if (!item) {
+    item = createChatCheckpointHistoryItem(checkpointId, 'Untitled checkpoint');
+    history.push(item);
+  }
+
+  Object.assign(item, updates);
+  item.updatedAt = nowIso();
+  return item;
+}
+
+function getChatCheckpointSummary(chat) {
+  const summary = {
+    total: 0,
+    created: 0,
+    superseded: 0,
+    archived: 0,
+  };
+
+  for (const checkpoint of chat?.checkpoints ?? []) {
+    if (!checkpoint || typeof checkpoint !== 'object') {
+      continue;
+    }
+
+    summary.total += 1;
+
+    if (checkpoint.status === 'superseded') {
+      summary.superseded += 1;
+    } else if (checkpoint.status === 'archived') {
+      summary.archived += 1;
+    } else {
+      summary.created += 1;
+    }
+  }
+
+  return summary;
+}
+
+function formatCheckpointSummary(summary) {
+  if (!summary || summary.total === 0) {
+    return '';
+  }
+
+  return summary.total === 1 ? 'Checkpoints: 1' : `Checkpoints: ${summary.total}`;
+}
+
+function formatSidebarCheckpointSummary(summary) {
+  if (!summary || summary.total === 0) {
+    return '';
+  }
+
+  return summary.total === 1 ? 'Checkpoints: 1' : `Checkpoints: ${summary.total}`;
+}
+
+function createCheckpointMessageBadge() {
+  const badge = document.createElement('span');
+  badge.className = 'message__checkpoint-badge';
+  badge.textContent = 'Checkpoint';
+  return badge;
+}
+
+function createCheckpointResultContent(label) {
+  return [
+    'Checkpoint created.',
+    `Label: ${label}`,
+    'Product checkpoint only. No RCK anchor was created.',
+    'No raw evidence stored.',
+  ].join('\n');
 }
 
 function getChatInjectionSummary(chat) {
@@ -517,6 +634,7 @@ function createChat(title, messages = [], overrides = {}) {
     linkedRckTraceId: overrides.linkedRckTraceId ?? memoryPlaceholder.linkedRckTraceId,
     linkedRckTrace: overrides.linkedRckTrace ? { ...overrides.linkedRckTrace } : { ...tracePlaceholder },
     injections: sanitizeChatInjectionHistory(overrides.injections ?? []),
+    checkpoints: sanitizeChatCheckpointHistory(overrides.checkpoints ?? []),
   };
 }
 
@@ -804,6 +922,41 @@ function sanitizeChatInjectionHistory(items) {
   return items.map((item) => sanitizeInjectionHistoryItem(item)).filter(Boolean);
 }
 
+function sanitizeCheckpointHistoryItem(item) {
+  if (!isPlainObject(item)) {
+    return null;
+  }
+
+  const checkpointId = sanitizeNullableString(item.checkpointId);
+  if (!checkpointId) {
+    return null;
+  }
+
+  const status = item.status === 'created' || item.status === 'superseded' || item.status === 'archived' ? item.status : 'created';
+  const sourceKind = item.sourceKind === 'product' || item.sourceKind === 'manual' || item.sourceKind === 'future-rck' ? item.sourceKind : 'product';
+
+  return {
+    checkpointId,
+    status,
+    label: typeof item.label === 'string' ? item.label : 'Untitled checkpoint',
+    summary: typeof item.summary === 'string' ? item.summary : 'Product checkpoint only. No RCK anchor was created. No raw evidence stored.',
+    createdAt: typeof item.createdAt === 'string' ? item.createdAt : nowIso(),
+    updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : typeof item.createdAt === 'string' ? item.createdAt : nowIso(),
+    sourceMessageId: item.sourceMessageId === null || typeof item.sourceMessageId === 'string' ? item.sourceMessageId : null,
+    resultMessageId: item.resultMessageId === null || typeof item.resultMessageId === 'string' ? item.resultMessageId : null,
+    sourceKind,
+    safeMetadata: isPlainObject(item.safeMetadata) ? { ...item.safeMetadata } : null,
+  };
+}
+
+function sanitizeChatCheckpointHistory(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item) => sanitizeCheckpointHistoryItem(item)).filter(Boolean);
+}
+
 function sanitizeMessageLinks(links) {
   if (!isPlainObject(links)) {
     return null;
@@ -871,6 +1024,7 @@ function uiChatFromProductChat(chat, projectIdFallback) {
     linkedRckTraceId: sanitizeNullableString(chat?.linkedRckTraceId),
     linkedRckTrace,
     injections: sanitizeChatInjectionHistory(chat?.injections),
+    checkpoints: sanitizeChatCheckpointHistory(chat?.checkpoints),
   });
 }
 
@@ -940,6 +1094,7 @@ function buildProductStatePayload() {
             }
           : { ...tracePlaceholder },
         injections: sanitizeChatInjectionHistory(chat.injections),
+        checkpoints: sanitizeChatCheckpointHistory(chat.checkpoints),
       })),
       createdAt: typeof project.createdAt === 'string' ? project.createdAt : now,
       updatedAt: typeof project.updatedAt === 'string' ? project.updatedAt : now,
@@ -1259,8 +1414,9 @@ function renderHeader() {
   const project = getCurrentProject();
   const chat = getCurrentChat();
   const linkedRckTrace = getLinkedRckTrace(chat);
-  const injectionSummary = getChatInjectionSummary(chat);
-  const summaryText = formatInjectionSummary(injectionSummary);
+  const injectionSummary = formatInjectionSummary(getChatInjectionSummary(chat));
+  const checkpointSummary = formatCheckpointSummary(getChatCheckpointSummary(chat));
+  const summaryText = injectionSummary;
 
   currentProjectEl.textContent = project?.name ?? '—';
   currentProjectEl.title = 'Active project';
@@ -1287,6 +1443,13 @@ function renderHeader() {
       chatSessionShellTraceEl.appendChild(contextPackSummaryChipEl);
     }
 
+    if (!checkpointSummaryChipEl) {
+      checkpointSummaryChipEl = document.createElement('span');
+      checkpointSummaryChipEl.id = 'current-checkpoint-chip';
+      checkpointSummaryChipEl.className = 'chat-session-shell__chip chat-session-shell__chip--checkpoint';
+      chatSessionShellTraceEl.appendChild(checkpointSummaryChipEl);
+    }
+
     if (summaryText) {
       contextPackSummaryChipEl.hidden = false;
       contextPackSummaryChipEl.textContent = summaryText;
@@ -1297,6 +1460,18 @@ function renderHeader() {
       contextPackSummaryChipEl.textContent = '';
       contextPackSummaryChipEl.removeAttribute('title');
       contextPackSummaryChipEl.removeAttribute('aria-label');
+    }
+
+    if (checkpointSummary) {
+      checkpointSummaryChipEl.hidden = false;
+      checkpointSummaryChipEl.textContent = checkpointSummary;
+      checkpointSummaryChipEl.title = `Current chat checkpoints: ${checkpointSummary}.`;
+      checkpointSummaryChipEl.setAttribute('aria-label', checkpointSummary);
+    } else {
+      checkpointSummaryChipEl.hidden = true;
+      checkpointSummaryChipEl.textContent = '';
+      checkpointSummaryChipEl.removeAttribute('title');
+      checkpointSummaryChipEl.removeAttribute('aria-label');
     }
   }
 }
@@ -1415,6 +1590,7 @@ function renderSidebar() {
         updatedAt.className = 'chat-item__meta-item';
         updatedAt.textContent = formatSimpleDate(chat.updatedAt);
         const injectionSummary = formatSidebarInjectionSummary(getChatInjectionSummary(chat));
+        const checkpointSummary = formatSidebarCheckpointSummary(getChatCheckpointSummary(chat));
         chatMeta.append(messageCount, updatedAt);
 
         if (injectionSummary) {
@@ -1423,6 +1599,14 @@ function renderSidebar() {
           injectionMeta.textContent = injectionSummary;
           injectionMeta.title = `Context pack history: ${injectionSummary}`;
           chatMeta.appendChild(injectionMeta);
+        }
+
+        if (checkpointSummary) {
+          const checkpointMeta = document.createElement('span');
+          checkpointMeta.className = 'chat-item__meta-item chat-item__meta-item--checkpoint';
+          checkpointMeta.textContent = checkpointSummary;
+          checkpointMeta.title = `Checkpoint history: ${checkpointSummary}`;
+          chatMeta.appendChild(checkpointMeta);
         }
 
         chatButton.append(chatTitleRow, chatMeta);
@@ -1789,8 +1973,13 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
   body.className = 'message__body';
 
   const contextPackId = getMessageContextPackId(message);
+  const checkpointId = getMessageCheckpointId(message);
   if (contextPackId) {
     messageEl.classList.add('message--context-pack');
+  }
+
+  if (checkpointId) {
+    messageEl.classList.add('message--checkpoint');
   }
 
   if (isContextPackCandidateMessage(message) && contextPackId) {
@@ -1807,7 +1996,19 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
     content.textContent = text;
     body.appendChild(content);
   } else {
-    body.textContent = text;
+    if (checkpointId && role === 'assistant' && message.kind === 'command-result') {
+      const checkpointContent = document.createElement('div');
+      checkpointContent.className = 'message__checkpoint-content';
+      checkpointContent.appendChild(createCheckpointMessageBadge());
+
+      const content = document.createElement('div');
+      content.className = 'message__checkpoint-text';
+      content.textContent = text;
+      checkpointContent.appendChild(content);
+      body.appendChild(checkpointContent);
+    } else {
+      body.textContent = text;
+    }
   }
 
   messageEl.append(roleLabel, body);
@@ -2097,7 +2298,7 @@ function parseSlashCommand(text) {
     case '/status':
       return { type: 'status' };
     case '/checkpoint': {
-      const label = restTokens.join(' ').trim() || 'checkpoint-from-chat';
+      const label = restTokens.join(' ').trim() || 'Untitled checkpoint';
       return { type: 'checkpoint', label };
     }
     case '/inject':
@@ -2172,26 +2373,45 @@ async function runStatus(targetChatId) {
   }
 }
 
-async function runCheckpoint(targetChatId, label) {
+async function runCheckpoint(targetChatId, label, sourceMessage = null) {
   if (!(await confirmAction(`Create checkpoint "${label}"?`))) {
     appendMessageToChat(targetChatId, 'assistant', 'Checkpoint cancelled.');
     return;
   }
 
-  setBusy(true);
-  try {
-    const data = await postJson('/api/checkpoint', { label });
-    appendMessageToChat(targetChatId, 'assistant', data.message ?? `Checkpoint created: ${label}.`, 'normal', { kind: 'command-result' });
-  } catch (error) {
-    appendMessageToChat(
-      targetChatId,
-      'assistant',
-      `Checkpoint request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`,
-      'error',
-    );
-  } finally {
-    setBusy(false);
+  const chat = getChatById(targetChatId);
+  if (!chat) {
+    return;
   }
+
+  const checkpointId = makeCheckpointId();
+  const sourceMessageId = typeof sourceMessage?.id === 'string' ? sourceMessage.id : null;
+  const historyItem = upsertChatCheckpointHistoryItem(chat, checkpointId, {
+    label,
+    summary: 'Product checkpoint only. No RCK anchor was created. No raw evidence stored.',
+    sourceMessageId,
+    sourceKind: 'product',
+    safeMetadata: {
+      productOnly: true,
+      command: '/checkpoint',
+    },
+  });
+
+  if (sourceMessageId) {
+    sourceMessage.links = { ...(sourceMessage.links ?? {}), checkpointId };
+  }
+
+  const resultMessage = appendMessageToChat(targetChatId, 'assistant', createCheckpointResultContent(label), 'normal', {
+    kind: 'command-result',
+    links: { checkpointId },
+  });
+
+  historyItem.resultMessageId = resultMessage?.id ?? null;
+  historyItem.updatedAt = nowIso();
+  touchChat(chat);
+  touchProject(getProjectByChatId(chat.id));
+  markProductStateChanged();
+  render();
 }
 
 function finalizeContextPackCandidate(targetChatId, contextPackId, decision) {
@@ -2315,12 +2535,15 @@ async function handleUserSubmission(text) {
     return;
   }
 
-  appendMessageToChat(targetChatId, 'user', text);
-  maybeRenameChatFromFirstUserMessage(chat, text);
+  const userMessage = appendMessageToChat(targetChatId, 'user', text);
+  const command = parseSlashCommand(text);
+
+  if (command.type === 'plain') {
+    maybeRenameChatFromFirstUserMessage(chat, text);
+  }
+
   renderSidebar();
   renderHeader();
-
-  const command = parseSlashCommand(text);
 
   if (command.type === 'plain') {
     showLocalFallback(targetChatId, text);
@@ -2357,7 +2580,7 @@ async function handleUserSubmission(text) {
       await runStatus(targetChatId);
       return;
     case 'checkpoint':
-      await runCheckpoint(targetChatId, command.label);
+      await runCheckpoint(targetChatId, command.label, userMessage);
       return;
     case 'inject':
       await runInject(targetChatId);

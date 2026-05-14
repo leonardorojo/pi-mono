@@ -4,6 +4,8 @@ const allowedMessageKinds = new Set(['normal', 'command', 'command-result', 'err
 const allowedLinkedTraceStatuses = new Set(['not-linked', 'linked', 'placeholder']);
 const allowedInjectionStatuses = new Set(['candidate', 'injected', 'cancelled', 'expired']);
 const allowedInjectionSourceKinds = new Set(['placeholder', 'manual', 'rck', 'future']);
+const allowedCheckpointStatuses = new Set(['created', 'superseded', 'archived']);
+const allowedCheckpointSourceKinds = new Set(['product', 'manual', 'future-rck']);
 
 export class ProductStateError extends Error {
   constructor(message, { code = 'PRODUCT_STATE_ERROR', issues = [], cause = undefined } = {}) {
@@ -182,6 +184,66 @@ function normalizeInjectionHistoryItem(input, projectIndex, chatIndex, itemIndex
   return item;
 }
 
+function normalizeCheckpointHistoryItem(input, projectIndex, chatIndex, itemIndex, now, issues) {
+  const pathLabel = `projects[${projectIndex}].chats[${chatIndex}].checkpoints[${itemIndex}]`;
+
+  if (!isPlainObject(input)) {
+    issues.push(`${pathLabel} must be an object.`);
+    return null;
+  }
+
+  const item = { ...input };
+
+  if (!isNonEmptyString(item.checkpointId)) {
+    issues.push(`${pathLabel}.checkpointId must be a non-empty string.`);
+    return null;
+  }
+
+  item.checkpointId = item.checkpointId.trim();
+
+  if (!allowedCheckpointStatuses.has(item.status)) {
+    issues.push(`${pathLabel}.status must be one of: created, superseded, archived.`);
+    item.status = 'created';
+  }
+
+  if (!isNonEmptyString(item.label)) {
+    issues.push(`${pathLabel}.label must be a non-empty string.`);
+    item.label = 'Untitled checkpoint';
+  } else {
+    item.label = item.label.trim();
+  }
+
+  if (typeof item.summary !== 'string') {
+    issues.push(`${pathLabel}.summary must be a string.`);
+    item.summary = 'Product checkpoint only. No RCK anchor was created. No raw evidence stored.';
+  }
+
+  item.createdAt = normalizeTimestamp(item.createdAt, now);
+  item.updatedAt = normalizeTimestamp(item.updatedAt, item.createdAt);
+
+  if (item.sourceMessageId !== undefined && item.sourceMessageId !== null && typeof item.sourceMessageId !== 'string') {
+    issues.push(`${pathLabel}.sourceMessageId must be a string or null.`);
+    item.sourceMessageId = null;
+  }
+
+  if (item.resultMessageId !== undefined && item.resultMessageId !== null && typeof item.resultMessageId !== 'string') {
+    issues.push(`${pathLabel}.resultMessageId must be a string or null.`);
+    item.resultMessageId = null;
+  }
+
+  if (!allowedCheckpointSourceKinds.has(item.sourceKind)) {
+    issues.push(`${pathLabel}.sourceKind must be one of: product, manual, future-rck.`);
+    item.sourceKind = 'product';
+  }
+
+  if (item.safeMetadata !== undefined && item.safeMetadata !== null && !isPlainObject(item.safeMetadata)) {
+    issues.push(`${pathLabel}.safeMetadata must be an object or null.`);
+    item.safeMetadata = null;
+  }
+
+  return item;
+}
+
 function normalizeMessage(input, projectIndex, chatIndex, messageIndex, now, issues) {
   const pathLabel = `projects[${projectIndex}].chats[${chatIndex}].messages[${messageIndex}]`;
 
@@ -258,6 +320,7 @@ function normalizeChat(input, projectIndex, chatIndex, now, issues, projectIdFal
       linkedRckTraceStatus: 'not-linked',
       linkedRckTrace: defaultLinkedRckTrace(),
       injections: [],
+      checkpoints: [],
     };
   }
 
@@ -318,6 +381,18 @@ function normalizeChat(input, projectIndex, chatIndex, now, issues, projectIdFal
 
   chat.injections = chat.injections
     .map((item, itemIndex) => normalizeInjectionHistoryItem(item, projectIndex, chatIndex, itemIndex, now, issues))
+    .filter(Boolean);
+
+  if (!Array.isArray(chat.checkpoints)) {
+    if (chat.checkpoints !== undefined) {
+      issues.push(`${pathLabel}.checkpoints must be an array.`);
+    }
+
+    chat.checkpoints = [];
+  }
+
+  chat.checkpoints = chat.checkpoints
+    .map((item, itemIndex) => normalizeCheckpointHistoryItem(item, projectIndex, chatIndex, itemIndex, now, issues))
     .filter(Boolean);
 
   chat.messages = chat.messages.map((message, messageIndex) => normalizeMessage(message, projectIndex, chatIndex, messageIndex, now, issues));
@@ -445,6 +520,7 @@ export function createProductStateSeed(now = nowIsoString()) {
             semanticSummaryPreview: null,
             linkedRckTraceStatus: 'not-linked',
             linkedRckTrace: defaultLinkedRckTrace(),
+            checkpoints: [],
           },
         ],
         createdAt: now,

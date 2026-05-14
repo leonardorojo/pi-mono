@@ -425,6 +425,18 @@ textarea:disabled {
   line-height: 1.1;
 }
 
+.chat-item__meta-item--checkpoint {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
 .project-group__badge,
 .chat-item__badge {
   flex: 0 0 auto;
@@ -631,6 +643,12 @@ textarea:disabled {
   background: rgba(255, 255, 255, 0.055);
 }
 
+.chat-session-shell__chip--checkpoint {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
+}
+
 .chat-session-shell__chip:hover {
   background: rgba(255, 255, 255, 0.06);
 }
@@ -700,6 +718,29 @@ textarea:disabled {
   width: min(100%, 640px);
   display: grid;
   gap: 10px;
+}
+
+.message__checkpoint-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 0.22rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.message__checkpoint-content {
+  display: grid;
+  gap: 8px;
+}
+
+.message__checkpoint-text {
+  white-space: pre-wrap;
 }
 
 .message__context-pack-badge {

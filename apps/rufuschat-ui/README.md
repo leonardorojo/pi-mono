@@ -7,6 +7,7 @@ It is intentionally local-only and does not connect to the LLM, OpenAI, Hermes e
 ## Context Pack boundary
 
 - Boundary document: [`CONTEXT_PACK.md`](./CONTEXT_PACK.md)
+- Checkpoint boundary: [`CHECKPOINTS.md`](./CHECKPOINTS.md)
 - Fase 13A is documentation / contract only
 - Fase 13B adds a placeholder `/inject` candidate UX in the browser
 - Fase 13C adds minimal per-chat injection history metadata

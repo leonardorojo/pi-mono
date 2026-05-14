@@ -121,6 +121,29 @@ textarea:disabled {
   gap: 6px;
 }
 
+.sidebar__dev-tools {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sidebar__dev-tools-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.62rem;
+  color: var(--muted-strong);
+}
+
+.sidebar__dev-tools-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   text-transform: uppercase;
@@ -175,6 +198,22 @@ textarea:disabled {
 
 .button--ghost:disabled:hover {
   transform: none;
+}
+
+.button--compact {
+  min-height: 32px;
+  padding: 0.44rem 0.7rem;
+  border-radius: 11px;
+  font-size: 0.8rem;
+}
+
+.button--destructive {
+  color: rgba(255, 148, 148, 0.96);
+}
+
+.button--destructive:hover {
+  background: rgba(255, 92, 92, 0.12);
+  border-color: rgba(255, 92, 92, 0.2);
 }
 
 #new-project-button,
@@ -395,7 +434,14 @@ textarea:disabled {
 }
 
 .sidebar__footer {
-  display: none;
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--muted-strong);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .chat-pane {

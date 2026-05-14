@@ -22,6 +22,16 @@
 
         <nav class="project-tree" id="project-tree" aria-label="Projects list"></nav>
 
+        <div class="sidebar__dev-tools" aria-label="Product state tools">
+          <div class="sidebar__dev-tools-label">Product State</div>
+          <div class="sidebar__dev-tools-actions">
+            <button class="button button--ghost button--compact" id="product-state-export-button" type="button">Export</button>
+            <button class="button button--ghost button--compact" id="product-state-import-button" type="button">Import</button>
+            <button class="button button--ghost button--compact button--destructive" id="product-state-reset-button" type="button">Reset</button>
+          </div>
+          <input id="product-state-import-input" type="file" accept="application/json,.json" hidden />
+        </div>
+
         <div class="sidebar__footer">
           <span>RufusChat UI</span>
           <span>Browser-local workspace</span>

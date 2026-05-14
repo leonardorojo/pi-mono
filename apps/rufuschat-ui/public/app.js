@@ -19,12 +19,19 @@ const newProjectButton = document.getElementById('new-project-button');
 const newChatButton = document.getElementById('new-chat-button');
 const projectContextMenuEl = document.getElementById('project-context-menu');
 const chatContextMenuEl = document.getElementById('chat-context-menu');
+const productStateExportButton = document.getElementById('product-state-export-button');
+const productStateImportButton = document.getElementById('product-state-import-button');
+const productStateResetButton = document.getElementById('product-state-reset-button');
+const productStateImportInput = document.getElementById('product-state-import-input');
 
 const productStateEndpoint = '/api/product-state';
 const idleStatusText = 'Browser-local session';
 const loadingStatusText = 'Loading product state...';
 const savingStatusText = 'Saving product state...';
 const savedStatusText = 'Saved';
+const productStateExportErrorText = 'Product state could not be exported.';
+const productStateImportErrorText = 'Product state could not be imported.';
+const productStateResetErrorText = 'Product state could not be reset.';
 const hydrateFailureText = 'Product state could not be loaded. Using an in-memory session.';
 const saveFailureText = 'Product state could not be saved.';
 const memoryPlaceholder = {
@@ -312,6 +319,136 @@ function touchChat(chat, { dirty = true } = {}) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validateImportedProductState(candidate) {
+  if (!isPlainObject(candidate)) {
+    return productStateImportErrorText;
+  }
+
+  if (typeof candidate.version !== 'string') {
+    return productStateImportErrorText;
+  }
+
+  if (!Array.isArray(candidate.projects)) {
+    return productStateImportErrorText;
+  }
+
+  return null;
+}
+
+function getProductStateExportFilename() {
+  return `rufuschat-product-state-${new Date().toISOString().slice(0, 10)}.json`;
+}
+
+function downloadProductStateJson(filename, payload) {
+  const blob = new Blob([payload], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = 'noopener';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function putProductStatePayload(payload) {
+  const response = await fetch(productStateEndpoint, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw new Error(data?.message ?? data?.error ?? saveFailureText);
+  }
+
+  return data;
+}
+
+async function syncProductStateFromPayload(payload) {
+  setProductStateBanner(savingStatusText);
+
+  const response = await putProductStatePayload(payload);
+  const savedState = response?.state ?? payload;
+  replaceStateFromProductState(savedState);
+  const selectionAdjusted = applySelectionFallback({ persist: false });
+  productStateLocalDirty = false;
+  productStateLastSavedSnapshot = JSON.stringify(savedState);
+  render();
+  renderSlashMenu();
+
+  if (selectionAdjusted) {
+    markProductStateChanged();
+    clearTimeout(productStateSaveTimer);
+    productStateSaveTimer = null;
+    await saveProductStateNow();
+    return response;
+  }
+
+  setProductStateBanner(savedStatusText, { resetAfterMs: 1200 });
+  return response;
+}
+
+async function exportProductState() {
+  try {
+    const payload = buildProductStatePayload();
+    downloadProductStateJson(getProductStateExportFilename(), `${JSON.stringify(payload, null, 2)}\n`);
+    setProductStateBanner(savedStatusText, { resetAfterMs: 1200 });
+  } catch {
+    setProductStateBanner(productStateExportErrorText, { resetAfterMs: 3000 });
+  }
+}
+
+async function importProductStateFromFile(file) {
+  if (!file) {
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const validationError = validateImportedProductState(parsed);
+
+    if (validationError) {
+      setProductStateBanner(validationError, { resetAfterMs: 3000 });
+      return;
+    }
+
+    if (!(await confirmAction('Import this ProductState and replace the current session?'))) {
+      return;
+    }
+
+    await syncProductStateFromPayload(parsed);
+  } catch {
+    setProductStateBanner(productStateImportErrorText, { resetAfterMs: 3000 });
+  } finally {
+    if (productStateImportInput) {
+      productStateImportInput.value = '';
+    }
+  }
+}
+
+async function resetProductState() {
+  if (!(await confirmAction('Reset ProductState to a safe starter session?'))) {
+    return;
+  }
+
+  const typedReset = window.prompt('Type RESET to continue', '');
+  if (typedReset !== 'RESET') {
+    setProductStateBanner(productStateResetErrorText, { resetAfterMs: 3000 });
+    return;
+  }
+
+  try {
+    await syncProductStateFromPayload(createResetProductStatePayload());
+  } catch {
+    setProductStateBanner(productStateResetErrorText, { resetAfterMs: 3000 });
+  }
 }
 
 function sanitizeNullableString(value) {
@@ -689,6 +826,21 @@ function createDefaultChat() {
 function createDefaultProject() {
   return createProject('RufusChat', [createDefaultChat()]);
 }
+
+function createResetProductStatePayload() {
+  const project = createDefaultProject();
+  const timestamp = nowIso();
+
+  return {
+    version: typeof state.version === 'string' ? state.version : '0',
+    projects: [project],
+    currentProjectId: project.id,
+    currentChatId: project.chats[0]?.id ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 function ensureProjectListHasItems() {
   if (state.projects.length === 0) {
     const project = createDefaultProject();
@@ -733,6 +885,15 @@ function setBusy(isBusy, label = 'Running...') {
   }
   if (newChatButton) {
     newChatButton.disabled = isBusy;
+  }
+  if (productStateExportButton) {
+    productStateExportButton.disabled = isBusy;
+  }
+  if (productStateImportButton) {
+    productStateImportButton.disabled = isBusy;
+  }
+  if (productStateResetButton) {
+    productStateResetButton.disabled = isBusy;
   }
   statusPill.textContent = isBusy ? label : productStateBannerText;
 
@@ -1829,6 +1990,29 @@ if (newProjectButton) {
 
 if (newChatButton) {
   newChatButton.addEventListener('click', createNewChat);
+}
+
+if (productStateExportButton) {
+  productStateExportButton.addEventListener('click', () => {
+    void exportProductState();
+  });
+}
+
+if (productStateImportButton && productStateImportInput) {
+  productStateImportButton.addEventListener('click', () => {
+    productStateImportInput.click();
+  });
+
+  productStateImportInput.addEventListener('change', () => {
+    const file = productStateImportInput.files?.[0] ?? null;
+    void importProductStateFromFile(file);
+  });
+}
+
+if (productStateResetButton) {
+  productStateResetButton.addEventListener('click', () => {
+    void resetProductState();
+  });
 }
 
 if (projectContextMenuEl) {

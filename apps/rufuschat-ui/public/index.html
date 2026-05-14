@@ -12,15 +12,23 @@
         <div class="sidebar__header">
           <div>
             <div class="eyebrow">Projects</div>
-            <h1>RufusChat</h1>
+            <h1>Workspace</h1>
+            <p class="sidebar__subtitle">Project hierarchy</p>
           </div>
+        </div>
+
+        <section class="sidebar__section sidebar__section--actions" aria-label="Global actions">
+          <div class="sidebar__section-label">Global actions</div>
           <div class="sidebar__actions">
             <button class="button button--ghost" id="new-project-button" type="button">New project</button>
             <button class="button button--ghost" id="new-chat-button" type="button">New chat</button>
           </div>
-        </div>
+        </section>
 
-        <nav class="project-tree" id="project-tree" aria-label="Projects list"></nav>
+        <div class="sidebar__tree-shell">
+          <div class="sidebar__section-label">Project tree</div>
+          <nav class="project-tree" id="project-tree" aria-label="Projects list"></nav>
+        </div>
 
         <div class="sidebar__dev-tools" aria-label="Product state tools">
           <div class="sidebar__dev-tools-label">Product State</div>

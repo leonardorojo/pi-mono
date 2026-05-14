@@ -975,9 +975,6 @@ function renderSidebar() {
     const meta = document.createElement('span');
     meta.className = 'project-group__meta';
     meta.textContent = projectChats.length === 0 ? 'No chats yet' : `${projectChats.length} chats`;
-    if (project.id === state.currentProjectId) {
-      meta.textContent = projectChats.length === 0 ? 'No chats yet · Active project' : `${projectChats.length} chats · Active project`;
-    }
 
     titleButton.append(titleRow, meta);
 

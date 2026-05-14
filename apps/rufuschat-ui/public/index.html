@@ -59,7 +59,9 @@
           <div class="chat-header__status">Browser-local session</div>
         </header>
 
-        <section class="messages" id="messages" aria-live="polite" aria-label="Messages"></section>
+        <section class="messages" id="messages" aria-live="polite" aria-label="Messages">
+          <div class="messages__inner" id="messages-inner"></div>
+        </section>
 
         <div class="slash-menu" id="slash-menu" hidden aria-label="Slash commands"></div>
 
@@ -68,7 +70,13 @@
           <textarea id="composer-input" name="message" rows="1" placeholder="Ask RufusChat..." autocomplete="off" spellcheck="false"></textarea>
           <div class="composer__footer">
             <span class="composer__hint">Type / for commands</span>
-            <button class="button button--primary" type="submit">Send</button>
+            <button class="button button--primary" type="submit" aria-label="Send message">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 18V6" />
+                <path d="M7.5 10.5 12 6l4.5 4.5" />
+              </svg>
+              <span class="sr-only">Send</span>
+            </button>
           </div>
         </form>
       </main>

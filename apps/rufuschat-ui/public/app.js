@@ -2,6 +2,7 @@ const messagesEl = document.getElementById('messages');
 const composerForm = document.getElementById('composer-form');
 const composerInput = document.getElementById('composer-input');
 const sendButton = composerForm.querySelector('button[type="submit"]');
+const messagesInnerEl = document.getElementById('messages-inner');
 const currentProjectEl = document.getElementById('current-project');
 const currentChatEl = document.getElementById('current-chat');
 const memoryStatusEl = document.getElementById('current-memory-status');
@@ -873,8 +874,10 @@ function getLinkedRckTrace(chat) {
   };
 }
 
-function scrollToBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+function scrollChatToBottom() {
+  requestAnimationFrame(() => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
 }
 
 function setBusy(isBusy, label = 'Running...') {
@@ -1458,13 +1461,13 @@ function insertCommandText(insertText) {
 
 function renderMessages({ autoScroll = false } = {}) {
   const chat = getCurrentChat();
-  messagesEl.replaceChildren();
+  messagesInnerEl.replaceChildren();
 
   if (!chat) {
     const emptyState = document.createElement('div');
     emptyState.className = 'empty-state';
     emptyState.textContent = 'Start a conversation in this chat.';
-    messagesEl.appendChild(emptyState);
+    messagesInnerEl.appendChild(emptyState);
     return;
   }
 
@@ -1472,21 +1475,21 @@ function renderMessages({ autoScroll = false } = {}) {
     const emptyState = document.createElement('div');
     emptyState.className = 'empty-state';
     emptyState.textContent = 'Start a conversation in this chat.';
-    messagesEl.appendChild(emptyState);
+    messagesInnerEl.appendChild(emptyState);
 
     if (autoScroll) {
-      requestAnimationFrame(scrollToBottom);
+      scrollChatToBottom();
     }
 
     return;
   }
 
   for (const message of chat.messages) {
-    messagesEl.appendChild(createMessageElement(message.role, message.content ?? message.text ?? '', message.variant));
+    messagesInnerEl.appendChild(createMessageElement(message.role, message.content ?? message.text ?? '', message.variant));
   }
 
   if (autoScroll) {
-    requestAnimationFrame(scrollToBottom);
+    scrollChatToBottom();
   }
 }
 
@@ -1494,6 +1497,7 @@ function render() {
   renderHeader();
   renderSidebar();
   renderMessages();
+  scrollChatToBottom();
 }
 
 

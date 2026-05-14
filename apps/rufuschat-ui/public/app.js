@@ -123,6 +123,39 @@ function promptForName(message, defaultValue = '') {
   return value || null;
 }
 
+function formatSimpleDate(iso) {
+  if (typeof iso !== 'string' || iso.length === 0) {
+    return '—';
+  }
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTarget = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDiff = Math.round((startOfToday.getTime() - startOfTarget.getTime()) / 86400000);
+
+  if (dayDiff === 0) {
+    return 'Today';
+  }
+
+  if (dayDiff === 1) {
+    return 'Yesterday';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+}
+
+function formatMessageCount(count) {
+  return count === 1 ? '1 message' : `${count} messages`;
+}
+
 function createMessage(role, text, variant = 'normal', overrides = {}) {
   const timestamp = overrides.createdAt ?? nowIso();
   const content = typeof overrides.content === 'string' ? overrides.content : text;
@@ -714,7 +747,9 @@ function renderHeader() {
   const linkedRckTrace = getLinkedRckTrace(chat);
 
   currentProjectEl.textContent = project?.name ?? '—';
+  currentProjectEl.title = 'Active project';
   currentChatEl.textContent = chat?.title ?? '—';
+  currentChatEl.title = 'Active chat';
   memoryStatusEl.textContent = formatStatusLabel(chat?.memoryStatus ?? memoryPlaceholder.memoryStatus);
   summaryStatusEl.textContent = formatStatusLabel(chat?.semanticSummaryStatus ?? memoryPlaceholder.semanticSummaryStatus);
   rckTraceStatusEl.textContent = formatStatusLabel(linkedRckTrace.status ?? memoryPlaceholder.linkedRckTraceStatus);
@@ -732,7 +767,16 @@ function renderHeader() {
 function renderSidebar() {
   projectTreeEl.replaceChildren();
 
+  if (state.projects.length === 0) {
+    const emptyState = document.createElement('div');
+    emptyState.className = 'empty-state';
+    emptyState.textContent = 'No projects yet.';
+    projectTreeEl.appendChild(emptyState);
+    return;
+  }
+
   for (const project of state.projects) {
+    const projectChats = getChatsForProject(project);
     const section = document.createElement('section');
     section.className = 'project-group';
     if (project.id === state.currentProjectId) {
@@ -747,7 +791,31 @@ function renderSidebar() {
     titleButton.className = 'project-group__title';
     titleButton.dataset.action = 'select-project';
     titleButton.dataset.projectId = project.id;
-    titleButton.textContent = project.name;
+    titleButton.setAttribute('aria-current', project.id === state.currentProjectId ? 'true' : 'false');
+
+    const titleRow = document.createElement('span');
+    titleRow.className = 'project-group__title-row';
+
+    const titleText = document.createElement('span');
+    titleText.className = 'project-group__title-text';
+    titleText.textContent = project.name;
+    titleRow.appendChild(titleText);
+
+    if (project.id === state.currentProjectId) {
+      const badge = document.createElement('span');
+      badge.className = 'project-group__badge';
+      badge.textContent = 'Active';
+      titleRow.appendChild(badge);
+    }
+
+    const meta = document.createElement('span');
+    meta.className = 'project-group__meta';
+    meta.textContent = projectChats.length === 0 ? 'No chats yet' : `${projectChats.length} chats`;
+    if (project.id === state.currentProjectId) {
+      meta.textContent = projectChats.length === 0 ? 'No chats yet · Active project' : `${projectChats.length} chats · Active project`;
+    }
+
+    titleButton.append(titleRow, meta);
 
     const projectMenuButton = document.createElement('button');
     projectMenuButton.type = 'button';
@@ -771,42 +839,76 @@ function renderSidebar() {
     const children = document.createElement('div');
     children.className = 'project-group__children';
 
-    for (const chat of getChatsForProject(project)) {
-      const chatRow = document.createElement('div');
-      chatRow.className = 'chat-item-row';
+    if (projectChats.length === 0) {
+      const emptyState = document.createElement('div');
+      emptyState.className = 'empty-state empty-state--sidebar';
+      emptyState.textContent = 'No chats in this project yet.';
+      children.appendChild(emptyState);
+    } else {
+      for (const chat of projectChats) {
+        const chatRow = document.createElement('div');
+        chatRow.className = 'chat-item-row';
 
-      const chatButton = document.createElement('button');
-      chatButton.type = 'button';
-      chatButton.className = 'chat-item';
-      chatButton.dataset.action = 'select-chat';
-      chatButton.dataset.projectId = project.id;
-      chatButton.dataset.chatId = chat.id;
-      chatButton.textContent = chat.title;
+        const chatButton = document.createElement('button');
+        chatButton.type = 'button';
+        chatButton.className = 'chat-item';
+        chatButton.dataset.action = 'select-chat';
+        chatButton.dataset.projectId = project.id;
+        chatButton.dataset.chatId = chat.id;
+        chatButton.setAttribute('aria-current', project.id === state.currentProjectId && chat.id === state.currentChatId ? 'true' : 'false');
 
-      if (project.id === state.currentProjectId && chat.id === state.currentChatId) {
-        chatButton.classList.add('chat-item--active');
+        const chatTitleRow = document.createElement('span');
+        chatTitleRow.className = 'chat-item__title-row';
+
+        const chatTitleText = document.createElement('span');
+        chatTitleText.className = 'chat-item__title-text';
+        chatTitleText.textContent = chat.title;
+        chatTitleRow.appendChild(chatTitleText);
+
+        if (project.id === state.currentProjectId && chat.id === state.currentChatId) {
+          const badge = document.createElement('span');
+          badge.className = 'chat-item__badge';
+          badge.textContent = 'Selected';
+          chatTitleRow.appendChild(badge);
+        }
+
+        const chatMeta = document.createElement('span');
+        chatMeta.className = 'chat-item__meta';
+        const messageCount = document.createElement('span');
+        messageCount.className = 'chat-item__meta-item';
+        messageCount.textContent = formatMessageCount(chat.messages.length);
+        const updatedAt = document.createElement('span');
+        updatedAt.className = 'chat-item__meta-item';
+        updatedAt.textContent = formatSimpleDate(chat.updatedAt);
+        chatMeta.append(messageCount, updatedAt);
+
+        chatButton.append(chatTitleRow, chatMeta);
+
+        if (project.id === state.currentProjectId && chat.id === state.currentChatId) {
+          chatButton.classList.add('chat-item--active');
+        }
+
+        const chatMenuButton = document.createElement('button');
+        chatMenuButton.type = 'button';
+        chatMenuButton.className = 'chat-item__menu';
+        chatMenuButton.dataset.action = 'open-chat-menu';
+        chatMenuButton.dataset.projectId = project.id;
+        chatMenuButton.dataset.chatId = chat.id;
+        chatMenuButton.textContent = '…';
+        chatMenuButton.setAttribute('aria-label', `Chat actions for ${chat.title}`);
+
+        if (
+          activeContextMenu?.type === 'chat' &&
+          activeContextMenu.projectId === project.id &&
+          activeContextMenu.chatId === chat.id &&
+          activeContextMenu.anchorEl instanceof HTMLButtonElement
+        ) {
+          chatMenuButton.classList.add('is-context-menu-open');
+        }
+
+        chatRow.append(chatButton, chatMenuButton);
+        children.appendChild(chatRow);
       }
-
-      const chatMenuButton = document.createElement('button');
-      chatMenuButton.type = 'button';
-      chatMenuButton.className = 'chat-item__menu';
-      chatMenuButton.dataset.action = 'open-chat-menu';
-      chatMenuButton.dataset.projectId = project.id;
-      chatMenuButton.dataset.chatId = chat.id;
-      chatMenuButton.textContent = '…';
-      chatMenuButton.setAttribute('aria-label', `Chat actions for ${chat.title}`);
-
-      if (
-        activeContextMenu?.type === 'chat' &&
-        activeContextMenu.projectId === project.id &&
-        activeContextMenu.chatId === chat.id &&
-        activeContextMenu.anchorEl instanceof HTMLButtonElement
-      ) {
-        chatMenuButton.classList.add('is-context-menu-open');
-      }
-
-      chatRow.append(chatButton, chatMenuButton);
-      children.appendChild(chatRow);
     }
 
     section.appendChild(children);
@@ -1008,32 +1110,16 @@ async function deleteProject(projectId) {
     return;
   }
 
-  const wasActive = project.id === state.currentProjectId;
-  state.projects.splice(projectIndex, 1);
-  touchRootState();
+  state.projects = state.projects.filter((item) => item.id !== projectId);
 
-  if (state.projects.length === 0) {
-    const fallbackProject = createDefaultProject();
-    state.projects.push(fallbackProject);
-    state.currentProjectId = fallbackProject.id;
-    state.currentChatId = fallbackProject.chats[0]?.id ?? null;
-  } else if (wasActive) {
-    const nextProject = state.projects[projectIndex] ?? state.projects[projectIndex - 1] ?? state.projects[0];
-    state.currentProjectId = nextProject.id;
-    const nextChats = getChatsForProject(nextProject);
-    if (nextChats.length === 0) {
-      const fallbackChat = createEmptyChat('New chat', nextProject.id);
-      nextProject.chats.push(fallbackChat);
-      touchProject(nextProject);
-      state.currentChatId = fallbackChat.id;
-    } else {
-      state.currentChatId = nextChats[0].id;
-    }
+  const selectionAdjusted = ensureSelection({ persist: false });
+  if (selectionAdjusted) {
+    touchRootState({ dirty: false });
   }
 
-  ensureSelection();
-  markProductStateChanged();
+  touchRootState();
   render();
+  await saveProductStateNow();
 }
 
 async function deleteChat(projectId, chatId) {
@@ -1216,7 +1302,7 @@ function renderMessages({ autoScroll = false } = {}) {
   if (!chat) {
     const emptyState = document.createElement('div');
     emptyState.className = 'empty-state';
-    emptyState.textContent = 'Select a chat to start.';
+    emptyState.textContent = 'Start a conversation in this chat.';
     messagesEl.appendChild(emptyState);
     return;
   }

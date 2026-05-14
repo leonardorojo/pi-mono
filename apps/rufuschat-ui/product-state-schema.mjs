@@ -2,6 +2,8 @@ const allowedMessageRoles = new Set(['user', 'assistant', 'system', 'tool']);
 const allowedChatKinds = new Set(['normal', 'phase', 'decision', 'debug']);
 const allowedMessageKinds = new Set(['normal', 'command', 'command-result', 'error', 'placeholder']);
 const allowedLinkedTraceStatuses = new Set(['not-linked', 'linked', 'placeholder']);
+const allowedInjectionStatuses = new Set(['candidate', 'injected', 'cancelled', 'expired']);
+const allowedInjectionSourceKinds = new Set(['placeholder', 'manual', 'rck', 'future']);
 
 export class ProductStateError extends Error {
   constructor(message, { code = 'PRODUCT_STATE_ERROR', issues = [], cause = undefined } = {}) {
@@ -110,6 +112,76 @@ function normalizeLinks(input, pathLabel, issues) {
   return links;
 }
 
+function normalizeInjectionHistoryItem(input, projectIndex, chatIndex, itemIndex, now, issues) {
+  const pathLabel = `projects[${projectIndex}].chats[${chatIndex}].injections[${itemIndex}]`;
+
+  if (!isPlainObject(input)) {
+    issues.push(`${pathLabel} must be an object.`);
+    return null;
+  }
+
+  const item = { ...input };
+
+  if (!isNonEmptyString(item.contextPackId)) {
+    issues.push(`${pathLabel}.contextPackId must be a non-empty string.`);
+    return null;
+  }
+
+  item.contextPackId = item.contextPackId.trim();
+
+  if (!allowedInjectionStatuses.has(item.status)) {
+    issues.push(`${pathLabel}.status must be one of: candidate, injected, cancelled, expired.`);
+    item.status = 'candidate';
+  }
+
+  if (!isNonEmptyString(item.title)) {
+    issues.push(`${pathLabel}.title must be a non-empty string.`);
+    item.title = 'Context pack candidate';
+  } else {
+    item.title = item.title.trim();
+  }
+
+  if (typeof item.summary !== 'string') {
+    issues.push(`${pathLabel}.summary must be a string.`);
+    item.summary = 'Current chat context placeholder. ProductState metadata placeholder. No RCK evidence included.';
+  }
+
+  item.createdAt = normalizeTimestamp(item.createdAt, now);
+  item.updatedAt = normalizeTimestamp(item.updatedAt, item.createdAt);
+
+  if (item.injectedAt !== undefined && item.injectedAt !== null && typeof item.injectedAt !== 'string') {
+    issues.push(`${pathLabel}.injectedAt must be a string or null.`);
+    item.injectedAt = null;
+  }
+
+  if (item.cancelledAt !== undefined && item.cancelledAt !== null && typeof item.cancelledAt !== 'string') {
+    issues.push(`${pathLabel}.cancelledAt must be a string or null.`);
+    item.cancelledAt = null;
+  }
+
+  if (item.candidateMessageId !== undefined && item.candidateMessageId !== null && typeof item.candidateMessageId !== 'string') {
+    issues.push(`${pathLabel}.candidateMessageId must be a string or null.`);
+    item.candidateMessageId = null;
+  }
+
+  if (item.resultMessageId !== undefined && item.resultMessageId !== null && typeof item.resultMessageId !== 'string') {
+    issues.push(`${pathLabel}.resultMessageId must be a string or null.`);
+    item.resultMessageId = null;
+  }
+
+  if (!allowedInjectionSourceKinds.has(item.sourceKind)) {
+    issues.push(`${pathLabel}.sourceKind must be one of: placeholder, manual, rck, future.`);
+    item.sourceKind = 'placeholder';
+  }
+
+  if (item.safeMetadata !== undefined && item.safeMetadata !== null && !isPlainObject(item.safeMetadata)) {
+    issues.push(`${pathLabel}.safeMetadata must be an object or null.`);
+    item.safeMetadata = null;
+  }
+
+  return item;
+}
+
 function normalizeMessage(input, projectIndex, chatIndex, messageIndex, now, issues) {
   const pathLabel = `projects[${projectIndex}].chats[${chatIndex}].messages[${messageIndex}]`;
 
@@ -185,6 +257,7 @@ function normalizeChat(input, projectIndex, chatIndex, now, issues, projectIdFal
       semanticSummaryPreview: null,
       linkedRckTraceStatus: 'not-linked',
       linkedRckTrace: defaultLinkedRckTrace(),
+      injections: [],
     };
   }
 
@@ -234,6 +307,18 @@ function normalizeChat(input, projectIndex, chatIndex, now, issues, projectIdFal
 
   chat.linkedRckTraceStatus = typeof chat.linkedRckTraceStatus === 'string' ? chat.linkedRckTraceStatus : 'not-linked';
   chat.linkedRckTrace = normalizeLinkedRckTrace(chat.linkedRckTrace, `${pathLabel}.linkedRckTrace`, now, issues);
+
+  if (!Array.isArray(chat.injections)) {
+    if (chat.injections !== undefined) {
+      issues.push(`${pathLabel}.injections must be an array.`);
+    }
+
+    chat.injections = [];
+  }
+
+  chat.injections = chat.injections
+    .map((item, itemIndex) => normalizeInjectionHistoryItem(item, projectIndex, chatIndex, itemIndex, now, issues))
+    .filter(Boolean);
 
   chat.messages = chat.messages.map((message, messageIndex) => normalizeMessage(message, projectIndex, chatIndex, messageIndex, now, issues));
   return chat;

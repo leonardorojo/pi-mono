@@ -139,6 +139,36 @@ Future desired UX for `/inject`:
 Fase 13A only documents this boundary.
 It does not implement `/inject` runtime behavior.
 
+## Injection history
+
+Fase 13C adds the minimal per-chat injection history metadata used by the UI placeholder.
+
+Each chat may store an optional `injections: InjectionHistoryItem[]` array in ProductState. This is safe metadata only; it is not a separate Context Pack store.
+
+### InjectionHistoryItem
+
+```ts
+type InjectionHistoryItem = {
+  contextPackId: string;
+  status: 'candidate' | 'injected' | 'cancelled' | 'expired';
+  title: string;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+  injectedAt?: string | null;
+  cancelledAt?: string | null;
+  candidateMessageId?: string | null;
+  resultMessageId?: string | null;
+  sourceKind: 'placeholder' | 'manual' | 'rck' | 'future';
+  safeMetadata?: object | null;
+};
+```
+
+Rules:
+- 13C uses `sourceKind: 'placeholder'`.
+- `Message.links.contextPackId` still links candidate/result messages to the history item.
+- No raw evidence, stdout/stderr, `.pi/rck` paths, RCK Core, or Trace DAG data are stored here.
+
 ## Safety rules
 
 - no raw evidence by default

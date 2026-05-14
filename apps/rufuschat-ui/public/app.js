@@ -55,6 +55,8 @@ const contextPackCandidateSummaryLines = [
   'No RCK evidence included',
 ];
 const contextPackCandidateSafetyLines = ['Placeholder only', 'No raw evidence included', 'No .pi/rck read'];
+const contextPackInjectionHistoryTitle = 'Context pack candidate';
+const contextPackInjectionHistorySourceKind = 'placeholder';
 const contextPackInjectedMessage = 'Context pack injected.';
 const contextPackCancelledMessage = 'Context pack candidate cancelled.';
 const localIntroMessage =
@@ -149,12 +151,79 @@ function getMessageContextPackId(message) {
   return typeof message?.links?.contextPackId === 'string' ? message.links.contextPackId : null;
 }
 
+function getContextPackCandidateSummaryText() {
+  return `${contextPackCandidateSummaryLines.join('. ')}.`;
+}
+
+function ensureChatInjectionHistory(chat) {
+  if (!Array.isArray(chat?.injections)) {
+    if (chat) {
+      chat.injections = [];
+    }
+    return chat?.injections ?? [];
+  }
+
+  return chat.injections;
+}
+
+function getChatInjectionHistoryItem(chat, contextPackId) {
+  return ensureChatInjectionHistory(chat).find((item) => item?.contextPackId === contextPackId) ?? null;
+}
+
+function createChatInjectionHistoryItem(contextPackId) {
+  const timestamp = nowIso();
+
+  return {
+    contextPackId,
+    status: 'candidate',
+    title: contextPackInjectionHistoryTitle,
+    summary: getContextPackCandidateSummaryText(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    injectedAt: null,
+    cancelledAt: null,
+    candidateMessageId: null,
+    resultMessageId: null,
+    sourceKind: contextPackInjectionHistorySourceKind,
+    safeMetadata: null,
+  };
+}
+
+function upsertChatInjectionHistoryItem(chat, contextPackId, updates = {}) {
+  const history = ensureChatInjectionHistory(chat);
+  let item = getChatInjectionHistoryItem(chat, contextPackId);
+
+  if (!item) {
+    item = createChatInjectionHistoryItem(contextPackId);
+    history.push(item);
+  }
+
+  Object.assign(item, updates);
+  item.updatedAt = nowIso();
+  return item;
+}
+
 function getContextPackLifecycleByChat(chat) {
   const lifecycle = new Map();
+
+  for (const injection of chat?.injections ?? []) {
+    const contextPackId = typeof injection?.contextPackId === 'string' ? injection.contextPackId : null;
+    if (!contextPackId) {
+      continue;
+    }
+
+    if (typeof injection.status === 'string') {
+      lifecycle.set(contextPackId, injection.status);
+    }
+  }
 
   for (const message of chat?.messages ?? []) {
     const contextPackId = getMessageContextPackId(message);
     if (!contextPackId) {
+      continue;
+    }
+
+    if (lifecycle.has(contextPackId)) {
       continue;
     }
 
@@ -291,6 +360,7 @@ function createChat(title, messages = [], overrides = {}) {
   const projectId = overrides.projectId ?? null;
 
   return {
+    ...overrides,
     id: chatId,
     projectId,
     title,
@@ -309,7 +379,7 @@ function createChat(title, messages = [], overrides = {}) {
     linkedRckTraceStatus: overrides.linkedRckTraceStatus ?? memoryPlaceholder.linkedRckTraceStatus,
     linkedRckTraceId: overrides.linkedRckTraceId ?? memoryPlaceholder.linkedRckTraceId,
     linkedRckTrace: overrides.linkedRckTrace ? { ...overrides.linkedRckTrace } : { ...tracePlaceholder },
-    ...overrides,
+    injections: sanitizeChatInjectionHistory(overrides.injections ?? []),
   };
 }
 
@@ -560,6 +630,43 @@ function sanitizeNullableString(value) {
   return typeof value === 'string' ? value : null;
 }
 
+function sanitizeInjectionHistoryItem(item) {
+  if (!isPlainObject(item)) {
+    return null;
+  }
+
+  const contextPackId = sanitizeNullableString(item.contextPackId);
+  if (!contextPackId) {
+    return null;
+  }
+
+  const status = item.status === 'candidate' || item.status === 'injected' || item.status === 'cancelled' || item.status === 'expired' ? item.status : 'candidate';
+  const sourceKind = item.sourceKind === 'placeholder' || item.sourceKind === 'manual' || item.sourceKind === 'rck' || item.sourceKind === 'future' ? item.sourceKind : 'placeholder';
+
+  return {
+    contextPackId,
+    status,
+    title: typeof item.title === 'string' ? item.title : contextPackInjectionHistoryTitle,
+    summary: typeof item.summary === 'string' ? item.summary : getContextPackCandidateSummaryText(),
+    createdAt: typeof item.createdAt === 'string' ? item.createdAt : nowIso(),
+    updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : typeof item.createdAt === 'string' ? item.createdAt : nowIso(),
+    injectedAt: item.injectedAt === null || typeof item.injectedAt === 'string' ? item.injectedAt : null,
+    cancelledAt: item.cancelledAt === null || typeof item.cancelledAt === 'string' ? item.cancelledAt : null,
+    candidateMessageId: item.candidateMessageId === null || typeof item.candidateMessageId === 'string' ? item.candidateMessageId : null,
+    resultMessageId: item.resultMessageId === null || typeof item.resultMessageId === 'string' ? item.resultMessageId : null,
+    sourceKind,
+    safeMetadata: isPlainObject(item.safeMetadata) ? { ...item.safeMetadata } : null,
+  };
+}
+
+function sanitizeChatInjectionHistory(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item) => sanitizeInjectionHistoryItem(item)).filter(Boolean);
+}
+
 function sanitizeMessageLinks(links) {
   if (!isPlainObject(links)) {
     return null;
@@ -626,6 +733,7 @@ function uiChatFromProductChat(chat, projectIdFallback) {
     linkedRckTraceStatus: typeof chat?.linkedRckTraceStatus === 'string' ? chat.linkedRckTraceStatus : linkedRckTrace.status,
     linkedRckTraceId: sanitizeNullableString(chat?.linkedRckTraceId),
     linkedRckTrace,
+    injections: sanitizeChatInjectionHistory(chat?.injections),
   });
 }
 
@@ -694,6 +802,7 @@ function buildProductStatePayload() {
               mode: chat.linkedRckTrace.mode ?? tracePlaceholder.mode,
             }
           : { ...tracePlaceholder },
+        injections: sanitizeChatInjectionHistory(chat.injections),
       })),
       createdAt: typeof project.createdAt === 'string' ? project.createdAt : now,
       updatedAt: typeof project.updatedAt === 'string' ? project.updatedAt : now,
@@ -1730,7 +1839,8 @@ function appendMessageToChat(chatId, role, text, variant = 'normal', overrides =
     return;
   }
 
-  chat.messages.push(createMessage(role, text, variant, overrides));
+  const message = createMessage(role, text, variant, overrides);
+  chat.messages.push(message);
   touchChat(chat);
   touchProject(getProjectByChatId(chat.id));
   markProductStateChanged();
@@ -1738,6 +1848,8 @@ function appendMessageToChat(chatId, role, text, variant = 'normal', overrides =
   if (chat.id === state.currentChatId) {
     renderMessages({ autoScroll: true });
   }
+
+  return message;
 }
 
 async function readJsonResponse(response) {
@@ -1904,26 +2016,63 @@ function finalizeContextPackCandidate(targetChatId, contextPackId, decision) {
     return;
   }
 
+  const historyItem = upsertChatInjectionHistoryItem(chat, contextPackId, {
+    status: decision === 'inject' ? 'injected' : 'cancelled',
+    injectedAt: decision === 'inject' ? nowIso() : null,
+    cancelledAt: decision === 'cancel' ? nowIso() : null,
+  });
+
   if (decision === 'inject') {
-    appendMessageToChat(targetChatId, 'assistant', createContextPackResultContent(contextPackId, 'injected'), 'normal', {
+    const message = appendMessageToChat(targetChatId, 'assistant', createContextPackResultContent(contextPackId, 'injected'), 'normal', {
       kind: 'command-result',
       links: { contextPackId },
     });
+    historyItem.resultMessageId = message?.id ?? null;
+    historyItem.updatedAt = nowIso();
+    touchChat(chat);
+    touchProject(getProjectByChatId(chat.id));
+    markProductStateChanged();
+    render();
     return;
   }
 
-  appendMessageToChat(targetChatId, 'assistant', createContextPackResultContent(contextPackId, 'cancelled'), 'normal', {
+  const message = appendMessageToChat(targetChatId, 'assistant', createContextPackResultContent(contextPackId, 'cancelled'), 'normal', {
     kind: 'command-result',
     links: { contextPackId },
   });
+  historyItem.resultMessageId = message?.id ?? null;
+  historyItem.updatedAt = nowIso();
+  touchChat(chat);
+  touchProject(getProjectByChatId(chat.id));
+  markProductStateChanged();
+  render();
 }
 
 async function runInject(targetChatId) {
   const contextPackId = makeContextPackId();
-  appendMessageToChat(targetChatId, 'assistant', createContextPackCandidateContent(contextPackId), 'normal', {
+  const chat = getChatById(targetChatId);
+  if (!chat) {
+    return;
+  }
+
+  const historyItem = upsertChatInjectionHistoryItem(chat, contextPackId, {
+    status: 'candidate',
+    injectedAt: null,
+    cancelledAt: null,
+    resultMessageId: null,
+  });
+
+  const candidateMessage = appendMessageToChat(targetChatId, 'assistant', createContextPackCandidateContent(contextPackId), 'normal', {
     kind: 'placeholder',
     links: { contextPackId },
   });
+
+  historyItem.candidateMessageId = candidateMessage?.id ?? null;
+  historyItem.updatedAt = nowIso();
+  touchChat(chat);
+  touchProject(getProjectByChatId(chat.id));
+  markProductStateChanged();
+  render();
 }
 
 async function runHermesFake(targetChatId, prompt) {

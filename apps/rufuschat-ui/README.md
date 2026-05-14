@@ -4,6 +4,13 @@ This app is the ChatGPT-like UI skeleton for RufusChat.
 
 It is intentionally local-only and does not connect to the LLM, OpenAI, Hermes execution, or the RCK backend yet. The goal of 10A is to lock the final product shape before wiring any real automation.
 
+## Context Pack boundary
+
+- Boundary document: [`CONTEXT_PACK.md`](./CONTEXT_PACK.md)
+- Fase 13A is documentation / contract only
+- `/inject` runtime behavior is reserved for later phases
+- Context Pack is a safe abstraction for future context injection, not a technical RCK dashboard
+
 ## Product path
 
 - `apps/rufuschat-ui` is the official RufusChat UI v0 path.

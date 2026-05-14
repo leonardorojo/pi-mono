@@ -9,6 +9,7 @@ const memoryStatusEl = document.getElementById('current-memory-status');
 const summaryStatusEl = document.getElementById('current-summary-status');
 const rckTraceStatusEl = document.getElementById('current-rck-trace-status');
 const traceChipEl = document.getElementById('current-trace-chip');
+const chatSessionShellTraceEl = document.querySelector('.chat-session-shell__trace');
 const statusPill = document.querySelector('.chat-header__status');
 const confirmModal = document.getElementById('confirm-modal');
 const confirmDescription = document.getElementById('confirm-modal-description');
@@ -121,6 +122,7 @@ const commandCatalog = [
 ];
 
 let confirmResolver = null;
+let contextPackSummaryChipEl = document.getElementById('current-context-pack-chip');
 
 function makeId(prefix) {
   const random = globalThis.crypto?.randomUUID?.();
@@ -151,8 +153,143 @@ function getMessageContextPackId(message) {
   return typeof message?.links?.contextPackId === 'string' ? message.links.contextPackId : null;
 }
 
+function getChatInjectionSummary(chat) {
+  const summary = {
+    total: 0,
+    candidate: 0,
+    injected: 0,
+    cancelled: 0,
+  };
+
+  for (const injection of chat?.injections ?? []) {
+    if (!injection || typeof injection !== 'object') {
+      continue;
+    }
+
+    summary.total += 1;
+
+    if (injection.status === 'injected') {
+      summary.injected += 1;
+    } else if (injection.status === 'cancelled') {
+      summary.cancelled += 1;
+    } else {
+      summary.candidate += 1;
+    }
+  }
+
+  return summary;
+}
+
+function getInjectionByContextPackId(chat, contextPackId) {
+  if (!chat || typeof contextPackId !== 'string' || contextPackId.length === 0) {
+    return null;
+  }
+
+  return (chat.injections ?? []).find((item) => item?.contextPackId === contextPackId) ?? null;
+}
+
 function getContextPackCandidateSummaryText() {
   return `${contextPackCandidateSummaryLines.join('. ')}.`;
+}
+
+function formatInjectionSummary(summary) {
+  if (!summary || summary.total === 0) {
+    return '';
+  }
+
+  const parts = [];
+  if (summary.injected > 0) {
+    parts.push(`${summary.injected} injected`);
+  }
+  if (summary.cancelled > 0) {
+    parts.push(`${summary.cancelled} cancelled`);
+  }
+  if (summary.candidate > 0) {
+    parts.push(`${summary.candidate} candidate${summary.candidate === 1 ? '' : 's'}`);
+  }
+
+  if (parts.length === 0) {
+    return `${summary.total} context pack${summary.total === 1 ? '' : 's'}`;
+  }
+
+  return `Context: ${parts.join(' · ')}`;
+}
+
+function formatSidebarInjectionSummary(summary) {
+  if (!summary || summary.total === 0) {
+    return '';
+  }
+
+  if (summary.total === 1) {
+    if (summary.injected === 1) {
+      return '1 injected';
+    }
+
+    if (summary.cancelled === 1) {
+      return '1 cancelled';
+    }
+
+    return '1 candidate';
+  }
+
+  if (summary.injected > 0 && summary.cancelled === 0 && summary.candidate === 0) {
+    return `${summary.injected} injected`;
+  }
+
+  return `${summary.total} context packs`;
+}
+
+function getContextPackStatusLabel(status) {
+  if (status === 'injected') {
+    return 'Injected';
+  }
+
+  if (status === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  return 'Candidate';
+}
+
+function createContextPackStatusChip(status, className = 'context-pack-card__status') {
+  const chip = document.createElement('span');
+  chip.className = `${className} ${className}--${status}`;
+  chip.textContent = getContextPackStatusLabel(status);
+  return chip;
+}
+
+function createContextPackMessageBadge(status) {
+  return createContextPackStatusChip(status, 'message__context-pack-badge');
+}
+
+function getContextPackMessageStatus(message, contextPackLifecycleById = new Map(), chat = null) {
+  const contextPackId = getMessageContextPackId(message);
+  if (!contextPackId) {
+    return null;
+  }
+
+  if (isContextPackCandidateMessage(message)) {
+    return contextPackLifecycleById.get(contextPackId) ?? 'candidate';
+  }
+
+  const historyItem = getInjectionByContextPackId(chat, contextPackId);
+  if (historyItem?.status === 'injected' || historyItem?.status === 'cancelled') {
+    return historyItem.status;
+  }
+
+  if (contextPackLifecycleById.has(contextPackId)) {
+    return contextPackLifecycleById.get(contextPackId);
+  }
+
+  if (isContextPackInjectedContent(message?.content)) {
+    return 'injected';
+  }
+
+  if (isContextPackCancelledContent(message?.content)) {
+    return 'cancelled';
+  }
+
+  return null;
 }
 
 function ensureChatInjectionHistory(chat) {
@@ -1122,6 +1259,8 @@ function renderHeader() {
   const project = getCurrentProject();
   const chat = getCurrentChat();
   const linkedRckTrace = getLinkedRckTrace(chat);
+  const injectionSummary = getChatInjectionSummary(chat);
+  const summaryText = formatInjectionSummary(injectionSummary);
 
   currentProjectEl.textContent = project?.name ?? '—';
   currentProjectEl.title = 'Active project';
@@ -1138,6 +1277,27 @@ function renderHeader() {
       'aria-label',
       `Trace: ${formatStatusLabel(linkedRckTrace.status ?? tracePlaceholder.status)}. Provider: ${linkedRckTrace.provider}. Future: ${linkedRckTrace.futureProvider}. Mode: ${linkedRckTrace.mode}.`,
     );
+  }
+
+  if (chatSessionShellTraceEl) {
+    if (!contextPackSummaryChipEl) {
+      contextPackSummaryChipEl = document.createElement('span');
+      contextPackSummaryChipEl.id = 'current-context-pack-chip';
+      contextPackSummaryChipEl.className = 'chat-session-shell__chip chat-session-shell__chip--context-pack';
+      chatSessionShellTraceEl.appendChild(contextPackSummaryChipEl);
+    }
+
+    if (summaryText) {
+      contextPackSummaryChipEl.hidden = false;
+      contextPackSummaryChipEl.textContent = summaryText;
+      contextPackSummaryChipEl.title = `Current chat injection history: ${summaryText}.`;
+      contextPackSummaryChipEl.setAttribute('aria-label', summaryText);
+    } else {
+      contextPackSummaryChipEl.hidden = true;
+      contextPackSummaryChipEl.textContent = '';
+      contextPackSummaryChipEl.removeAttribute('title');
+      contextPackSummaryChipEl.removeAttribute('aria-label');
+    }
   }
 }
 
@@ -1254,7 +1414,16 @@ function renderSidebar() {
         const updatedAt = document.createElement('span');
         updatedAt.className = 'chat-item__meta-item';
         updatedAt.textContent = formatSimpleDate(chat.updatedAt);
+        const injectionSummary = formatSidebarInjectionSummary(getChatInjectionSummary(chat));
         chatMeta.append(messageCount, updatedAt);
+
+        if (injectionSummary) {
+          const injectionMeta = document.createElement('span');
+          injectionMeta.className = 'chat-item__meta-item chat-item__meta-item--context-pack';
+          injectionMeta.textContent = injectionSummary;
+          injectionMeta.title = `Context pack history: ${injectionSummary}`;
+          chatMeta.appendChild(injectionMeta);
+        }
 
         chatButton.append(chatTitleRow, chatMeta);
 
@@ -1581,7 +1750,9 @@ function createContextPackCandidateCard(chatId, contextPackId, status) {
   id.className = 'context-pack-card__id';
   id.textContent = contextPackId;
 
-  header.append(eyebrow, title, id);
+  const statusChip = createContextPackStatusChip(status);
+
+  header.append(eyebrow, title, id, statusChip);
 
   const summary = document.createElement('p');
   summary.className = 'context-pack-card__summary';
@@ -1603,7 +1774,7 @@ function createContextPackCandidateCard(chatId, contextPackId, status) {
   return card;
 }
 
-function createMessageElement(message, contextPackLifecycleById = new Map()) {
+function createMessageElement(message, contextPackLifecycleById = new Map(), chat = null) {
   const role = message.role;
   const text = message.content ?? message.text ?? '';
   const variant = message.variant ?? 'normal';
@@ -1618,10 +1789,23 @@ function createMessageElement(message, contextPackLifecycleById = new Map()) {
   body.className = 'message__body';
 
   const contextPackId = getMessageContextPackId(message);
+  if (contextPackId) {
+    messageEl.classList.add('message--context-pack');
+  }
+
   if (isContextPackCandidateMessage(message) && contextPackId) {
     const status = contextPackLifecycleById.get(contextPackId) ?? 'candidate';
     body.classList.add('message__body--context-pack');
-    body.appendChild(createContextPackCandidateCard(getCurrentChat()?.id ?? state.currentChatId, contextPackId, status));
+    body.appendChild(createContextPackCandidateCard(chat?.id ?? getCurrentChat()?.id ?? state.currentChatId, contextPackId, status));
+  } else if (contextPackId) {
+    const status = getContextPackMessageStatus(message, contextPackLifecycleById, chat) ?? 'candidate';
+    body.classList.add('message__body--context-pack');
+    body.append(createContextPackMessageBadge(status));
+
+    const content = document.createElement('div');
+    content.className = 'message__context-pack-content';
+    content.textContent = text;
+    body.appendChild(content);
   } else {
     body.textContent = text;
   }
@@ -1748,7 +1932,7 @@ function renderMessages({ autoScroll = false } = {}) {
   }
 
   for (const message of chat.messages) {
-    messagesInnerEl.appendChild(createMessageElement(message, contextPackLifecycleById));
+    messagesInnerEl.appendChild(createMessageElement(message, contextPackLifecycleById, chat));
   }
 
   if (autoScroll) {

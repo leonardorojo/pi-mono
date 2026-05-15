@@ -77,6 +77,20 @@ That means:
 - the UI still receives a complete product-friendly contract
 - no internal metadata, paths, or raw evidence are exposed through the shape
 
+## Provider composition skeleton
+
+RuntimeStatus is composed from small internal placeholder providers for runtime, memory, context, trace, and LLM.
+
+Each provider represents a future domain boundary, but today they still return safe local placeholder values:
+
+- runtime: local session
+- memory: off
+- context: off
+- trace: not linked
+- LLM: off
+
+The endpoint still exposes only the normalized contract, so the UI does not know about any concrete provider implementation.
+
 ## Why it does not expose real RCK yet
 
 Fase 16A keeps the boundary intentionally minimal.

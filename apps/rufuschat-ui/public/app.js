@@ -2392,19 +2392,37 @@ async function confirmAction(message) {
   return openConfirm(message);
 }
 
-function runStatus(targetChatId) {
-  const runtimeLabel = runtimeStatus.runtime?.label ?? 'Local session';
-  const memoryLabel = runtimeStatus.memory?.label ?? 'Memory off';
-  const contextLabel = runtimeStatus.context?.label ?? 'Context off';
-  const traceLabel = runtimeStatus.trace?.label ?? 'Trace not linked';
+function getRuntimeStatusForCommand() {
+  const fallbackRuntimeStatus = createFallbackRuntimeStatus();
+  const candidate = normalizeRuntimeStatus(runtimeStatus) ?? fallbackRuntimeStatus;
 
-  appendMessageToChat(
-    targetChatId,
-    'assistant',
-    `${runtimeLabel}: ${memoryLabel} · ${contextLabel} · ${traceLabel}.`,
-    'normal',
-    { kind: 'command-result' },
-  );
+  return {
+    runtime: candidate.runtime ?? fallbackRuntimeStatus.runtime,
+    memory: candidate.memory ?? fallbackRuntimeStatus.memory,
+    context: candidate.context ?? fallbackRuntimeStatus.context,
+    trace: candidate.trace ?? fallbackRuntimeStatus.trace,
+  };
+}
+
+function formatRuntimeStatusMessage() {
+  const fallbackRuntimeStatus = createFallbackRuntimeStatus();
+  const status = getRuntimeStatusForCommand();
+  const runtimeLabel = status.runtime?.label ?? fallbackRuntimeStatus.runtime.label;
+  const memoryLabel = status.memory?.label ?? fallbackRuntimeStatus.memory.label;
+  const contextLabel = status.context?.label ?? fallbackRuntimeStatus.context.label;
+  const traceLabel = status.trace?.label ?? fallbackRuntimeStatus.trace.label;
+
+  return [
+    'Status',
+    `Memory: ${memoryLabel}`,
+    `Context: ${contextLabel}`,
+    `Trace: ${traceLabel}`,
+    `Session: ${runtimeLabel}`,
+  ].join('\n');
+}
+
+function runStatus(targetChatId) {
+  appendMessageToChat(targetChatId, 'assistant', formatRuntimeStatusMessage(), 'normal', { kind: 'command-result' });
 }
 
 async function runCheckpoint(targetChatId, label, sourceMessage = null) {

@@ -91,6 +91,14 @@ Each provider represents a future domain boundary, but today they still return s
 
 The endpoint still exposes only the normalized contract, so the UI does not know about any concrete provider implementation.
 
+## Slash command alignment
+
+/status uses the hydrated RuntimeStatus contract.
+
+If the endpoint is unavailable, the UI falls back to the same safe local defaults.
+
+/status is a product-friendly status view, not a debug endpoint.
+
 ## Why it does not expose real RCK yet
 
 Fase 16A keeps the boundary intentionally minimal.

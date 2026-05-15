@@ -81,6 +81,7 @@ Fase 11A defines the Product Data boundary only.
 - Endpoint: `GET /api/runtime-status`
 - Shape: `RuntimeStatus v0` with product-friendly labels for runtime, memory, context, trace, and LLM
 - Current implementation: safe local placeholder composed from internal providers and normalized at the boundary
+- /status reads the hydrated RuntimeStatus contract and falls back safely if the endpoint is unavailable
 - The UI consumes the labels directly and falls back locally if the endpoint is unavailable
 - The endpoint does not expose RCK internals, `.pi/rck`, raw evidence, or internal paths
 

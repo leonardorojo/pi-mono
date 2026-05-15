@@ -66,7 +66,7 @@ const newChatAssistantMessage =
 const chatCompletionEndpoint = '/api/chat/complete';
 const chatCompletionContextLimit = 12;
 const chatThinkingMessage = 'Thinking…';
-const chatConfigMissingMessage = 'LLM is not configured. Set OPENAI_API_KEY to enable replies.';
+const chatConfigMissingMessage = 'LLM provider is not configured. Check the Pi Agent GitHub Copilot authentication.';
 const chatCompletionFailureMessage = "I couldn't reach the language model. Check the LLM configuration and try again.";
 const traceLinkedPlaceholderMessage =
   'Trace linking is not connected yet. This chat is currently not linked to a trace. Future versions will link chats to the trace system.';
@@ -2410,12 +2410,8 @@ function getChatCompletionErrorMessage(error) {
     return 'The language model returned no reply. Please try again.';
   }
 
-  if (responseCode === 'llm_unavailable' && /missing api key/i.test(responseMessage)) {
-    return chatConfigMissingMessage;
-  }
-
   if (responseCode === 'llm_unavailable') {
-    return chatCompletionFailureMessage;
+    return responseMessage || chatCompletionFailureMessage;
   }
 
   return chatCompletionFailureMessage;

@@ -316,9 +316,49 @@ Connect the normal RufusChat composer flow to `/api/chat/complete` while keeping
 
 ### Error handling
 
-- missing LLM config maps to: `LLM is not configured. Set OPENAI_API_KEY to enable replies.`
+- missing LLM config maps to the provider-specific message returned by the backend
 - transport or provider failures map to a generic recovery message
 - no stack traces or provider internals are shown in the UI
+
+## 17D Configured Pi LLM provider
+
+### Goal
+
+Use the Pi Agent configured provider/model instead of assuming OpenAI.
+
+### What RufusChat resolves
+
+- provider: `github-copilot`
+- model: `gpt-5.4-mini`
+- fallback source: `~/.pi/agent/settings.json`
+- auth source: `~/.pi/agent/auth.json`
+
+### Resolution rules
+
+- `RUFUSCHAT_LLM_PROVIDER` and `RUFUSCHAT_LLM_MODEL` override the Pi defaults when set
+- otherwise RufusChat reads the Pi Agent settings file and uses the configured default provider/model
+- the adapter then resolves the matching API key/token from the existing Pi auth storage
+- if the provider is `github-copilot`, the stored GitHub Copilot OAuth credential is reused through the Pi AI OAuth provider contract
+
+### Difference from the old OpenAI-only path
+
+- RufusChat no longer tells the user to set `OPENAI_API_KEY` when the configured Pi provider is GitHub Copilot
+- OpenAI-specific wording is only relevant if the selected provider is actually OpenAI
+- the endpoint stays behind the same `POST /api/chat/complete` contract; only provider resolution changes
+
+### Error behavior
+
+- missing Copilot auth becomes: `LLM provider is not configured. Check the Pi Agent GitHub Copilot authentication.`
+- missing or invalid provider/model combinations remain product-friendly and do not expose tokens
+- secrets are never logged or persisted in ProductState
+
+### Non-goals
+
+- No secrets in the UI
+- No new LLM client
+- No RCK
+- No Hermes
+- No streaming
 
 ### Non-goals for 17C
 

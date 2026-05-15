@@ -10,10 +10,12 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - Endpoint: `POST /api/chat/complete`
 - The endpoint talks to the existing Pi AI provider contract from `packages/ai`.
 - v0 is non-streaming.
-- The backend requires a configured model/provider and the matching API key or bearer token in the environment.
+- The backend requires a configured model/provider and the matching API key or bearer token in the environment or Pi auth storage.
 - The browser UI does **not** call the LLM directly.
 - Normal chat messages are sent to `/api/chat/complete`.
-- Real assistant replies require `OPENAI_API_KEY` (or the configured provider key/token) in the server environment.
+- Real assistant replies use the Pi Agent configured provider/model by default (`github-copilot/gpt-5.4-mini` in this workspace).
+- If you override the defaults, set `RUFUSCHAT_LLM_PROVIDER` and `RUFUSCHAT_LLM_MODEL`.
+- Do **not** set `OPENAI_API_KEY` unless the selected provider is actually OpenAI.
 
 ## Context Pack boundary
 

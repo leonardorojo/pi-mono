@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
 import { completeSimple } from '../../packages/ai/dist/stream.js';
 import { getEnvApiKey } from '../../packages/ai/dist/env-api-keys.js';
 import { getModel } from '../../packages/ai/dist/models.js';
+import { getOAuthApiKey, getOAuthProvider } from '../../packages/ai/dist/oauth.js';
 
 import {
   ChatCompletionError,
@@ -9,6 +14,17 @@ import {
 } from './chat-completion-schema.mjs';
 
 const DEFAULT_SYSTEM_PROMPT = 'You are RufusChat, a helpful assistant inside a local-first project chat.';
+const PI_AGENT_DIR = join(homedir(), '.pi', 'agent');
+const PI_AUTH_PATH = join(PI_AGENT_DIR, 'auth.json');
+
+function readJsonFile(path) {
+  try {
+    const text = readFileSync(path, 'utf-8');
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
 
 function resolveSelection(request) {
   const provider = request.provider;
@@ -38,7 +54,12 @@ function getSessionId(request) {
 function toLlmMessages(messages) {
   return messages.map((message) => ({
     role: message.role,
-    content: message.content,
+    content: [
+      {
+        type: 'text',
+        text: message.content,
+      },
+    ],
     timestamp: message.timestamp,
   }));
 }
@@ -60,8 +81,50 @@ function extractAssistantText(message) {
     .trim();
 }
 
-function resolveApiKey(provider) {
-  return getEnvApiKey(provider) ?? '';
+async function resolveStoredApiKey(provider) {
+  const auth = readJsonFile(PI_AUTH_PATH);
+  const credential = auth?.[provider];
+
+  if (!credential || typeof credential !== 'object') {
+    return '';
+  }
+
+  try {
+    if (credential.type === 'api_key' && typeof credential.key === 'string') {
+      return credential.key.trim();
+    }
+
+    if (credential.type === 'oauth' && getOAuthProvider(provider)) {
+      const result = await getOAuthApiKey(provider, { [provider]: credential });
+      return result?.apiKey ?? '';
+    }
+  } catch {
+    return '';
+  }
+
+  return '';
+}
+
+async function resolveApiKey(provider) {
+  const envKey = getEnvApiKey(provider);
+  if (envKey) {
+    return envKey;
+  }
+
+  const storedKey = await resolveStoredApiKey(provider);
+  if (storedKey) {
+    return storedKey;
+  }
+
+  return '';
+}
+
+function getMissingAuthMessage(provider, modelId) {
+  if (provider === 'github-copilot') {
+    return 'LLM provider is not configured. Check the Pi Agent GitHub Copilot authentication.';
+  }
+
+  return `LLM provider is not configured for ${provider}/${modelId}.`;
 }
 
 export async function completeChatCompletion(requestInput) {
@@ -75,10 +138,10 @@ export async function completeChatCompletion(requestInput) {
   }
 
   const model = resolveSelection(request);
-  const apiKey = resolveApiKey(model.provider);
+  const apiKey = await resolveApiKey(model.provider);
 
   if (!apiKey) {
-    throw new ChatCompletionError(`Missing API key for provider: ${model.provider}`, {
+    throw new ChatCompletionError(getMissingAuthMessage(model.provider, model.id), {
       code: 'llm_unavailable',
       statusCode: 503,
     });
@@ -119,7 +182,7 @@ export async function completeChatCompletion(requestInput) {
       content,
     },
     metadata: {
-      provider: 'pi-ai',
+      provider: model.provider,
       model: `${model.provider}/${model.id}`,
       createdAt: new Date().toISOString(),
     },

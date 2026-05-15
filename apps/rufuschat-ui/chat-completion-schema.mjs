@@ -1,7 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
 const DEFAULT_ERROR_CODE = 'llm_unavailable';
 const DEFAULT_ERROR_MESSAGE = 'The RufusChat LLM is temporarily unavailable.';
-const DEFAULT_PROVIDER = 'openai';
-const DEFAULT_MODEL_ID = 'gpt-4.1-mini';
+const DEFAULT_PROVIDER = 'github-copilot';
+const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
+const DEFAULT_SETTINGS_PATH = join(homedir(), '.pi', 'agent', 'settings.json');
 
 class ChatCompletionError extends Error {
   constructor(message, { code = DEFAULT_ERROR_CODE, statusCode = 503, cause = undefined } = {}) {
@@ -49,26 +54,56 @@ function coerceContent(value) {
     .trim();
 }
 
+function readJsonFile(path) {
+  try {
+    const text = readFileSync(path, 'utf-8');
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function coerceConfiguredString(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.trim();
+}
+
+export function getConfiguredChatCompletionDefaults() {
+  const settings = readJsonFile(DEFAULT_SETTINGS_PATH) ?? {};
+  const settingsDefaultProvider = coerceConfiguredString(settings.defaultProvider);
+  const settingsDefaultModel = coerceConfiguredString(settings.defaultModel);
+
+  return {
+    provider: coerceConfiguredString(process.env.RUFUSCHAT_LLM_PROVIDER) || settingsDefaultProvider || DEFAULT_PROVIDER,
+    modelId: coerceConfiguredString(process.env.RUFUSCHAT_LLM_MODEL) || settingsDefaultModel || DEFAULT_MODEL_ID,
+    settingsPath: DEFAULT_SETTINGS_PATH,
+  };
+}
+
 function normalizeModelSpecifier(value) {
   const text = coerceString(value);
+  const defaults = getConfiguredChatCompletionDefaults();
 
   if (!text) {
-    return { provider: DEFAULT_PROVIDER, modelId: DEFAULT_MODEL_ID };
+    return { provider: defaults.provider, modelId: defaults.modelId };
   }
 
   if (text.includes('/')) {
     const [provider, ...rest] = text.split('/');
     const modelId = rest.join('/').trim();
-    const normalizedProvider = coerceString(provider) || DEFAULT_PROVIDER;
+    const normalizedProvider = coerceString(provider) || defaults.provider;
 
     return {
       provider: normalizedProvider,
-      modelId: modelId || DEFAULT_MODEL_ID,
+      modelId: modelId || defaults.modelId,
     };
   }
 
   return {
-    provider: DEFAULT_PROVIDER,
+    provider: defaults.provider,
     modelId: text,
   };
 }
@@ -83,7 +118,7 @@ function normalizeMessage(input, index, issues) {
 
   const role = coerceString(input.role);
   if (role !== 'user' && role !== 'assistant') {
-    issues.push(`${pathLabel}.role must be "user" or "assistant".`);
+    issues.push(`${pathLabel}.role must be \"user\" or \"assistant\".`);
     return null;
   }
 
@@ -132,9 +167,10 @@ export function normalizeChatCompletionRequest(input) {
   const projectId = coerceString(body.projectId) || null;
   const chatId = coerceString(body.chatId) || null;
   const options = normalizeOptions(body.options);
-  const modelSelection = normalizeModelSpecifier(options.model ?? process.env.RUFUSCHAT_LLM_MODEL);
-  const provider = coerceString(options.provider) || coerceString(process.env.RUFUSCHAT_LLM_PROVIDER) || modelSelection.provider;
-  const modelId = modelSelection.modelId;
+  const defaults = getConfiguredChatCompletionDefaults();
+  const modelSelection = normalizeModelSpecifier(options.model);
+  const provider = coerceString(options.provider) || modelSelection.provider || defaults.provider;
+  const modelId = options.model ? modelSelection.modelId : defaults.modelId;
 
   const messages = Array.isArray(body.messages)
     ? body.messages

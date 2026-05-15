@@ -54,6 +54,18 @@ It exists so the UI can render simple, product-friendly chips without learning b
 - Designed for UI hydration and simple capability display
 - Safe to call even when no real providers are wired up yet
 
+## Provider boundary
+
+RuntimeStatus is now produced by a small backend provider layer instead of being hardcoded directly inside the server route.
+
+Today that provider is still a local placeholder:
+
+- it returns the same safe shape as Fase 16A
+- it does not connect to real memory, context, trace, or LLM providers
+- it keeps technical internals out of the browser contract
+
+Tomorrow that same boundary can compose real providers behind the same product-friendly labels.
+
 ## Why it does not expose real RCK yet
 
 Fase 16A keeps the boundary intentionally minimal.

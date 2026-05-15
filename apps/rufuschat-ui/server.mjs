@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { isProductStateValidationError, loadProductState, saveProductState } from './product-state-store.mjs';
+import { createRuntimeStatus } from './runtime-status-provider.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -119,32 +120,6 @@ function buildStatusMessage() {
   return `Status checked. Health: OK. Current trace: ${sessionState.traceId}. Safe context: ${sessionState.safeContextAvailable ? 'available' : 'no'}.`;
 }
 
-function buildRuntimeStatus() {
-  return {
-    version: 1,
-    runtime: {
-      mode: 'local',
-      label: 'Local session',
-    },
-    memory: {
-      status: 'off',
-      label: 'Memory off',
-    },
-    context: {
-      status: 'off',
-      label: 'Context off',
-    },
-    trace: {
-      status: 'not_linked',
-      label: 'Trace not linked',
-    },
-    llm: {
-      status: 'off',
-      label: 'LLM off',
-    },
-  };
-}
-
 function buildSafeContextSummary() {
   const parts = [];
 
@@ -192,7 +167,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    sendJson(res, 200, buildRuntimeStatus());
+    sendJson(res, 200, createRuntimeStatus());
     return;
   }
 

@@ -68,7 +68,6 @@ const traceLinkedPlaceholderMessage =
   'Trace linking is not connected yet. This chat is currently not linked to an RCK Trace. Future versions will link chats to RCK Core Trace DAGs.';
 const traceLinkPlaceholderMessage =
   'Trace linking is a placeholder in 10E. No RCK trace was created or linked.';
-const traceChipMessage = 'Trace linking is not connected yet.';
 const commandCatalog = [
   {
     name: '/status',
@@ -122,8 +121,6 @@ const commandCatalog = [
 ];
 
 let confirmResolver = null;
-let contextPackSummaryChipEl = document.getElementById('current-context-pack-chip');
-let checkpointSummaryChipEl = document.getElementById('current-checkpoint-chip');
 
 function makeId(prefix) {
   const random = globalThis.crypto?.randomUUID?.();
@@ -1365,8 +1362,19 @@ function getProjectByIdOrDefault(projectId) {
   return getProjectById(projectId) ?? state.projects[0] ?? null;
 }
 
-function formatStatusLabel(status) {
-  return (status ?? '').replace(/-/g, ' ');
+function getHeaderContextSummary(chat) {
+  const injectionSummary = getChatInjectionSummary(chat);
+  const checkpointSummary = getChatCheckpointSummary(chat);
+  const contextPackPart =
+    injectionSummary.total === 0
+      ? 'No context packs'
+      : `${injectionSummary.total} context pack${injectionSummary.total === 1 ? '' : 's'}`;
+  const checkpointPart =
+    checkpointSummary.total === 0
+      ? 'No checkpoints'
+      : `${checkpointSummary.total} checkpoint${checkpointSummary.total === 1 ? '' : 's'}`;
+
+  return `${contextPackPart} · ${checkpointPart}`;
 }
 
 function getLinkedRckTrace(chat) {
@@ -1413,66 +1421,41 @@ function setBusy(isBusy, label = 'Running...') {
 function renderHeader() {
   const project = getCurrentProject();
   const chat = getCurrentChat();
-  const linkedRckTrace = getLinkedRckTrace(chat);
-  const injectionSummary = formatInjectionSummary(getChatInjectionSummary(chat));
-  const checkpointSummary = formatCheckpointSummary(getChatCheckpointSummary(chat));
-  const summaryText = injectionSummary;
+  const headerContextSummary = getHeaderContextSummary(chat);
 
   currentProjectEl.textContent = project?.name ?? '—';
-  currentProjectEl.title = 'Active project';
+  currentProjectEl.title = 'Current project';
   currentChatEl.textContent = chat?.title ?? '—';
-  currentChatEl.title = 'Active chat';
-  memoryStatusEl.textContent = formatStatusLabel(chat?.memoryStatus ?? memoryPlaceholder.memoryStatus);
-  summaryStatusEl.textContent = formatStatusLabel(chat?.semanticSummaryStatus ?? memoryPlaceholder.semanticSummaryStatus);
-  rckTraceStatusEl.textContent = formatStatusLabel(linkedRckTrace.status ?? memoryPlaceholder.linkedRckTraceStatus);
+  currentChatEl.title = 'Current chat';
+
+  if (memoryStatusEl) {
+    memoryStatusEl.textContent = 'Memory off';
+    memoryStatusEl.classList.add('chat-header__chip--muted');
+  }
+
+  if (summaryStatusEl) {
+    summaryStatusEl.textContent = headerContextSummary;
+    summaryStatusEl.classList.add('chat-header__chip--accent');
+  }
+
+  if (rckTraceStatusEl) {
+    rckTraceStatusEl.textContent = 'Trace not linked';
+    rckTraceStatusEl.classList.add('chat-header__chip--muted');
+  }
 
   if (traceChipEl) {
-    traceChipEl.textContent = `Trace: ${formatStatusLabel(linkedRckTrace.status ?? tracePlaceholder.status)}`;
-    traceChipEl.title = `Provider: ${linkedRckTrace.provider} · Future: ${linkedRckTrace.futureProvider} · Mode: ${linkedRckTrace.mode}`;
-    traceChipEl.setAttribute(
-      'aria-label',
-      `Trace: ${formatStatusLabel(linkedRckTrace.status ?? tracePlaceholder.status)}. Provider: ${linkedRckTrace.provider}. Future: ${linkedRckTrace.futureProvider}. Mode: ${linkedRckTrace.mode}.`,
-    );
+    traceChipEl.hidden = true;
+    traceChipEl.textContent = '';
+    traceChipEl.removeAttribute('title');
+    traceChipEl.removeAttribute('aria-label');
   }
 
   if (chatSessionShellTraceEl) {
-    if (!contextPackSummaryChipEl) {
-      contextPackSummaryChipEl = document.createElement('span');
-      contextPackSummaryChipEl.id = 'current-context-pack-chip';
-      contextPackSummaryChipEl.className = 'chat-session-shell__chip chat-session-shell__chip--context-pack';
-      chatSessionShellTraceEl.appendChild(contextPackSummaryChipEl);
-    }
+    chatSessionShellTraceEl.hidden = true;
+  }
 
-    if (!checkpointSummaryChipEl) {
-      checkpointSummaryChipEl = document.createElement('span');
-      checkpointSummaryChipEl.id = 'current-checkpoint-chip';
-      checkpointSummaryChipEl.className = 'chat-session-shell__chip chat-session-shell__chip--checkpoint';
-      chatSessionShellTraceEl.appendChild(checkpointSummaryChipEl);
-    }
-
-    if (summaryText) {
-      contextPackSummaryChipEl.hidden = false;
-      contextPackSummaryChipEl.textContent = summaryText;
-      contextPackSummaryChipEl.title = `Current chat injection history: ${summaryText}.`;
-      contextPackSummaryChipEl.setAttribute('aria-label', summaryText);
-    } else {
-      contextPackSummaryChipEl.hidden = true;
-      contextPackSummaryChipEl.textContent = '';
-      contextPackSummaryChipEl.removeAttribute('title');
-      contextPackSummaryChipEl.removeAttribute('aria-label');
-    }
-
-    if (checkpointSummary) {
-      checkpointSummaryChipEl.hidden = false;
-      checkpointSummaryChipEl.textContent = checkpointSummary;
-      checkpointSummaryChipEl.title = `Current chat checkpoints: ${checkpointSummary}.`;
-      checkpointSummaryChipEl.setAttribute('aria-label', checkpointSummary);
-    } else {
-      checkpointSummaryChipEl.hidden = true;
-      checkpointSummaryChipEl.textContent = '';
-      checkpointSummaryChipEl.removeAttribute('title');
-      checkpointSummaryChipEl.removeAttribute('aria-label');
-    }
+  if (statusPill) {
+    statusPill.textContent = 'Local session';
   }
 }
 
@@ -2794,17 +2777,6 @@ document.addEventListener('keydown', (event) => {
     closeConfirm(false);
   }
 });
-
-if (traceChipEl) {
-  traceChipEl.addEventListener('click', () => {
-    const chat = getCurrentChat();
-    if (!chat) {
-      return;
-    }
-
-    appendMessageToChat(chat.id, 'assistant', traceChipMessage);
-  });
-}
 
 if (slashMenuEl) {
   slashMenuEl.addEventListener('click', (event) => {

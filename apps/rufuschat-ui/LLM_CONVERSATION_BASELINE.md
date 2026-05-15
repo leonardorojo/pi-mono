@@ -171,14 +171,14 @@ RufusChat UI
 → RufusChat backend adapter
 → Pi Agent LLM provider (`packages/ai` `stream` / `complete`)
 → assistant message
-→ ProductState persistence
+→ ProductState persistence (17C+)
 
 Adapter rules:
 
 - keep the browser UI free of raw LLM credentials
 - call the Pi AI package from the backend only
-- persist the user message before the request and the assistant message after the response
-- store only transcript data in ProductState for Phase 17
+- keep the backend adapter thin and deterministic
+- leave ProductState persistence for the follow-up integration step
 - keep Trace / RCK / Hermes out of the first baseline
 
 ## Non-goals
@@ -210,3 +210,76 @@ For the first baseline, prefer the existing Pi AI package API over a bespoke SDK
 3. Call `stream()` or `complete()` from `packages/ai`.
 4. Persist the returned assistant message together with the user message.
 5. Keep the transport adapter small so provider changes stay isolated.
+
+## 17B Backend chat completion endpoint
+
+### Endpoint
+
+- `POST /api/chat/complete`
+
+### Request v0
+
+```json
+{
+  "projectId": "string",
+  "chatId": "string",
+  "messages": [
+    { "role": "user", "content": "..." },
+    { "role": "assistant", "content": "..." }
+  ],
+  "options": {
+    "model": "optional string"
+  }
+}
+```
+
+### Response v0
+
+```json
+{
+  "message": {
+    "role": "assistant",
+    "content": "..."
+  },
+  "metadata": {
+    "provider": "pi-ai",
+    "model": "...",
+    "createdAt": "..."
+  }
+}
+```
+
+### Provider used
+
+- Backend adapter: `apps/rufuschat-ui/chat-completion-provider.mjs`
+- Contract entrypoint: `packages/ai/src/stream.ts`
+- Call path: `completeSimple(model, context, options)`
+- Non-persistent in 17B: the endpoint returns the assistant message, but ProductState writes are deferred to 17C
+- Runtime import note: the backend uses `packages/ai/dist/stream.js`, `packages/ai/dist/env-api-keys.js`, and `packages/ai/dist/models.js` directly because the package entrypoint currently pulls `@sinclair/typebox` in this checkout under plain `node`
+
+### Configuration required
+
+- `OPENAI_API_KEY` for the default OpenAI provider path
+- `RUFUSCHAT_LLM_PROVIDER` and `RUFUSCHAT_LLM_MODEL` can override the provider/model selection
+- Default model baseline: `openai/gpt-4.1-mini`
+- No API key is accepted from the browser request body
+
+### Fallback / error behavior
+
+- Missing or invalid config returns a product-friendly JSON error
+- Invalid request bodies return `invalid_request`
+- Empty assistant text returns `llm_empty_response`
+- Provider failures return `llm_unavailable`
+- The server does not crash on LLM errors
+- This is a non-streaming baseline
+
+### Non-goals for 17B
+
+- No streaming
+- No tools
+- No RCK
+- No Hermes
+- No semantic memory
+- No Trace DAG
+- No direct UI-to-LLM calls
+- No ProductState schema redesign

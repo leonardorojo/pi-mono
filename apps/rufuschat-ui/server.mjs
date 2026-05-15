@@ -4,6 +4,11 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { completeChatCompletion } from './chat-completion-provider.mjs';
+import {
+  createChatCompletionErrorResponse,
+  getChatCompletionErrorStatusCode,
+} from './chat-completion-schema.mjs';
 import { isProductStateValidationError, loadProductState, saveProductState } from './product-state-store.mjs';
 import { createRuntimeStatus } from './runtime-status-provider.mjs';
 
@@ -168,6 +173,23 @@ const server = createServer(async (req, res) => {
     }
 
     sendJson(res, 200, createRuntimeStatus());
+    return;
+  }
+
+  if (url.pathname === '/api/chat/complete') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      const body = await readRequestJson(req);
+      const response = await completeChatCompletion(body);
+      sendJson(res, 200, response);
+    } catch (error) {
+      const statusCode = getChatCompletionErrorStatusCode(error);
+      sendJson(res, statusCode, createChatCompletionErrorResponse(error));
+    }
     return;
   }
 

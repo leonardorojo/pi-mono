@@ -405,14 +405,12 @@ Still pending for 15C / 15D / 15F:
 - 15D: keep message rendering calm when /inject and /checkpoint results accumulate.
 - 15F: contain dev tools even further if needed, especially if local data actions still feel too prominent.
 
-## Phase 15C follow-up
+## Phase 15C.2 follow-up
 
-Addressed in 15C:
-- The header no longer says “active project” or “active chat”; it now reads as a conversational project/chat title.
-- The header status was reduced to discreet product-friendly chips instead of stacked telemetry labels.
-- Redundant RCK trace wording was removed from the main header surface; the visible trace state is now a single concise status.
-- Context pack and checkpoint state are summarized more calmly and without raw IDs or implementation vocabulary.
+Addressed in 15C.2:
+- The header chips are aligned together on the left, so there is no floating right-side status pill.
+- The context/checkpoint chip is shorter and reads more like product status than telemetry.
+- The header remains compact and conversational, while preserving the truth that memory, context, and trace are still not connected.
 
-Still pending for 15D / 15F:
-- 15D: keep message rendering calm when /inject and /checkpoint results accumulate.
-- 15F: contain dev tools even further if they start competing with the conversational shell.
+Still pending for 15D:
+- message rendering polish, especially if /inject and /checkpoint output starts to feel noisy.

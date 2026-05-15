@@ -1365,16 +1365,20 @@ function getProjectByIdOrDefault(projectId) {
 function getHeaderContextSummary(chat) {
   const injectionSummary = getChatInjectionSummary(chat);
   const checkpointSummary = getChatCheckpointSummary(chat);
-  const contextPackPart =
-    injectionSummary.total === 0
-      ? 'No context packs'
-      : `${injectionSummary.total} context pack${injectionSummary.total === 1 ? '' : 's'}`;
-  const checkpointPart =
-    checkpointSummary.total === 0
-      ? 'No checkpoints'
-      : `${checkpointSummary.total} checkpoint${checkpointSummary.total === 1 ? '' : 's'}`;
 
-  return `${contextPackPart} · ${checkpointPart}`;
+  if (injectionSummary.total === 0 && checkpointSummary.total === 0) {
+    return 'Context off';
+  }
+
+  if (injectionSummary.total > 0 && checkpointSummary.total === 0) {
+    return `${injectionSummary.total} context pack${injectionSummary.total === 1 ? '' : 's'}`;
+  }
+
+  if (checkpointSummary.total > 0 && injectionSummary.total === 0) {
+    return `${checkpointSummary.total} checkpoint${checkpointSummary.total === 1 ? '' : 's'}`;
+  }
+
+  return `${injectionSummary.total} context pack${injectionSummary.total === 1 ? '' : 's'} · ${checkpointSummary.total} checkpoint${checkpointSummary.total === 1 ? '' : 's'}`;
 }
 
 function getLinkedRckTrace(chat) {

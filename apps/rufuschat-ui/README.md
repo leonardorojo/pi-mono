@@ -12,6 +12,8 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - v0 is non-streaming.
 - The backend requires a configured model/provider and the matching API key or bearer token in the environment.
 - The browser UI does **not** call the LLM directly.
+- Normal chat messages are sent to `/api/chat/complete`.
+- Real assistant replies require `OPENAI_API_KEY` (or the configured provider key/token) in the server environment.
 
 ## Context Pack boundary
 

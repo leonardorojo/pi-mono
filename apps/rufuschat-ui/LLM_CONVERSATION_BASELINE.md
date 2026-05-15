@@ -283,3 +283,50 @@ For the first baseline, prefer the existing Pi AI package API over a bespoke SDK
 - No Trace DAG
 - No direct UI-to-LLM calls
 - No ProductState schema redesign
+
+## 17C Frontend send-message integration
+
+### Goal
+
+Connect the normal RufusChat composer flow to `/api/chat/complete` while keeping the baseline non-streaming.
+
+### What the UI sends
+
+- the current chat/project identifiers
+- the latest conversational transcript window only
+- user/assistant roles only
+- no raw evidence
+- no RCK data
+- no semantic memory payloads
+- no ProductState dump
+
+### Context window
+
+- the UI keeps the last `N` usable conversation messages for the request body
+- slash-command messages stay in the chat history but are excluded from the LLM payload
+- product boilerplate messages such as the local intro / new-chat stub are excluded from the request context
+
+### Runtime behavior
+
+- normal text messages are persisted as user messages first
+- the UI shows a discrete `Thinking…` placeholder while the backend is pending
+- the backend assistant reply replaces the placeholder and is persisted
+- if the backend fails, the placeholder is replaced by a product-friendly assistant error message
+- the input is always re-enabled after the request finishes
+
+### Error handling
+
+- missing LLM config maps to: `LLM is not configured. Set OPENAI_API_KEY to enable replies.`
+- transport or provider failures map to a generic recovery message
+- no stack traces or provider internals are shown in the UI
+
+### Non-goals for 17C
+
+- No streaming
+- No RCK
+- No Hermes
+- No tools
+- No semantic memory
+- No trace DAG
+- No raw evidence exposure
+- No direct browser-to-LLM calls

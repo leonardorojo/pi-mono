@@ -63,6 +63,11 @@ const localIntroMessage =
   'This chat is local. LLM and semantic memory are not connected yet. Trace tracking happens only when you confirm slash actions.';
 const newChatAssistantMessage =
   'New local chat created. LLM and semantic memory are not connected yet.';
+const chatCompletionEndpoint = '/api/chat/complete';
+const chatCompletionContextLimit = 12;
+const chatThinkingMessage = 'Thinking…';
+const chatConfigMissingMessage = 'LLM is not configured. Set OPENAI_API_KEY to enable replies.';
+const chatCompletionFailureMessage = "I couldn't reach the language model. Check the LLM configuration and try again.";
 const traceLinkedPlaceholderMessage =
   'Trace linking is not connected yet. This chat is currently not linked to a trace. Future versions will link chats to the trace system.';
 const traceLinkPlaceholderMessage =
@@ -2033,7 +2038,7 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
   const text = message.content ?? message.text ?? '';
   const variant = message.variant ?? 'normal';
   const messageEl = document.createElement('article');
-  messageEl.className = `message message--${role}${variant === 'error' ? ' message--error' : ''}`;
+  messageEl.className = `message message--${role}${variant === 'error' ? ' message--error' : ''}${variant === 'placeholder' ? ' message--placeholder' : ''}`;
 
   const roleLabel = document.createElement('span');
   roleLabel.className = 'message__role';
@@ -2298,6 +2303,164 @@ function appendMessageToChat(chatId, role, text, variant = 'normal', overrides =
   }
 
   return message;
+}
+
+function replaceMessageInChat(chatId, messageId, nextMessage) {
+  const chat = getChatById(chatId);
+  if (!chat) {
+    return null;
+  }
+
+  const messageIndex = chat.messages.findIndex((message) => message.id === messageId);
+  if (messageIndex === -1) {
+    return null;
+  }
+
+  chat.messages[messageIndex] = nextMessage;
+  touchChat(chat);
+  touchProject(getProjectByChatId(chat.id));
+  markProductStateChanged();
+
+  if (chat.id === state.currentChatId) {
+    renderMessages({ autoScroll: true });
+  }
+
+  renderSidebar();
+  renderHeader();
+  return nextMessage;
+}
+
+function isChatCompletionTranscriptMessage(message) {
+  if (!message || (message.role !== 'user' && message.role !== 'assistant')) {
+    return false;
+  }
+
+  if (message.kind === 'command' || message.kind === 'command-result' || message.kind === 'placeholder') {
+    return false;
+  }
+
+  const text = typeof message.content === 'string' ? message.content.trim() : typeof message.text === 'string' ? message.text.trim() : '';
+  if (!text) {
+    return false;
+  }
+
+  return text !== newChatAssistantMessage && text !== localIntroMessage;
+}
+
+function getChatCompletionMessages(chat, limit = chatCompletionContextLimit) {
+  if (!chat) {
+    return [];
+  }
+
+  const transcript = chat.messages.filter((message) => isChatCompletionTranscriptMessage(message));
+  return transcript.slice(-Math.max(1, limit)).map((message) => ({
+    role: message.role,
+    content: typeof message.content === 'string' ? message.content : typeof message.text === 'string' ? message.text : '',
+  }));
+}
+
+function createChatCompletionPlaceholderMessage() {
+  return createMessage('assistant', chatThinkingMessage, 'placeholder', { kind: 'placeholder' });
+}
+
+function getChatCompletionRequestBody(chat, userMessage) {
+  const project = getProjectByChatId(chat.id);
+  const messages = getChatCompletionMessages(chat);
+  const projectId = typeof project?.id === 'string' ? project.id : chat.projectId ?? null;
+
+  if (userMessage && !messages.some((message) => message.role === 'user' && message.content === userMessage.content)) {
+    messages.push({ role: 'user', content: userMessage.content ?? userMessage.text ?? '' });
+  }
+
+  return {
+    projectId,
+    chatId: chat.id,
+    messages,
+  };
+}
+
+async function postChatCompletion(body) {
+  const response = await fetch(chatCompletionEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await readJsonResponse(response);
+
+  if (!response.ok) {
+    const error = new Error(data?.error?.message ?? data?.message ?? 'Request failed');
+    error.statusCode = response.status;
+    error.response = data;
+    throw error;
+  }
+
+  return data;
+}
+
+function getChatCompletionErrorMessage(error) {
+  const responseError = error?.response?.error;
+  const responseMessage = typeof responseError?.message === 'string' ? responseError.message : typeof error?.message === 'string' ? error.message : '';
+  const responseCode = typeof responseError?.code === 'string' ? responseError.code : null;
+
+  if (responseCode === 'invalid_request') {
+    return responseMessage || 'The chat completion request was invalid.';
+  }
+
+  if (responseCode === 'llm_empty_response') {
+    return 'The language model returned no reply. Please try again.';
+  }
+
+  if (responseCode === 'llm_unavailable' && /missing api key/i.test(responseMessage)) {
+    return chatConfigMissingMessage;
+  }
+
+  if (responseCode === 'llm_unavailable') {
+    return chatCompletionFailureMessage;
+  }
+
+  return chatCompletionFailureMessage;
+}
+
+async function runChatCompletion(targetChatId, userMessage) {
+  const chat = getChatById(targetChatId);
+  if (!chat) {
+    return;
+  }
+
+  const placeholderMessage = createChatCompletionPlaceholderMessage();
+  appendMessageToChat(targetChatId, placeholderMessage.role, placeholderMessage.text, placeholderMessage.variant, placeholderMessage);
+  setBusy(true, chatThinkingMessage);
+
+  try {
+    const data = await postChatCompletion(getChatCompletionRequestBody(chat, userMessage));
+    const nextAssistantText = typeof data?.message?.content === 'string' ? data.message.content.trim() : '';
+
+    if (!nextAssistantText) {
+      throw new Error('LLM response did not contain assistant text.');
+    }
+
+    replaceMessageInChat(
+      targetChatId,
+      placeholderMessage.id,
+      createMessage('assistant', nextAssistantText, 'normal', {
+        id: placeholderMessage.id,
+        kind: 'normal',
+      }),
+    );
+    return;
+  } catch (error) {
+    replaceMessageInChat(
+      targetChatId,
+      placeholderMessage.id,
+      createMessage('assistant', getChatCompletionErrorMessage(error), 'error', {
+        id: placeholderMessage.id,
+        kind: 'error',
+      }),
+    );
+  } finally {
+    setBusy(false);
+    composerInput.focus();
+  }
 }
 
 async function readJsonResponse(response) {
@@ -2624,7 +2787,7 @@ async function handleUserSubmission(text) {
   renderHeader();
 
   if (command.type === 'plain') {
-    showLocalFallback(targetChatId, text);
+    await runChatCompletion(targetChatId, userMessage);
     return;
   }
 

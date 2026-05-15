@@ -28,14 +28,14 @@ const productStateImportInput = document.getElementById('product-state-import-in
 
 const productStateEndpoint = '/api/product-state';
 const idleStatusText = 'Browser-local session';
-const loadingStatusText = 'Loading product state...';
-const savingStatusText = 'Saving product state...';
+const loadingStatusText = 'Loading local data...';
+const savingStatusText = 'Saving local data...';
 const savedStatusText = 'Saved';
-const productStateExportErrorText = 'Product state could not be exported.';
-const productStateImportErrorText = 'Product state could not be imported.';
-const productStateResetErrorText = 'Product state could not be reset.';
-const hydrateFailureText = 'Product state could not be loaded. Using an in-memory session.';
-const saveFailureText = 'Product state could not be saved.';
+const productStateExportErrorText = 'Local data could not be exported.';
+const productStateImportErrorText = 'Local data could not be imported.';
+const productStateResetErrorText = 'Local data could not be reset.';
+const hydrateFailureText = 'Local data could not be loaded. Using an in-memory session.';
+const saveFailureText = 'Local data could not be saved.';
 const memoryPlaceholder = {
   memoryStatus: 'not-connected',
   semanticSummaryStatus: 'not-generated',
@@ -849,7 +849,7 @@ async function importProductStateFromFile(file) {
       return;
     }
 
-    if (!(await confirmAction('Import this ProductState and replace the current session?'))) {
+    if (!(await confirmAction('Import local data and replace the current session?'))) {
       return;
     }
 
@@ -864,7 +864,7 @@ async function importProductStateFromFile(file) {
 }
 
 async function resetProductState() {
-  if (!(await confirmAction('Reset ProductState to a safe starter session?'))) {
+  if (!(await confirmAction('Reset local data to a safe starter session?'))) {
     return;
   }
 
@@ -1520,11 +1520,7 @@ function renderSidebar() {
       titleRow.appendChild(badge);
     }
 
-    const meta = document.createElement('span');
-    meta.className = 'project-group__meta';
-    meta.textContent = projectChats.length === 0 ? 'No chats yet' : `${projectChats.length} chats`;
-
-    titleButton.append(titleRow, meta);
+    titleButton.append(titleRow);
 
     const projectMenuButton = document.createElement('button');
     projectMenuButton.type = 'button';
@@ -1551,7 +1547,7 @@ function renderSidebar() {
     if (projectChats.length === 0) {
       const emptyState = document.createElement('div');
       emptyState.className = 'empty-state empty-state--sidebar';
-      emptyState.textContent = 'No chats in this project yet.';
+      emptyState.textContent = 'No chats yet.';
       children.appendChild(emptyState);
     } else {
       for (const chat of projectChats) {
@@ -1589,25 +1585,7 @@ function renderSidebar() {
         const updatedAt = document.createElement('span');
         updatedAt.className = 'chat-item__meta-item';
         updatedAt.textContent = formatSimpleDate(chat.updatedAt);
-        const injectionSummary = formatSidebarInjectionSummary(getChatInjectionSummary(chat));
-        const checkpointSummary = formatSidebarCheckpointSummary(getChatCheckpointSummary(chat));
         chatMeta.append(messageCount, updatedAt);
-
-        if (injectionSummary) {
-          const injectionMeta = document.createElement('span');
-          injectionMeta.className = 'chat-item__meta-item chat-item__meta-item--context-pack';
-          injectionMeta.textContent = injectionSummary;
-          injectionMeta.title = `Context pack history: ${injectionSummary}`;
-          chatMeta.appendChild(injectionMeta);
-        }
-
-        if (checkpointSummary) {
-          const checkpointMeta = document.createElement('span');
-          checkpointMeta.className = 'chat-item__meta-item chat-item__meta-item--checkpoint';
-          checkpointMeta.textContent = checkpointSummary;
-          checkpointMeta.title = `Checkpoint history: ${checkpointSummary}`;
-          chatMeta.appendChild(checkpointMeta);
-        }
 
         chatButton.append(chatTitleRow, chatMeta);
 

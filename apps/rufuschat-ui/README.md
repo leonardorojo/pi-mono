@@ -1,6 +1,6 @@
-# RufusChat UI skeleton (Fase 10E)
+# RufusChat UI product shell
 
-This app is the ChatGPT-like UI skeleton for RufusChat.
+This app is the ChatGPT-like product shell for RufusChat.
 
 It is intentionally local-only and does not connect to the LLM, OpenAI, Hermes execution, or the RCK backend yet. The goal of 10A is to lock the final product shape before wiring any real automation.
 
@@ -25,7 +25,7 @@ It is intentionally local-only and does not connect to the LLM, OpenAI, Hermes e
 - Future work should target `apps/rufuschat-ui` unless explicitly doing prototype maintenance.
 
 What is included
-- Left sidebar with Projects / Chats structure
+- Left sidebar with clearer Projects / Chats hierarchy and local data tools
 - Center chat rail with header, message history, and composer
 - Local message handling for plain text input
 - Placeholder slash commands: /checkpoint, /inject, /status, /hermes, /trace, /help

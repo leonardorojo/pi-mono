@@ -391,3 +391,16 @@ Do not implement yet:
 ## Recommended next step
 
 Start with 15B — Sidebar hierarchy polish. The sidebar is currently the strongest signal that the shell feels like an internal workspace rather than a chat-first product, so reducing that noise should improve the overall first impression fastest.
+
+## Phase 15B follow-up
+
+Addressed in 15B:
+- Sidebar hierarchy is clearer: the shell now separates app identity, create actions, Projects, and local data more explicitly.
+- Project and chat rows are lighter: the project row no longer repeats chat-count metadata, and chat rows no longer surface extra injection/checkpoint badges in the sidebar.
+- Sidebar copy is more product-oriented: ProductState phrasing was reduced in the visible shell.
+- Local data tools are still available, but they read as a lower-priority section.
+
+Still pending for 15C / 15D / 15F:
+- 15C: simplify chat header status so it feels less like telemetry.
+- 15D: keep message rendering calm when /inject and /checkpoint results accumulate.
+- 15F: contain dev tools even further if needed, especially if local data actions still feel too prominent.

@@ -1513,13 +1513,6 @@ function renderSidebar() {
     titleText.textContent = project.name;
     titleRow.appendChild(titleText);
 
-    if (project.id === state.currentProjectId) {
-      const badge = document.createElement('span');
-      badge.className = 'project-group__badge';
-      badge.textContent = 'Active';
-      titleRow.appendChild(badge);
-    }
-
     titleButton.append(titleRow);
 
     const projectMenuButton = document.createElement('button');
@@ -1569,13 +1562,6 @@ function renderSidebar() {
         chatTitleText.className = 'chat-item__title-text';
         chatTitleText.textContent = chat.title;
         chatTitleRow.appendChild(chatTitleText);
-
-        if (project.id === state.currentProjectId && chat.id === state.currentChatId) {
-          const badge = document.createElement('span');
-          badge.className = 'chat-item__badge';
-          badge.textContent = 'Selected';
-          chatTitleRow.appendChild(badge);
-        }
 
         const chatMeta = document.createElement('span');
         chatMeta.className = 'chat-item__meta';

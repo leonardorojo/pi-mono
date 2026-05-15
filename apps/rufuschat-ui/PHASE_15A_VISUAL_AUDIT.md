@@ -404,3 +404,14 @@ Still pending for 15C / 15D / 15F:
 - 15C: simplify chat header status so it feels less like telemetry.
 - 15D: keep message rendering calm when /inject and /checkpoint results accumulate.
 - 15F: contain dev tools even further if needed, especially if local data actions still feel too prominent.
+
+## Phase 15B.2 follow-up
+
+Addressed in 15B.2:
+- Sidebar density was reduced further by removing the explicit ACTIVE / SELECTED badges from project and chat rows.
+- Project and chat rows were softened again so they read more like lightweight list items and less like cards.
+- The local data footer was made more discreet and shorter so it does not compete with the project/chat hierarchy.
+
+Still pending for 15C:
+- chat header and status polish, including Memory, Summary, and RCK trace presentation.
+- any further simplification of the trace chip and header identity treatment.

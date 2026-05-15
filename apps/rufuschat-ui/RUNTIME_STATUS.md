@@ -66,6 +66,17 @@ Today that provider is still a local placeholder:
 
 Tomorrow that same boundary can compose real providers behind the same product-friendly labels.
 
+## Schema and normalization boundary
+
+RuntimeStatus is normalized before it is exposed to the UI.
+
+That means:
+
+- future providers can return partial objects
+- missing or non-string fields fall back to safe defaults
+- the UI still receives a complete product-friendly contract
+- no internal metadata, paths, or raw evidence are exposed through the shape
+
 ## Why it does not expose real RCK yet
 
 Fase 16A keeps the boundary intentionally minimal.

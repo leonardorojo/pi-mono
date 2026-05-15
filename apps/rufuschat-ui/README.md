@@ -76,6 +76,14 @@ Fase 11A defines the Product Data boundary only.
 - 11A does **not** implement runtime persistence
 - 11B implements the backend-local JSON store; 11C hydrates/saves the UI from that store
 
+## Runtime status
+
+- Endpoint: `GET /api/runtime-status`
+- Shape: `RuntimeStatus v0` with product-friendly labels for runtime, memory, context, trace, and LLM
+- Current implementation: safe local placeholder from the backend
+- The UI consumes the labels directly and falls back locally if the endpoint is unavailable
+- The endpoint does not expose RCK internals, `.pi/rck`, raw evidence, or internal paths
+
 Run it
 From the repo root:
 

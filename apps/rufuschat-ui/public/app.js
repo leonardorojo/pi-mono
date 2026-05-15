@@ -53,7 +53,7 @@ const tracePlaceholder = {
 const contextPackCandidateSummaryLines = [
   'Current chat context placeholder',
   'ProductState metadata placeholder',
-  'No RCK evidence included',
+  'No internal evidence included',
 ];
 const contextPackCandidateSafetyLines = ['Placeholder only', 'No raw evidence included', 'No .pi/rck read'];
 const contextPackInjectionHistoryTitle = 'Context pack candidate';
@@ -61,18 +61,83 @@ const contextPackInjectionHistorySourceKind = 'placeholder';
 const contextPackInjectedMessage = 'Context pack injected.';
 const contextPackCancelledMessage = 'Context pack candidate cancelled.';
 const localIntroMessage =
-  'This chat is local. LLM and semantic memory are not connected yet. RCK tracking happens only when you confirm slash actions.';
+  'This chat is local. LLM and semantic memory are not connected yet. Trace tracking happens only when you confirm slash actions.';
 const newChatAssistantMessage =
   'New local chat created. LLM and semantic memory are not connected yet.';
 const traceLinkedPlaceholderMessage =
-  'Trace linking is not connected yet. This chat is currently not linked to an RCK Trace. Future versions will link chats to RCK Core Trace DAGs.';
+  'Trace linking is not connected yet. This chat is currently not linked to a trace. Future versions will link chats to the trace system.';
 const traceLinkPlaceholderMessage =
-  'Trace linking is a placeholder in 10E. No RCK trace was created or linked.';
+  'Trace linking is a placeholder in 10E. No trace was created or linked.';
+const runtimeStatusEndpoint = '/api/runtime-status';
+
+function createFallbackRuntimeStatus() {
+  return {
+    version: 1,
+    runtime: {
+      mode: 'local',
+      label: 'Local session',
+    },
+    memory: {
+      status: 'off',
+      label: 'Memory off',
+    },
+    context: {
+      status: 'off',
+      label: 'Context off',
+    },
+    trace: {
+      status: 'not_linked',
+      label: 'Trace not linked',
+    },
+    llm: {
+      status: 'off',
+      label: 'LLM off',
+    },
+  };
+}
+
+function normalizeRuntimeStatus(candidate) {
+  if (!isPlainObject(candidate) || candidate.version !== 1) {
+    return null;
+  }
+
+  const runtime = isPlainObject(candidate.runtime) ? candidate.runtime : {};
+  const memory = isPlainObject(candidate.memory) ? candidate.memory : {};
+  const context = isPlainObject(candidate.context) ? candidate.context : {};
+  const trace = isPlainObject(candidate.trace) ? candidate.trace : {};
+  const llm = isPlainObject(candidate.llm) ? candidate.llm : {};
+
+  return {
+    version: 1,
+    runtime: {
+      mode: typeof runtime.mode === 'string' && runtime.mode.trim() ? runtime.mode.trim() : 'local',
+      label: typeof runtime.label === 'string' && runtime.label.trim() ? runtime.label.trim() : 'Local session',
+    },
+    memory: {
+      status: typeof memory.status === 'string' && memory.status.trim() ? memory.status.trim() : 'off',
+      label: typeof memory.label === 'string' && memory.label.trim() ? memory.label.trim() : 'Memory off',
+    },
+    context: {
+      status: typeof context.status === 'string' && context.status.trim() ? context.status.trim() : 'off',
+      label: typeof context.label === 'string' && context.label.trim() ? context.label.trim() : 'Context off',
+    },
+    trace: {
+      status: typeof trace.status === 'string' && trace.status.trim() ? trace.status.trim() : 'not_linked',
+      label: typeof trace.label === 'string' && trace.label.trim() ? trace.label.trim() : 'Trace not linked',
+    },
+    llm: {
+      status: typeof llm.status === 'string' && llm.status.trim() ? llm.status.trim() : 'off',
+      label: typeof llm.label === 'string' && llm.label.trim() ? llm.label.trim() : 'LLM off',
+    },
+  };
+}
+
+let runtimeStatus = createFallbackRuntimeStatus();
 const commandCatalog = [
   {
     name: '/status',
     kind: 'read-only',
-    description: 'Check safe project/RCK status.',
+    description: 'Check runtime status.',
     insertText: '/status',
     usage: '/status',
   },
@@ -181,7 +246,7 @@ function createChatCheckpointHistoryItem(checkpointId, label, sourceMessageId = 
     checkpointId,
     status: 'created',
     label,
-    summary: 'Product checkpoint only. No RCK anchor was created. No raw evidence stored.',
+    summary: 'Product checkpoint only. No internal anchor was created. No raw evidence stored.',
     createdAt: timestamp,
     updatedAt: timestamp,
     sourceMessageId,
@@ -262,7 +327,7 @@ function createCheckpointResultContent(label) {
   return [
     'Checkpoint created.',
     `Label: ${label}`,
-    'Product checkpoint only. No RCK anchor was created.',
+    'Product checkpoint only. No internal anchor was created.',
     'No raw evidence stored.',
   ].join('\n');
 }
@@ -936,7 +1001,7 @@ function sanitizeCheckpointHistoryItem(item) {
     checkpointId,
     status,
     label: typeof item.label === 'string' ? item.label : 'Untitled checkpoint',
-    summary: typeof item.summary === 'string' ? item.summary : 'Product checkpoint only. No RCK anchor was created. No raw evidence stored.',
+    summary: typeof item.summary === 'string' ? item.summary : 'Product checkpoint only. No internal anchor was created. No raw evidence stored.',
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : nowIso(),
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : typeof item.createdAt === 'string' ? item.createdAt : nowIso(),
     sourceMessageId: item.sourceMessageId === null || typeof item.sourceMessageId === 'string' ? item.sourceMessageId : null,
@@ -1269,6 +1334,20 @@ async function hydrateProductState() {
   }
 }
 
+async function hydrateRuntimeStatus() {
+  try {
+    const data = await getJson(runtimeStatusEndpoint);
+    const nextRuntimeStatus = normalizeRuntimeStatus(data);
+
+    if (nextRuntimeStatus) {
+      runtimeStatus = nextRuntimeStatus;
+      renderHeader();
+    }
+  } catch {
+    runtimeStatus = createFallbackRuntimeStatus();
+  }
+}
+
 function getProjectById(projectId) {
   return state.projects.find((project) => project.id === projectId) ?? null;
 }
@@ -1425,7 +1504,10 @@ function setBusy(isBusy, label = 'Running...') {
 function renderHeader() {
   const project = getCurrentProject();
   const chat = getCurrentChat();
-  const headerContextSummary = getHeaderContextSummary(chat);
+  const fallbackRuntimeStatus = createFallbackRuntimeStatus();
+  const memoryStatus = runtimeStatus.memory ?? fallbackRuntimeStatus.memory;
+  const contextStatus = runtimeStatus.context ?? fallbackRuntimeStatus.context;
+  const traceStatus = runtimeStatus.trace ?? fallbackRuntimeStatus.trace;
 
   currentProjectEl.textContent = project?.name ?? '—';
   currentProjectEl.title = 'Current project';
@@ -1433,18 +1515,21 @@ function renderHeader() {
   currentChatEl.title = 'Current chat';
 
   if (memoryStatusEl) {
-    memoryStatusEl.textContent = 'Memory off';
-    memoryStatusEl.classList.add('chat-header__chip--muted');
+    memoryStatusEl.textContent = memoryStatus.label;
+    memoryStatusEl.classList.toggle('chat-header__chip--muted', memoryStatus.status === 'off');
+    memoryStatusEl.classList.toggle('chat-header__chip--accent', memoryStatus.status !== 'off');
   }
 
   if (summaryStatusEl) {
-    summaryStatusEl.textContent = headerContextSummary;
-    summaryStatusEl.classList.add('chat-header__chip--accent');
+    summaryStatusEl.textContent = contextStatus.label;
+    summaryStatusEl.classList.toggle('chat-header__chip--muted', contextStatus.status === 'off');
+    summaryStatusEl.classList.toggle('chat-header__chip--accent', contextStatus.status !== 'off');
   }
 
   if (rckTraceStatusEl) {
-    rckTraceStatusEl.textContent = 'Trace not linked';
-    rckTraceStatusEl.classList.add('chat-header__chip--muted');
+    rckTraceStatusEl.textContent = traceStatus.label;
+    rckTraceStatusEl.classList.toggle('chat-header__chip--muted', traceStatus.status === 'not_linked');
+    rckTraceStatusEl.classList.toggle('chat-header__chip--accent', traceStatus.status !== 'not_linked');
   }
 
   if (traceChipEl) {
@@ -2307,21 +2392,19 @@ async function confirmAction(message) {
   return openConfirm(message);
 }
 
-async function runStatus(targetChatId) {
-  setBusy(true);
-  try {
-    const data = await getJson('/api/status');
-    appendMessageToChat(targetChatId, 'assistant', data.message ?? 'Status checked. Health: OK.', 'normal', { kind: 'command-result' });
-  } catch (error) {
-    appendMessageToChat(
-      targetChatId,
-      'assistant',
-      `Status request failed. ${error instanceof Error ? error.message : 'Unknown error'}.`,
-      'error',
-    );
-  } finally {
-    setBusy(false);
-  }
+function runStatus(targetChatId) {
+  const runtimeLabel = runtimeStatus.runtime?.label ?? 'Local session';
+  const memoryLabel = runtimeStatus.memory?.label ?? 'Memory off';
+  const contextLabel = runtimeStatus.context?.label ?? 'Context off';
+  const traceLabel = runtimeStatus.trace?.label ?? 'Trace not linked';
+
+  appendMessageToChat(
+    targetChatId,
+    'assistant',
+    `${runtimeLabel}: ${memoryLabel} · ${contextLabel} · ${traceLabel}.`,
+    'normal',
+    { kind: 'command-result' },
+  );
 }
 
 async function runCheckpoint(targetChatId, label, sourceMessage = null) {
@@ -2339,7 +2422,7 @@ async function runCheckpoint(targetChatId, label, sourceMessage = null) {
   const sourceMessageId = typeof sourceMessage?.id === 'string' ? sourceMessage.id : null;
   const historyItem = upsertChatCheckpointHistoryItem(chat, checkpointId, {
     label,
-    summary: 'Product checkpoint only. No RCK anchor was created. No raw evidence stored.',
+    summary: 'Product checkpoint only. No internal anchor was created. No raw evidence stored.',
     sourceMessageId,
     sourceKind: 'product',
     safeMetadata: {
@@ -2798,6 +2881,7 @@ async function bootstrapApp() {
   setBusy(false);
   render();
   renderSlashMenu();
+  await hydrateRuntimeStatus();
   composerInput.focus();
   await hydrateProductState();
 }

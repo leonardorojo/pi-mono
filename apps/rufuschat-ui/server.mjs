@@ -119,6 +119,32 @@ function buildStatusMessage() {
   return `Status checked. Health: OK. Current trace: ${sessionState.traceId}. Safe context: ${sessionState.safeContextAvailable ? 'available' : 'no'}.`;
 }
 
+function buildRuntimeStatus() {
+  return {
+    version: 1,
+    runtime: {
+      mode: 'local',
+      label: 'Local session',
+    },
+    memory: {
+      status: 'off',
+      label: 'Memory off',
+    },
+    context: {
+      status: 'off',
+      label: 'Context off',
+    },
+    trace: {
+      status: 'not_linked',
+      label: 'Trace not linked',
+    },
+    llm: {
+      status: 'off',
+      label: 'LLM off',
+    },
+  };
+}
+
 function buildSafeContextSummary() {
   const parts = [];
 
@@ -157,6 +183,16 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === '/health') {
     sendJson(res, 200, { ok: true, app: 'rufuschat-ui', mode: 'skeleton' });
+    return;
+  }
+
+  if (url.pathname === '/api/runtime-status') {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+
+    sendJson(res, 200, buildRuntimeStatus());
     return;
   }
 

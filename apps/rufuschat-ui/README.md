@@ -24,6 +24,7 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - The browser still uses the configured Pi provider/model; no direct browser-to-LLM calls are introduced.
 - `/api/chat/complete` remains available as the non-streaming fallback path.
 - The UI persists the final assistant message at the end of the stream, not on every token.
+- While the assistant is still thinking, the transient placeholder stays compact and animated; it disappears as soon as the first streamed text arrives.
 - Slash command results are rendered as compact product events so conversation stays visually primary.
 - Cancel is still out of scope for this phase.
 

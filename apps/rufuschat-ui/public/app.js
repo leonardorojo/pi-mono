@@ -2067,6 +2067,13 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
     body.classList.add('message__body--command-result');
   }
 
+  if (kind === 'placeholder' && role === 'assistant' && text === chatThinkingMessage) {
+    messageEl.classList.add('message--thinking');
+    body.classList.add('message__body--thinking');
+    body.setAttribute('aria-live', 'polite');
+    body.appendChild(createThinkingIndicatorElement());
+  }
+
   if (role === 'user' && isSlashCommandText(text)) {
     body.classList.add('message__body--slash-command');
   }
@@ -2381,6 +2388,29 @@ function getChatCompletionMessages(chat, limit = chatCompletionContextLimit) {
     role: message.role,
     content: typeof message.content === 'string' ? message.content : typeof message.text === 'string' ? message.text : '',
   }));
+}
+
+function createThinkingIndicatorElement() {
+  const indicator = document.createElement('span');
+  indicator.className = 'thinking-indicator';
+  indicator.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.className = 'thinking-indicator__label';
+  label.textContent = 'Thinking';
+
+  const dots = document.createElement('span');
+  dots.className = 'thinking-indicator__dots';
+
+  for (let index = 0; index < 3; index += 1) {
+    const dot = document.createElement('span');
+    dot.className = 'thinking-indicator__dot';
+    dot.style.animationDelay = `${index * 0.16}s`;
+    dots.appendChild(dot);
+  }
+
+  indicator.append(label, dots);
+  return indicator;
 }
 
 function createChatCompletionPlaceholderMessage() {

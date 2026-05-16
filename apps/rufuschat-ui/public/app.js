@@ -2067,7 +2067,8 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
     body.classList.add('message__body--command-result');
   }
 
-  if (kind === 'placeholder' && role === 'assistant' && text === chatThinkingMessage) {
+  const isThinkingPlaceholder = kind === 'placeholder' && role === 'assistant' && text === chatThinkingMessage;
+  if (isThinkingPlaceholder) {
     messageEl.classList.add('message--thinking');
     body.classList.add('message__body--thinking');
     body.setAttribute('aria-live', 'polite');
@@ -2101,7 +2102,7 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
     content.className = 'message__context-pack-content';
     content.textContent = text;
     body.appendChild(content);
-  } else {
+  } else if (!isThinkingPlaceholder) {
     if (checkpointId && role === 'assistant' && kind === 'command-result') {
       const checkpointContent = document.createElement('div');
       checkpointContent.className = 'message__checkpoint-content';

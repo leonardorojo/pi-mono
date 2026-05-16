@@ -1160,6 +1160,10 @@ textarea:disabled {
   gap: 12px;
 }
 
+button[hidden] {
+  display: none !important;
+}
+
 .composer__hint {
   color: var(--muted-strong);
   font-size: 0.8rem;

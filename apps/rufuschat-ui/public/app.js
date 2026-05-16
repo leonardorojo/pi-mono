@@ -62,9 +62,9 @@ const contextPackInjectionHistorySourceKind = 'placeholder';
 const contextPackInjectedMessage = 'Context pack injected';
 const contextPackCancelledMessage = 'Context candidate cancelled';
 const localIntroMessage =
-  'This chat is local. LLM and semantic memory are not connected yet. Trace tracking happens only when you confirm slash actions.';
+  'This chat is local. Trace tracking happens only when you confirm slash actions.';
 const newChatAssistantMessage =
-  'New local chat created. LLM and semantic memory are not connected yet.';
+  'New chat ready. Start a conversation or type / for commands.';
 
 function isSlashCommandText(text) {
   return typeof text === 'string' && text.trim().startsWith('/');
@@ -2690,13 +2690,28 @@ function ensureChatCancelButton() {
   return chatCancelButton;
 }
 
+function getActiveChatCompletionRun() {
+  const run = activeChatCompletionRun;
+  if (!run) {
+    return null;
+  }
+
+  const isActive = !run.cancelled && !run.completed && !run.finalized && !run.controller.signal.aborted;
+  if (!isActive) {
+    activeChatCompletionRun = null;
+    return null;
+  }
+
+  return run;
+}
+
 function updateChatCompletionControls() {
   const button = ensureChatCancelButton();
   if (!button) {
     return;
   }
 
-  const isStreaming = Boolean(activeChatCompletionRun);
+  const isStreaming = Boolean(getActiveChatCompletionRun());
   button.hidden = !isStreaming;
   button.disabled = !isStreaming;
 }

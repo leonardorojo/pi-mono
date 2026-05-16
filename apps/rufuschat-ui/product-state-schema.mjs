@@ -36,6 +36,10 @@ function normalizeTimestamp(value, fallback) {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function normalizeRepositoryPath(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function defaultLinkedRckTrace() {
   return {
     status: 'not-linked',
@@ -407,7 +411,8 @@ function normalizeProject(input, projectIndex, now, issues) {
     return {
       id: `project-${projectIndex}`,
       name: 'New project',
-      repoPath: null,
+      repositoryPath: '',
+      repoPath: '',
       chats: [],
       createdAt: now,
       updatedAt: now,
@@ -430,9 +435,15 @@ function normalizeProject(input, projectIndex, now, issues) {
     project.name = project.name.trim();
   }
 
+  const rawRepositoryPath = project.repositoryPath !== undefined ? project.repositoryPath : project.repoPath;
+  if (rawRepositoryPath !== undefined && rawRepositoryPath !== null && typeof rawRepositoryPath !== 'string') {
+    issues.push(`${pathLabel}.repositoryPath must be a string or null.`);
+    project.repositoryPath = '';
+  }
+
   if (project.repoPath !== undefined && project.repoPath !== null && typeof project.repoPath !== 'string') {
     issues.push(`${pathLabel}.repoPath must be a string or null.`);
-    project.repoPath = null;
+    project.repoPath = '';
   }
 
   if (!Array.isArray(project.chats)) {
@@ -442,7 +453,8 @@ function normalizeProject(input, projectIndex, now, issues) {
 
   project.createdAt = normalizeTimestamp(project.createdAt, now);
   project.updatedAt = normalizeTimestamp(project.updatedAt, now);
-  project.repoPath = project.repoPath === undefined ? null : project.repoPath;
+  project.repositoryPath = normalizeRepositoryPath(rawRepositoryPath);
+  project.repoPath = project.repositoryPath;
   project.chats = project.chats.map((chat, chatIndex) => normalizeChat(chat, projectIndex, chatIndex, now, issues, project.id));
   return project;
 }
@@ -505,7 +517,8 @@ export function createProductStateSeed(now = nowIsoString()) {
       {
         id: projectId,
         name: 'RufusChat',
-        repoPath: null,
+        repositoryPath: '',
+        repoPath: '',
         chats: [
           {
             id: chatId,

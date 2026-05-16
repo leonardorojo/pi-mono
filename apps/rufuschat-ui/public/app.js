@@ -17,6 +17,12 @@ const confirmModal = document.getElementById('confirm-modal');
 const confirmDescription = document.getElementById('confirm-modal-description');
 const confirmCancelButton = document.getElementById('confirm-modal-cancel');
 const confirmConfirmButton = document.getElementById('confirm-modal-confirm');
+const createProjectModal = document.getElementById('create-project-modal');
+const createProjectTitleInput = document.getElementById('create-project-name');
+const createProjectRepositoryPathInput = document.getElementById('create-project-repository-path');
+const createProjectError = document.getElementById('create-project-error');
+const createProjectCancelButton = document.getElementById('create-project-cancel');
+const createProjectForm = document.getElementById('create-project-form');
 const projectTreeEl = document.getElementById('project-tree');
 const slashMenuEl = document.getElementById('slash-menu');
 const newProjectButton = document.getElementById('new-project-button');
@@ -664,6 +670,30 @@ function promptForName(message, defaultValue = '') {
   return value || null;
 }
 
+function normalizeRepositoryPath(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function truncateText(value, maxLength = 48) {
+  if (typeof value !== 'string' || value.length <= maxLength) {
+    return value;
+  }
+
+  if (maxLength <= 1) {
+    return '…';
+  }
+
+  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function formatProjectRepositoryPath(path) {
+  if (typeof path !== 'string' || path.trim().length === 0) {
+    return '';
+  }
+
+  return `repo · ${truncateText(path.trim(), 42)}`;
+}
+
 function formatSimpleDate(iso) {
   if (typeof iso !== 'string' || iso.length === 0) {
     return '—';
@@ -747,11 +777,13 @@ function createChat(title, messages = [], overrides = {}) {
 function createProject(name, chats = [], overrides = {}) {
   const timestamp = overrides.createdAt ?? nowIso();
   const projectId = overrides.id ?? makeId('project');
+  const repositoryPath = normalizeRepositoryPath(overrides.repositoryPath ?? overrides.repoPath ?? '');
 
   return {
+    ...overrides,
     id: projectId,
-    name,
-    repoPath: overrides.repoPath ?? null,
+    name: typeof name === 'string' ? name.trim() : name,
+    repositoryPath,
     chats: chats.map((chat) =>
       createChat(chat.title ?? 'New chat', chat.messages ?? [], {
         ...chat,
@@ -761,7 +793,6 @@ function createProject(name, chats = [], overrides = {}) {
     ),
     createdAt: timestamp,
     updatedAt: overrides.updatedAt ?? timestamp,
-    ...overrides,
   };
 }
 
@@ -1137,10 +1168,11 @@ function uiChatFromProductChat(chat, projectIdFallback) {
 function uiProjectFromProductProject(project) {
   const now = nowIso();
   const projectId = typeof project?.id === 'string' ? project.id : makeId('project');
+  const repositoryPath = normalizeRepositoryPath(project?.repositoryPath ?? project?.repoPath ?? '');
 
   return createProject(project?.name ?? 'New project', Array.isArray(project?.chats) ? project.chats.map((chat) => uiChatFromProductChat(chat, projectId)) : [], {
     id: projectId,
-    repoPath: project?.repoPath ?? null,
+    repositoryPath,
     createdAt: typeof project?.createdAt === 'string' ? project.createdAt : now,
     updatedAt: typeof project?.updatedAt === 'string' ? project.updatedAt : now,
   });
@@ -1170,7 +1202,7 @@ function buildProductStatePayload() {
     projects: state.projects.map((project) => ({
       id: project.id,
       name: project.name,
-      repoPath: project.repoPath ?? null,
+      repositoryPath: normalizeRepositoryPath(project.repositoryPath ?? project.repoPath ?? ''),
       chats: project.chats.map((chat) => ({
         id: chat.id,
         projectId: chat.projectId ?? project.id,
@@ -1635,6 +1667,13 @@ function renderSidebar() {
 
     titleButton.append(titleRow);
 
+    const projectMeta = document.createElement('span');
+    projectMeta.className = 'project-group__meta';
+    projectMeta.textContent = formatProjectRepositoryPath(project.repositoryPath);
+    projectMeta.title = typeof project.repositoryPath === 'string' ? project.repositoryPath : '';
+    projectMeta.hidden = !projectMeta.textContent;
+
+    titleButton.append(projectMeta);
     const projectMenuButton = document.createElement('button');
     projectMenuButton.type = 'button';
     projectMenuButton.className = 'project-group__menu';
@@ -1870,12 +1909,96 @@ function getUniqueChatTitle(project, baseTitle = 'New chat') {
   return `${baseTitle} ${suffix}`;
 }
 
-function createProjectWithInitialChat(name) {
-  return createProject(name, [createEmptyChat('New chat')]);
+function createProjectWithInitialChat(name, repositoryPath = '') {
+  return createProject(name, [createEmptyChat('New chat')], { repositoryPath });
 }
 
 function selectProjectAndChat(projectId, chatId = null) {
   setCurrentSelection(projectId, chatId ?? undefined);
+}
+
+let createProjectDialogResolver = null;
+
+function openCreateProjectDialog() {
+  if (!createProjectModal || !createProjectForm || !createProjectTitleInput || !createProjectRepositoryPathInput) {
+    return Promise.resolve(null);
+  }
+
+  if (createProjectDialogResolver) {
+    return Promise.resolve(null);
+  }
+
+  hideContextMenus();
+  createProjectForm.reset();
+  createProjectError.hidden = true;
+  createProjectError.textContent = '';
+  createProjectTitleInput.removeAttribute('aria-invalid');
+  createProjectModal.hidden = false;
+  createProjectModal.classList.add('is-open');
+  createProjectTitleInput.focus();
+
+  return new Promise((resolve) => {
+    createProjectDialogResolver = resolve;
+  });
+}
+
+function closeCreateProjectDialog(result = null) {
+  const resolve = createProjectDialogResolver;
+  createProjectDialogResolver = null;
+
+  if (createProjectModal) {
+    createProjectModal.classList.remove('is-open');
+    createProjectModal.hidden = true;
+  }
+
+  if (createProjectError) {
+    createProjectError.hidden = true;
+    createProjectError.textContent = '';
+  }
+
+  if (createProjectTitleInput) {
+    createProjectTitleInput.removeAttribute('aria-invalid');
+  }
+
+  if (typeof resolve === 'function') {
+    resolve(result);
+  }
+
+  if (newProjectButton instanceof HTMLButtonElement) {
+    newProjectButton.focus();
+  }
+}
+
+function submitCreateProjectDialog() {
+  if (!createProjectTitleInput || !createProjectRepositoryPathInput) {
+    return;
+  }
+
+  const projectName = createProjectTitleInput.value.trim();
+  const repositoryPath = normalizeRepositoryPath(createProjectRepositoryPathInput.value);
+
+  if (!projectName) {
+    createProjectError.textContent = 'Project name is required.';
+    createProjectError.hidden = false;
+    createProjectTitleInput.setAttribute('aria-invalid', 'true');
+    createProjectTitleInput.focus();
+    return;
+  }
+
+  const uniqueName = getUniqueProjectName(projectName);
+  closeCreateProjectDialog({ projectName: uniqueName, repositoryPath });
+}
+
+async function createNewProject() {
+  const details = await openCreateProjectDialog();
+  if (!details) {
+    return;
+  }
+
+  const project = createProjectWithInitialChat(details.projectName, details.repositoryPath);
+  state.projects.push(project);
+  markProductStateChanged();
+  selectProjectAndChat(project.id, project.chats[0]?.id ?? null);
 }
 
 function renameProject(projectId) {
@@ -1895,12 +2018,6 @@ function renameProject(projectId) {
   render();
 }
 
-function createNewProject() {
-  const name = getUniqueProjectName();
-  const project = createProjectWithInitialChat(name);
-  state.projects.push(project);
-  selectProjectAndChat(project.id, project.chats[0]?.id ?? null);
-}
 
 function createNewChatForProject(projectId) {
   const project = getProjectById(projectId);
@@ -3443,14 +3560,39 @@ confirmModal.addEventListener('click', (event) => {
   }
 });
 
+if (createProjectModal) {
+  createProjectModal.addEventListener('click', (event) => {
+    if (event.target instanceof HTMLElement && event.target.hasAttribute('data-create-project-cancel')) {
+      closeCreateProjectDialog(null);
+    }
+  });
+}
+
+if (createProjectCancelButton) {
+  createProjectCancelButton.addEventListener('click', () => {
+    closeCreateProjectDialog(null);
+  });
+}
+
+if (createProjectForm) {
+  createProjectForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    submitCreateProjectDialog();
+  });
+}
+
 document.addEventListener('keydown', (event) => {
-  if (!confirmResolver) {
+  if (confirmResolver) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeConfirm(false);
+    }
     return;
   }
 
-  if (event.key === 'Escape') {
+  if (createProjectDialogResolver && event.key === 'Escape') {
     event.preventDefault();
-    closeConfirm(false);
+    closeCreateProjectDialog(null);
   }
 });
 

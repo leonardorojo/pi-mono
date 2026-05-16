@@ -86,6 +86,37 @@
     <div class="context-menu" id="project-context-menu" hidden aria-label="Project actions"></div>
     <div class="context-menu" id="chat-context-menu" hidden aria-label="Chat actions"></div>
 
+    <div class="create-project-modal" id="create-project-modal" hidden>
+      <div class="create-project-modal__backdrop" data-create-project-cancel></div>
+      <section class="create-project-modal__panel" role="dialog" aria-modal="true" aria-labelledby="create-project-modal-title" aria-describedby="create-project-modal-description">
+        <form class="create-project-modal__form" id="create-project-form" novalidate>
+          <div>
+            <h2 id="create-project-modal-title">Create project</h2>
+            <p id="create-project-modal-description">Repository path is optional for now. RufusChat will not read files automatically.</p>
+          </div>
+
+          <label class="create-project-modal__field" for="create-project-name">
+            <span>Project name</span>
+            <input id="create-project-name" name="projectName" type="text" autocomplete="off" spellcheck="false" required />
+          </label>
+
+          <p class="create-project-modal__error" id="create-project-error" hidden></p>
+
+          <label class="create-project-modal__field" for="create-project-repository-path">
+            <span>Repository path optional</span>
+            <input id="create-project-repository-path" name="repositoryPath" type="text" autocomplete="off" spellcheck="false" placeholder="/home/rufus/DEV/..." />
+          </label>
+
+          <p class="create-project-modal__helper">Repository path is optional for now. RufusChat will not read files automatically.</p>
+
+          <div class="create-project-modal__actions">
+            <button class="button button--ghost" type="button" id="create-project-cancel">Cancel</button>
+            <button class="button button--primary" type="submit">Create</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
     <div class="confirm-modal" id="confirm-modal" hidden>
       <div class="confirm-modal__backdrop" data-confirm-cancel></div>
       <section class="confirm-modal__panel" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-description">

@@ -142,7 +142,9 @@ Implementation notes
 - `/help` lists the current command catalog
 - The slash menu is only a discovery aid and does not run anything by itself
 - No raw JSON, stdout/stderr, or evidence dumps are shown in the chat UI
-- New project is the only global create action; new chat lives under the active project
+- New project now prompts for project name and optional repository path
+- Repository path is metadata only for now
+- RufusChat does not read files automatically yet
 - Chats are never created without a project context
 
 Next steps

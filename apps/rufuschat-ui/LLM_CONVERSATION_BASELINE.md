@@ -4,6 +4,8 @@
 
 Baseline conversacional simple para RufusChat usando el LLM provider existente de Pi Agent.
 
+Phase 18C keeps slash-command results as compact product events so the user/assistant conversation remains the primary reading path.
+
 ## Existing Pi LLM provider
 
 ### Contract entrypoint

@@ -55,14 +55,36 @@ const contextPackCandidateSummaryLines = [
   'No internal evidence included',
 ];
 const contextPackCandidateSafetyLines = ['Placeholder only', 'No raw evidence included', 'No .pi/rck read'];
-const contextPackInjectionHistoryTitle = 'Context pack candidate';
+const contextPackInjectionHistoryTitle = 'Context candidate';
 const contextPackInjectionHistorySourceKind = 'placeholder';
-const contextPackInjectedMessage = 'Context pack injected.';
-const contextPackCancelledMessage = 'Context pack candidate cancelled.';
+const contextPackInjectedMessage = 'Context pack injected';
+const contextPackCancelledMessage = 'Context candidate cancelled';
 const localIntroMessage =
   'This chat is local. LLM and semantic memory are not connected yet. Trace tracking happens only when you confirm slash actions.';
 const newChatAssistantMessage =
   'New local chat created. LLM and semantic memory are not connected yet.';
+
+function isSlashCommandText(text) {
+  return typeof text === 'string' && text.trim().startsWith('/');
+}
+
+function getFirstLine(text) {
+  return typeof text === 'string' ? text.split('\n')[0].trim() : '';
+}
+
+function getNonEmptyLines(text) {
+  return typeof text === 'string'
+    ? text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : [];
+}
+
+function formatCompactMetadata(items) {
+  return items.filter(Boolean).join(' · ');
+}
+
 const chatCompletionEndpoint = '/api/chat/complete';
 const chatStreamingEndpoint = '/api/chat/stream';
 const chatCompletionContextLimit = 12;
@@ -206,7 +228,10 @@ function makeContextPackId() {
 }
 
 function isContextPackCandidateContent(content) {
-  return typeof content === 'string' && content.startsWith('Context pack candidate prepared.');
+  return (
+    typeof content === 'string' &&
+    (content.startsWith('Context candidate prepared') || content.startsWith('Context pack candidate prepared.'))
+  );
 }
 
 function isContextPackInjectedContent(content) {
@@ -330,10 +355,8 @@ function createCheckpointMessageBadge() {
 
 function createCheckpointResultContent(label) {
   return [
-    'Checkpoint created.',
-    `Label: ${label}`,
-    'Product checkpoint only. No internal anchor was created.',
-    'No raw evidence stored.',
+    `Checkpoint created · ${label}`,
+    'Product checkpoint only · No evidence stored',
   ].join('\n');
 }
 
@@ -561,22 +584,20 @@ function getContextPackLifecycleByChat(chat) {
   return lifecycle;
 }
 
-function createContextPackCandidateContent(contextPackId) {
+function createContextPackCandidateContent(_contextPackId) {
   return [
-    'Context pack candidate prepared.',
-    'Summary:',
-    ...contextPackCandidateSummaryLines.map((line) => `- ${line}`),
-    '',
-    'Placeholder only. No raw evidence included. No .pi/rck read.',
-    `Context pack ID: ${contextPackId}`,
+    'Context candidate prepared.',
+    'Current chat context placeholder.',
+    'ProductState metadata placeholder.',
+    'Placeholder only · No raw evidence · No .pi/rck read.',
   ].join('\n');
 }
 
-function createContextPackResultContent(contextPackId, status) {
-  const prefix = status === 'cancelled' ? contextPackCancelledMessage : contextPackInjectedMessage;
-  const statusLine = status === 'cancelled' ? 'Status: cancelled.' : 'Status: injected.';
+function createContextPackResultContent(_contextPackId, status) {
+  const title = status === 'cancelled' ? contextPackCancelledMessage : contextPackInjectedMessage;
+  const detail = status === 'cancelled' ? 'No changes applied' : 'Ready for use';
 
-  return [prefix, statusLine, `Context pack ID: ${contextPackId}`, 'No raw evidence included.', 'No .pi/rck read.'].join('\n');
+  return [title, detail, 'Product event only · No raw evidence stored'].join('\n');
 }
 
 function isContextPackCandidateMessage(message) {
@@ -2000,37 +2021,22 @@ function createContextPackCandidateCard(chatId, contextPackId, status) {
 
   const eyebrow = document.createElement('div');
   eyebrow.className = 'context-pack-card__eyebrow';
-  eyebrow.textContent = 'Context Pack candidate';
+  eyebrow.textContent = 'Context candidate';
 
   const title = document.createElement('div');
   title.className = 'context-pack-card__title';
-  title.textContent = status === 'candidate' ? 'Placeholder only' : status === 'injected' ? 'Injected' : 'Cancelled';
-
-  const id = document.createElement('code');
-  id.className = 'context-pack-card__id';
-  id.textContent = contextPackId;
-
-  const statusChip = createContextPackStatusChip(status);
-
-  header.append(eyebrow, title, id, statusChip);
+  title.textContent = 'Current chat context placeholder';
 
   const summary = document.createElement('p');
   summary.className = 'context-pack-card__summary';
-  summary.textContent = contextPackCandidateSummaryLines.join('. ') + '.';
-
-  const safety = document.createElement('ul');
-  safety.className = 'context-pack-card__safety';
-  for (const line of contextPackCandidateSafetyLines) {
-    const item = document.createElement('li');
-    item.textContent = line;
-    safety.appendChild(item);
-  }
+  summary.textContent = 'ProductState metadata placeholder. Placeholder only. No raw evidence. No .pi/rck read.';
 
   const footer = document.createElement('div');
   footer.className = 'context-pack-card__footer';
   footer.textContent = 'User approval required before injection.';
 
-  card.append(header, summary, safety, footer, createContextPackCandidateControls(chatId, contextPackId, status));
+  header.append(eyebrow, title);
+  card.append(header, summary, footer, createContextPackCandidateControls(chatId, contextPackId, status));
   return card;
 }
 
@@ -2038,8 +2044,17 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
   const role = message.role;
   const text = message.content ?? message.text ?? '';
   const variant = message.variant ?? 'normal';
+  const kind = normalizeMessageKind(message.kind, message.variant);
   const messageEl = document.createElement('article');
   messageEl.className = `message message--${role}${variant === 'error' ? ' message--error' : ''}${variant === 'placeholder' ? ' message--placeholder' : ''}`;
+
+  if (kind === 'command-result') {
+    messageEl.classList.add('message--command-result');
+  }
+
+  if (role === 'user' && isSlashCommandText(text)) {
+    messageEl.classList.add('message--slash-command');
+  }
 
   const roleLabel = document.createElement('span');
   roleLabel.className = 'message__role';
@@ -2047,6 +2062,14 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
 
   const body = document.createElement('div');
   body.className = 'message__body';
+
+  if (kind === 'command-result') {
+    body.classList.add('message__body--command-result');
+  }
+
+  if (role === 'user' && isSlashCommandText(text)) {
+    body.classList.add('message__body--slash-command');
+  }
 
   const contextPackId = getMessageContextPackId(message);
   const checkpointId = getMessageCheckpointId(message);
@@ -2072,7 +2095,7 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
     content.textContent = text;
     body.appendChild(content);
   } else {
-    if (checkpointId && role === 'assistant' && message.kind === 'command-result') {
+    if (checkpointId && role === 'assistant' && kind === 'command-result') {
       const checkpointContent = document.createElement('div');
       checkpointContent.className = 'message__checkpoint-content';
       checkpointContent.appendChild(createCheckpointMessageBadge());
@@ -2742,8 +2765,8 @@ async function postJson(pathname, body) {
 }
 
 function buildHelpMessage() {
-  const lines = commandCatalog.map((command) => `- ${command.usage} — ${command.kind} — ${command.description}`);
-  return `Available RufusChat commands:\n${lines.join('\n')}`;
+  const lines = commandCatalog.map((command) => `${command.usage} — ${command.description}`);
+  return ['Available RufusChat commands:', ...lines].join('\n');
 }
 
 function parseSlashCommand(text) {
@@ -2836,13 +2859,7 @@ function formatRuntimeStatusMessage() {
   const contextLabel = status.context?.label ?? fallbackRuntimeStatus.context.label;
   const traceLabel = status.trace?.label ?? fallbackRuntimeStatus.trace.label;
 
-  return [
-    'Status',
-    `Memory: ${memoryLabel}`,
-    `Context: ${contextLabel}`,
-    `Trace: ${traceLabel}`,
-    `Session: ${runtimeLabel}`,
-  ].join('\n');
+  return formatCompactMetadata(['Status', memoryLabel, contextLabel, traceLabel, runtimeLabel]);
 }
 
 function runStatus(targetChatId) {

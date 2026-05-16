@@ -273,52 +273,59 @@ For the first baseline, prefer the existing Pi AI package API over a bespoke SDK
 - The server does not crash on LLM errors
 - This is a non-streaming baseline
 
-### Non-goals for 17B
+### Non-goals for 17C
 
 - No streaming
-- No tools
 - No RCK
 - No Hermes
+- No tools
 - No semantic memory
-- No Trace DAG
-- No direct UI-to-LLM calls
-- No ProductState schema redesign
+- No trace DAG
+- No raw evidence exposure
+- No direct browser-to-LLM calls
 
-## 17C Frontend send-message integration
+## 18B Streaming response v0
 
 ### Goal
 
-Connect the normal RufusChat composer flow to `/api/chat/complete` while keeping the baseline non-streaming.
+Make normal RufusChat replies feel progressively streamed while keeping the same lightweight memory boundary.
 
-### What the UI sends
+### Endpoint
 
-- the current chat/project identifiers
-- the latest conversational transcript window only
-- user/assistant roles only
-- no raw evidence
-- no RCK data
-- no semantic memory payloads
-- no ProductState dump
+- `POST /api/chat/stream`
+- SSE response with `Content-Type: text/event-stream`
 
-### Context window
+### SSE events v0
 
-- the UI keeps the last `N` usable conversation messages for the request body
-- slash-command messages stay in the chat history but are excluded from the LLM payload
-- product boilerplate messages such as the local intro / new-chat stub are excluded from the request context
+- `start` — metadata about the chosen provider/model
+- `delta` — incremental assistant text
+- `done` — final assistant message plus metadata
+- `error` — product-friendly error payload
 
-### Runtime behavior
+### Fallback behavior
 
-- normal text messages are persisted as user messages first
-- the UI shows a discrete `Thinking…` placeholder while the backend is pending
-- the backend assistant reply replaces the placeholder and is persisted
-- if the backend fails, the placeholder is replaced by a product-friendly assistant error message
-- the input is always re-enabled after the request finishes
+- `/api/chat/complete` remains available as the non-streaming fallback
+- Streaming failures surface product-friendly errors instead of provider internals
+- The browser does not call the LLM directly
 
-### Error handling
+### Persistence
 
-- missing LLM config maps to the provider-specific message returned by the backend
-- transport or provider failures map to a generic recovery message
-- no stack traces or provider internals are shown in the UI
+- The UI keeps a transient assistant placeholder during streaming
+- The final assistant message is persisted once the stream finishes
+- The ProductState schema is unchanged
+
+### Non-goals for 18B
+
+- No cancel yet
+- No RCK
+- No Hermes
+- No tools
+- No semantic memory
+- No embeddings
+- No RAG
+- No Trace DAG
+- No automatic summaries
+- No memory rewrite agents
 
 ## 17D Configured Pi LLM provider
 

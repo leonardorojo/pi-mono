@@ -19,6 +19,7 @@ The UI sends the LLM a recent, bounded conversation window rather than a full lo
 Current boundary, as verified for this snapshot:
 - ProductState holds the user-facing workspace state.
 - The UI sends only a recent transcript window to the LLM, currently 12 messages.
+- 18B improves fluency via streaming only; it does not introduce deep memory.
 - Memory, trace, and context are visible as placeholders in the product shell.
 - Injections and checkpoints exist as part of the product state.
 - There is no real semantic memory yet.

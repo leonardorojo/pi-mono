@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { completeChatCompletion } from './chat-completion-provider.mjs';
+import { completeChatCompletion, createChatCompletionStream } from './chat-completion-provider.mjs';
 import {
   createChatCompletionErrorResponse,
   getChatCompletionErrorStatusCode,
@@ -121,6 +121,54 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function sendSseEvent(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function extractAssistantText(message) {
+  if (!message) {
+    return '';
+  }
+
+  if (typeof message.content === 'string') {
+    return message.content.trim();
+  }
+
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((part) => {
+        if (!part || typeof part !== 'object') {
+          return '';
+        }
+
+        if (typeof part.text === 'string') {
+          return part.text;
+        }
+
+        if (typeof part.refusal === 'string') {
+          return part.refusal;
+        }
+
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+
+  return '';
+}
+
+function createChatCompletionErrorPayload(error) {
+  const payload = createChatCompletionErrorResponse(error);
+  return {
+    error: {
+      message: payload.error.message,
+      code: payload.error.code,
+    },
+  };
+}
+
 function buildStatusMessage() {
   return `Status checked. Health: OK. Current trace: ${sessionState.traceId}. Safe context: ${sessionState.safeContextAvailable ? 'available' : 'no'}.`;
 }
@@ -173,6 +221,86 @@ const server = createServer(async (req, res) => {
     }
 
     sendJson(res, 200, createRuntimeStatus());
+    return;
+  }
+
+  if (url.pathname === '/api/chat/stream') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+
+    let body;
+    try {
+      body = await readRequestJson(req);
+    } catch (error) {
+      sendJson(res, getChatCompletionErrorStatusCode(error), createChatCompletionErrorPayload(error));
+      return;
+    }
+
+    const abortController = new AbortController();
+    const onClose = () => abortController.abort();
+    req.on('close', onClose);
+
+    try {
+      const { model, stream } = await createChatCompletionStream(body, { signal: abortController.signal });
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+      res.write('\n');
+
+      const metadata = {
+        provider: `${model.provider}`,
+        model: `${model.provider}/${model.id}`,
+        createdAt: new Date().toISOString(),
+      };
+
+      sendSseEvent(res, 'start', { metadata });
+
+      let finalMessage = null;
+      for await (const event of stream) {
+        if (event?.type === 'text_delta' && typeof event.delta === 'string' && event.delta) {
+          sendSseEvent(res, 'delta', { text: event.delta });
+          continue;
+        }
+
+        if (event?.type === 'done') {
+          finalMessage = event.message;
+          const text = extractAssistantText(finalMessage);
+          sendSseEvent(res, 'done', {
+            message: {
+              role: 'assistant',
+              content: text,
+            },
+            metadata,
+          });
+          res.end();
+          return;
+        }
+
+        if (event?.type === 'error') {
+          const errorPayload = createChatCompletionErrorPayload(event.error ?? event);
+          sendSseEvent(res, 'error', errorPayload);
+          res.end();
+          return;
+        }
+      }
+
+      sendSseEvent(res, 'error', { error: { message: 'The stream ended without a final assistant response.', code: 'llm_empty_response' } });
+      res.end();
+    } catch (error) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+      sendSseEvent(res, 'error', createChatCompletionErrorPayload(error));
+      res.end();
+    }
     return;
   }
 

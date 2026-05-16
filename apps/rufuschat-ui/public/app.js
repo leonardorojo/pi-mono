@@ -64,6 +64,7 @@ const localIntroMessage =
 const newChatAssistantMessage =
   'New local chat created. LLM and semantic memory are not connected yet.';
 const chatCompletionEndpoint = '/api/chat/complete';
+const chatStreamingEndpoint = '/api/chat/stream';
 const chatCompletionContextLimit = 12;
 const chatThinkingMessage = 'Thinking…';
 const chatConfigMissingMessage = 'LLM provider is not configured. Check the Pi Agent GitHub Copilot authentication.';
@@ -2397,6 +2398,127 @@ async function postChatCompletion(body) {
   return data;
 }
 
+async function postChatCompletionStream(body, handlers = {}) {
+  const response = await fetch(chatStreamingEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const data = await readJsonResponse(response);
+    const error = new Error(data?.error?.message ?? data?.message ?? 'Request failed');
+    error.statusCode = response.status;
+    error.response = data;
+    throw error;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('text/event-stream')) {
+    const data = await readJsonResponse(response);
+    const error = new Error(data?.error?.message ?? 'Streaming response not available.');
+    error.statusCode = response.status;
+    error.response = data;
+    throw error;
+  }
+
+  await consumeSseResponse(response, handlers);
+}
+
+async function consumeSseResponse(response, handlers = {}) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Streaming response body is unavailable.');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const dispatchEvent = (eventName, data) => {
+    const handler = handlers[eventName];
+    if (typeof handler === 'function') {
+      handler(data);
+    }
+  };
+
+  const parseEventBlock = (block) => {
+    const lines = block.split(/\r?\n/);
+    let eventName = 'message';
+    let dataText = '';
+
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataText += `${dataText ? '\n' : ''}${line.slice(5).trimStart()}`;
+      }
+    }
+
+    if (!dataText) {
+      dispatchEvent(eventName, null);
+      return;
+    }
+
+    let data;
+    try {
+      data = JSON.parse(dataText);
+    } catch {
+      data = { raw: dataText };
+    }
+
+    dispatchEvent(eventName, data);
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      let boundaryIndex = buffer.indexOf('\n\n');
+
+      while (boundaryIndex !== -1) {
+        const block = buffer.slice(0, boundaryIndex).trim();
+        buffer = buffer.slice(boundaryIndex + 2);
+        if (block) {
+          parseEventBlock(block);
+        }
+        boundaryIndex = buffer.indexOf('\n\n');
+      }
+    }
+
+    buffer += decoder.decode();
+    const tail = buffer.trim();
+    if (tail) {
+      parseEventBlock(tail);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function getStreamErrorMessage(error) {
+  const responseError = error?.response?.error;
+  const responseMessage = typeof responseError?.message === 'string' ? responseError.message : typeof error?.message === 'string' ? error.message : '';
+  const responseCode = typeof responseError?.code === 'string' ? responseError.code : null;
+
+  if (responseCode === 'invalid_request') {
+    return responseMessage || 'The chat completion request was invalid.';
+  }
+
+  if (responseCode === 'llm_empty_response') {
+    return 'The language model returned no reply. Please try again.';
+  }
+
+  if (responseCode === 'llm_unavailable') {
+    return responseMessage || chatCompletionFailureMessage;
+  }
+
+  return chatCompletionFailureMessage;
+}
+
 function getChatCompletionErrorMessage(error) {
   const responseError = error?.response?.error;
   const responseMessage = typeof responseError?.message === 'string' ? responseError.message : typeof error?.message === 'string' ? error.message : '';
@@ -2417,42 +2539,159 @@ function getChatCompletionErrorMessage(error) {
   return chatCompletionFailureMessage;
 }
 
+function appendTransientMessageToChat(chatId, message) {
+  const chat = getChatById(chatId);
+  if (!chat) {
+    return null;
+  }
+
+  chat.messages.push(message);
+  touchChat(chat, { dirty: false });
+  touchProject(getProjectByChatId(chat.id), { dirty: false });
+  touchRootState({ dirty: false });
+
+  if (chat.id === state.currentChatId) {
+    renderMessages({ autoScroll: true });
+  }
+
+  renderSidebar();
+  renderHeader();
+  return message;
+}
+
+function updateTransientMessageInChat(chatId, messageId, mutator) {
+  const chat = getChatById(chatId);
+  if (!chat) {
+    return null;
+  }
+
+  const message = chat.messages.find((item) => item.id === messageId);
+  if (!message) {
+    return null;
+  }
+
+  mutator(message);
+  touchChat(chat, { dirty: false });
+  touchProject(getProjectByChatId(chat.id), { dirty: false });
+  touchRootState({ dirty: false });
+
+  if (chat.id === state.currentChatId) {
+    renderMessages({ autoScroll: true });
+  }
+
+  renderSidebar();
+  renderHeader();
+  return message;
+}
+
 async function runChatCompletion(targetChatId, userMessage) {
   const chat = getChatById(targetChatId);
   if (!chat) {
     return;
   }
 
+  const requestBody = getChatCompletionRequestBody(chat, userMessage);
+  clearTimeout(productStateSaveTimer);
+  productStateSaveTimer = null;
+  await saveProductStateNow();
+
   const placeholderMessage = createChatCompletionPlaceholderMessage();
-  appendMessageToChat(targetChatId, placeholderMessage.role, placeholderMessage.text, placeholderMessage.variant, placeholderMessage);
+  appendTransientMessageToChat(targetChatId, placeholderMessage);
   setBusy(true, chatThinkingMessage);
 
-  try {
-    const data = await postChatCompletion(getChatCompletionRequestBody(chat, userMessage));
-    const nextAssistantText = typeof data?.message?.content === 'string' ? data.message.content.trim() : '';
+  let streamedText = '';
+  let streamStarted = false;
+  let streamMetadata = null;
 
-    if (!nextAssistantText) {
-      throw new Error('LLM response did not contain assistant text.');
+  try {
+    await postChatCompletionStream(requestBody, {
+      start: (data) => {
+        streamStarted = true;
+        streamMetadata = data?.metadata ?? null;
+      },
+      delta: (data) => {
+        if (typeof data?.text !== 'string' || !data.text) {
+          return;
+        }
+
+        streamedText += data.text;
+        updateTransientMessageInChat(targetChatId, placeholderMessage.id, (message) => {
+          message.text = streamedText;
+          message.content = streamedText;
+          message.variant = 'normal';
+          message.kind = 'normal';
+        });
+      },
+      done: (data) => {
+        streamStarted = true;
+        const nextAssistantText = typeof data?.message?.content === 'string' ? data.message.content.trim() : streamedText.trim();
+
+        if (!nextAssistantText) {
+          throw new Error('LLM response did not contain assistant text.');
+        }
+
+        streamedText = nextAssistantText;
+        replaceMessageInChat(
+          targetChatId,
+          placeholderMessage.id,
+          createMessage('assistant', nextAssistantText, 'normal', {
+            id: placeholderMessage.id,
+            kind: 'normal',
+          }),
+        );
+      },
+      error: (data) => {
+        const error = new Error(data?.error?.message ?? data?.message ?? 'Request failed');
+        error.statusCode = data?.error?.code ? 503 : undefined;
+        error.response = data;
+        throw error;
+      },
+    });
+
+    if (!streamedText.trim()) {
+      throw new Error('The language model returned no reply.');
+    }
+
+    clearTimeout(productStateSaveTimer);
+    productStateSaveTimer = null;
+    await saveProductStateNow();
+  } catch (error) {
+    const responseCode = error?.response?.error?.code ?? null;
+    if (!streamStarted && responseCode !== 'invalid_request') {
+      try {
+        const fallbackResponse = await postChatCompletion(requestBody);
+        const nextAssistantText = typeof fallbackResponse?.message?.content === 'string' ? fallbackResponse.message.content.trim() : '';
+
+        if (nextAssistantText) {
+          replaceMessageInChat(
+            targetChatId,
+            placeholderMessage.id,
+            createMessage('assistant', nextAssistantText, 'normal', {
+              id: placeholderMessage.id,
+              kind: 'normal',
+            }),
+          );
+          clearTimeout(productStateSaveTimer);
+          productStateSaveTimer = null;
+          await saveProductStateNow();
+          return;
+        }
+      } catch (fallbackError) {
+        error = fallbackError;
+      }
     }
 
     replaceMessageInChat(
       targetChatId,
       placeholderMessage.id,
-      createMessage('assistant', nextAssistantText, 'normal', {
-        id: placeholderMessage.id,
-        kind: 'normal',
-      }),
-    );
-    return;
-  } catch (error) {
-    replaceMessageInChat(
-      targetChatId,
-      placeholderMessage.id,
-      createMessage('assistant', getChatCompletionErrorMessage(error), 'error', {
+      createMessage('assistant', getStreamErrorMessage(error), 'error', {
         id: placeholderMessage.id,
         kind: 'error',
       }),
     );
+    clearTimeout(productStateSaveTimer);
+    productStateSaveTimer = null;
+    await saveProductStateNow();
   } finally {
     setBusy(false);
     composerInput.focus();

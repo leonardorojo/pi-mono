@@ -17,6 +17,15 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - If you override the defaults, set `RUFUSCHAT_LLM_PROVIDER` and `RUFUSCHAT_LLM_MODEL`.
 - Do **not** set `OPENAI_API_KEY` unless the selected provider is actually OpenAI.
 
+## Streaming responses v0
+
+- RufusChat now streams normal LLM replies through `POST /api/chat/stream`.
+- The stream uses SSE with `start`, `delta`, `done`, and `error` events.
+- The browser still uses the configured Pi provider/model; no direct browser-to-LLM calls are introduced.
+- `/api/chat/complete` remains available as the non-streaming fallback path.
+- The UI persists the final assistant message at the end of the stream, not on every token.
+- Cancel is still out of scope for this phase.
+
 ## Context Pack boundary
 
 - Boundary document: [`CONTEXT_PACK.md`](./CONTEXT_PACK.md)

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { completeSimple } from '../../packages/ai/dist/stream.js';
+import { completeSimple, streamSimple } from '../../packages/ai/dist/stream.js';
 import { getEnvApiKey } from '../../packages/ai/dist/env-api-keys.js';
 import { getModel } from '../../packages/ai/dist/models.js';
 import { getOAuthApiKey, getOAuthProvider } from '../../packages/ai/dist/oauth.js';
@@ -39,6 +39,23 @@ function resolveSelection(request) {
   }
 
   return model;
+}
+
+function createChatCompletionContext(request) {
+  return {
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    messages: toLlmMessages(request.messages),
+  };
+}
+
+function createChatCompletionOptions(request, apiKey, signal) {
+  return {
+    apiKey,
+    sessionId: getSessionId(request),
+    temperature: request.options.temperature,
+    maxTokens: request.options.maxTokens,
+    signal,
+  };
 }
 
 function getSessionId(request) {
@@ -125,6 +142,35 @@ function getMissingAuthMessage(provider, modelId) {
   }
 
   return `LLM provider is not configured for ${provider}/${modelId}.`;
+}
+
+export async function createChatCompletionStream(requestInput, streamOptions = {}) {
+  const request = normalizeChatCompletionRequest(requestInput);
+
+  if (request.issues.length > 0) {
+    throw new ChatCompletionError('Invalid RufusChat chat completion request.', {
+      code: 'invalid_request',
+      statusCode: 400,
+    });
+  }
+
+  const model = resolveSelection(request);
+  const apiKey = await resolveApiKey(model.provider);
+
+  if (!apiKey) {
+    throw new ChatCompletionError(getMissingAuthMessage(model.provider, model.id), {
+      code: 'llm_unavailable',
+      statusCode: 503,
+    });
+  }
+
+  const stream = streamSimple(model, createChatCompletionContext(request), createChatCompletionOptions(request, apiKey, streamOptions.signal));
+
+  return {
+    request,
+    model,
+    stream,
+  };
 }
 
 export async function completeChatCompletion(requestInput) {

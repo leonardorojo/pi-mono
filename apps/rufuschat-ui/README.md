@@ -26,7 +26,9 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - The UI persists the final assistant message at the end of the stream, not on every token.
 - While the assistant is still thinking, the transient placeholder stays compact and animated; it disappears as soon as the first streamed text arrives.
 - Slash command results are rendered as compact product events so conversation stays visually primary.
-- Cancel is still out of scope for this phase.
+- Cancel and Retry are lightweight chat controls for the streaming conversation path.
+- Cancel aborts the active stream or ignores late deltas, and Retry replays the last LLM assistant reply without duplicating the user message.
+- This phase does not add deep memory, Hermes, or RCK wiring.
 
 ## Context Pack boundary
 

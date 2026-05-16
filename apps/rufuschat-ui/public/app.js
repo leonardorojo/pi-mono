@@ -2,10 +2,12 @@ const messagesEl = document.getElementById('messages');
 const composerForm = document.getElementById('composer-form');
 const composerInput = document.getElementById('composer-input');
 const sendButton = composerForm.querySelector('button[type="submit"]');
+const composerFooter = composerForm.querySelector('.composer__footer');
 const messagesInnerEl = document.getElementById('messages-inner');
 const currentProjectEl = document.getElementById('current-project');
 const currentChatEl = document.getElementById('current-chat');
 const memoryStatusEl = document.getElementById('current-memory-status');
+let chatCancelButton = null;
 const summaryStatusEl = document.getElementById('current-summary-status');
 const rckTraceStatusEl = document.getElementById('current-rck-trace-status');
 const traceChipEl = document.getElementById('current-trace-chip');
@@ -89,6 +91,8 @@ const chatCompletionEndpoint = '/api/chat/complete';
 const chatStreamingEndpoint = '/api/chat/stream';
 const chatCompletionContextLimit = 12;
 const chatThinkingMessage = 'Thinking…';
+const chatResponseCancelledMessage = 'Response cancelled.';
+const chatRetryFailureMessage = "I couldn't retry that response. Please try again.";
 const chatConfigMissingMessage = 'LLM provider is not configured. Check the Pi Agent GitHub Copilot authentication.';
 const chatCompletionFailureMessage = "I couldn't reach the language model. Check the LLM configuration and try again.";
 const traceLinkedPlaceholderMessage =
@@ -213,6 +217,7 @@ const commandCatalog = [
 ];
 
 let confirmResolver = null;
+let activeChatCompletionRun = null;
 
 function makeId(prefix) {
   const random = globalThis.crypto?.randomUUID?.();
@@ -1527,6 +1532,8 @@ function setBusy(isBusy, label = 'Running...') {
   if (isBusy) {
     hideSlashMenu();
   }
+
+  updateChatCompletionControls();
 }
 
 function renderHeader() {
@@ -2040,13 +2047,14 @@ function createContextPackCandidateCard(chatId, contextPackId, status) {
   return card;
 }
 
-function createMessageElement(message, contextPackLifecycleById = new Map(), chat = null) {
+function createMessageElement(message, contextPackLifecycleById = new Map(), chat = null, retryMessageId = null) {
   const role = message.role;
   const text = message.content ?? message.text ?? '';
   const variant = message.variant ?? 'normal';
   const kind = normalizeMessageKind(message.kind, message.variant);
   const messageEl = document.createElement('article');
   messageEl.className = `message message--${role}${variant === 'error' ? ' message--error' : ''}${variant === 'placeholder' ? ' message--placeholder' : ''}`;
+  messageEl.dataset.messageId = message.id;
 
   if (kind === 'command-result') {
     messageEl.classList.add('message--command-result');
@@ -2116,6 +2124,21 @@ function createMessageElement(message, contextPackLifecycleById = new Map(), cha
     } else {
       body.textContent = text;
     }
+  }
+
+  if (role === 'assistant' && message.id === retryMessageId && !isThinkingPlaceholder && kind === 'normal') {
+    const actions = document.createElement('div');
+    actions.className = 'message__actions';
+
+    const retryButton = document.createElement('button');
+    retryButton.type = 'button';
+    retryButton.className = 'button button--ghost button--compact message__action message__action--retry';
+    retryButton.dataset.action = 'retry-message';
+    retryButton.dataset.messageId = message.id;
+    retryButton.textContent = 'Retry';
+    actions.appendChild(retryButton);
+
+    body.appendChild(actions);
   }
 
   messageEl.append(roleLabel, body);
@@ -2218,6 +2241,7 @@ function renderMessages({ autoScroll = false } = {}) {
   const currentProject = getCurrentProject();
   messagesInnerEl.replaceChildren();
   const contextPackLifecycleById = getContextPackLifecycleByChat(chat);
+  const retryMessageId = getRetryableAssistantMessageId(chat);
 
   if (!chat) {
     const emptyState = document.createElement('div');
@@ -2241,7 +2265,7 @@ function renderMessages({ autoScroll = false } = {}) {
   }
 
   for (const message of chat.messages) {
-    messagesInnerEl.appendChild(createMessageElement(message, contextPackLifecycleById, chat));
+    messagesInnerEl.appendChild(createMessageElement(message, contextPackLifecycleById, chat, retryMessageId));
   }
 
   if (autoScroll) {
@@ -2379,16 +2403,65 @@ function isChatCompletionTranscriptMessage(message) {
   return text !== newChatAssistantMessage && text !== localIntroMessage;
 }
 
-function getChatCompletionMessages(chat, limit = chatCompletionContextLimit) {
+function isChatCompletionPlainUserMessage(message) {
+  if (!isChatCompletionTranscriptMessage(message) || message.role !== 'user') {
+    return false;
+  }
+
+  const text = typeof message.content === 'string' ? message.content : typeof message.text === 'string' ? message.text : '';
+  return !isSlashCommandText(text);
+}
+
+function isChatCompletionAssistantReply(message) {
+  return isChatCompletionTranscriptMessage(message) && message.role === 'assistant';
+}
+
+function getChatCompletionMessages(chat, limit = chatCompletionContextLimit, options = {}) {
   if (!chat) {
     return [];
   }
 
-  const transcript = chat.messages.filter((message) => isChatCompletionTranscriptMessage(message));
+  const excludeMessageIds = options.excludeMessageIds instanceof Set ? options.excludeMessageIds : new Set(options.excludeMessageIds ?? []);
+  const transcript = chat.messages.filter((message) => isChatCompletionTranscriptMessage(message) && !excludeMessageIds.has(message.id));
   return transcript.slice(-Math.max(1, limit)).map((message) => ({
     role: message.role,
     content: typeof message.content === 'string' ? message.content : typeof message.text === 'string' ? message.text : '',
   }));
+}
+
+function getRetryableAssistantMessageId(chat) {
+  if (!chat || (activeChatCompletionRun && !activeChatCompletionRun.completed)) {
+    return null;
+  }
+
+  for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
+    const message = chat.messages[index];
+    if (isChatCompletionAssistantReply(message)) {
+      return message.id;
+    }
+  }
+
+  return null;
+}
+
+function getRetrySourceUserMessage(chat, assistantMessageId) {
+  if (!chat || !assistantMessageId) {
+    return null;
+  }
+
+  const assistantIndex = chat.messages.findIndex((message) => message.id === assistantMessageId);
+  if (assistantIndex === -1) {
+    return null;
+  }
+
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const message = chat.messages[index];
+    if (isChatCompletionPlainUserMessage(message)) {
+      return message;
+    }
+  }
+
+  return null;
 }
 
 function createThinkingIndicatorElement() {
@@ -2418,9 +2491,9 @@ function createChatCompletionPlaceholderMessage() {
   return createMessage('assistant', chatThinkingMessage, 'placeholder', { kind: 'placeholder' });
 }
 
-function getChatCompletionRequestBody(chat, userMessage) {
+function getChatCompletionRequestBody(chat, userMessage, options = {}) {
   const project = getProjectByChatId(chat.id);
-  const messages = getChatCompletionMessages(chat);
+  const messages = getChatCompletionMessages(chat, chatCompletionContextLimit, options);
   const projectId = typeof project?.id === 'string' ? project.id : chat.projectId ?? null;
 
   if (userMessage && !messages.some((message) => message.role === 'user' && message.content === userMessage.content)) {
@@ -2434,11 +2507,12 @@ function getChatCompletionRequestBody(chat, userMessage) {
   };
 }
 
-async function postChatCompletion(body) {
+async function postChatCompletion(body, options = {}) {
   const response = await fetch(chatCompletionEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
   const data = await readJsonResponse(response);
 
@@ -2452,11 +2526,12 @@ async function postChatCompletion(body) {
   return data;
 }
 
-async function postChatCompletionStream(body, handlers = {}) {
+async function postChatCompletionStream(body, handlers = {}, options = {}) {
   const response = await fetch(chatStreamingEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -2593,6 +2668,39 @@ function getChatCompletionErrorMessage(error) {
   return chatCompletionFailureMessage;
 }
 
+function isAbortError(error) {
+  return error?.name === 'AbortError' || error?.code === 20;
+}
+
+function ensureChatCancelButton() {
+  if (chatCancelButton || !composerFooter) {
+    return chatCancelButton;
+  }
+
+  chatCancelButton = document.createElement('button');
+  chatCancelButton.type = 'button';
+  chatCancelButton.className = 'button button--ghost button--compact composer__cancel-button';
+  chatCancelButton.textContent = 'Cancel';
+  chatCancelButton.hidden = true;
+  chatCancelButton.addEventListener('click', () => {
+    void cancelActiveChatCompletion();
+  });
+
+  composerFooter.insertBefore(chatCancelButton, sendButton);
+  return chatCancelButton;
+}
+
+function updateChatCompletionControls() {
+  const button = ensureChatCancelButton();
+  if (!button) {
+    return;
+  }
+
+  const isStreaming = Boolean(activeChatCompletionRun);
+  button.hidden = !isStreaming;
+  button.disabled = !isStreaming;
+}
+
 function appendTransientMessageToChat(chatId, message) {
   const chat = getChatById(chatId);
   if (!chat) {
@@ -2638,69 +2746,157 @@ function updateTransientMessageInChat(chatId, messageId, mutator) {
   return message;
 }
 
-async function runChatCompletion(targetChatId, userMessage) {
+async function cancelActiveChatCompletion() {
+  const run = activeChatCompletionRun;
+  if (!run || run.finalized || run.completed) {
+    return false;
+  }
+
+  run.cancelled = true;
+  run.finalized = true;
+  activeChatCompletionRun = null;
+  run.controller.abort();
+  setBusy(false);
+  updateChatCompletionControls();
+
+  if (typeof run.chatId === 'string' && typeof run.responseMessageId === 'string') {
+    replaceMessageInChat(
+      run.chatId,
+      run.responseMessageId,
+      createMessage('assistant', chatResponseCancelledMessage, 'normal', {
+        id: run.responseMessageId,
+        kind: 'command-result',
+      }),
+    );
+    clearTimeout(productStateSaveTimer);
+    productStateSaveTimer = null;
+    await saveProductStateNow();
+  }
+
+  composerInput.focus();
+  return true;
+}
+
+async function runChatCompletion(targetChatId, userMessage, options = {}) {
   const chat = getChatById(targetChatId);
   if (!chat) {
     return;
   }
 
-  const requestBody = getChatCompletionRequestBody(chat, userMessage);
+  const runId = makeId('chat-completion-run');
+  const controller = new AbortController();
+  const run = {
+    runId,
+    controller,
+    chatId: targetChatId,
+    responseMessageId: typeof options.responseMessageId === 'string' ? options.responseMessageId : null,
+    cancelled: false,
+    completed: false,
+    finalized: false,
+  };
+
+  activeChatCompletionRun = run;
+
+  const placeholderMessage = run.responseMessageId
+    ? updateTransientMessageInChat(targetChatId, run.responseMessageId, (message) => {
+        message.text = chatThinkingMessage;
+        message.content = chatThinkingMessage;
+        message.variant = 'placeholder';
+        message.kind = 'placeholder';
+      })
+    : appendTransientMessageToChat(targetChatId, createChatCompletionPlaceholderMessage());
+
+  if (!placeholderMessage) {
+    activeChatCompletionRun = null;
+    updateChatCompletionControls();
+    return;
+  }
+
+  run.responseMessageId = placeholderMessage.id;
+  updateChatCompletionControls();
+  setBusy(true, chatThinkingMessage);
+
+  const requestBody = getChatCompletionRequestBody(chat, userMessage, {
+    excludeMessageIds: [placeholderMessage.id],
+  });
+
   clearTimeout(productStateSaveTimer);
   productStateSaveTimer = null;
   await saveProductStateNow();
-
-  const placeholderMessage = createChatCompletionPlaceholderMessage();
-  appendTransientMessageToChat(targetChatId, placeholderMessage);
-  setBusy(true, chatThinkingMessage);
 
   let streamedText = '';
   let streamStarted = false;
   let streamMetadata = null;
 
   try {
-    await postChatCompletionStream(requestBody, {
-      start: (data) => {
-        streamStarted = true;
-        streamMetadata = data?.metadata ?? null;
-      },
-      delta: (data) => {
-        if (typeof data?.text !== 'string' || !data.text) {
-          return;
-        }
+    await postChatCompletionStream(
+      requestBody,
+      {
+        start: (data) => {
+          if (run.cancelled || run.finalized || activeChatCompletionRun?.runId !== runId) {
+            return;
+          }
 
-        streamedText += data.text;
-        updateTransientMessageInChat(targetChatId, placeholderMessage.id, (message) => {
-          message.text = streamedText;
-          message.content = streamedText;
-          message.variant = 'normal';
-          message.kind = 'normal';
-        });
-      },
-      done: (data) => {
-        streamStarted = true;
-        const nextAssistantText = typeof data?.message?.content === 'string' ? data.message.content.trim() : streamedText.trim();
+          streamStarted = true;
+          streamMetadata = data?.metadata ?? null;
+        },
+        delta: (data) => {
+          if (run.cancelled || run.finalized || activeChatCompletionRun?.runId !== runId) {
+            return;
+          }
 
-        if (!nextAssistantText) {
-          throw new Error('LLM response did not contain assistant text.');
-        }
+          if (typeof data?.text !== 'string' || !data.text) {
+            return;
+          }
 
-        streamedText = nextAssistantText;
-        replaceMessageInChat(
-          targetChatId,
-          placeholderMessage.id,
-          createMessage('assistant', nextAssistantText, 'normal', {
-            id: placeholderMessage.id,
-            kind: 'normal',
-          }),
-        );
+          streamedText += data.text;
+          updateTransientMessageInChat(targetChatId, placeholderMessage.id, (message) => {
+            message.text = streamedText;
+            message.content = streamedText;
+            message.variant = 'normal';
+            message.kind = 'normal';
+          });
+        },
+        done: (data) => {
+          if (run.cancelled || run.finalized || activeChatCompletionRun?.runId !== runId) {
+            return;
+          }
+
+          streamStarted = true;
+          const nextAssistantText = typeof data?.message?.content === 'string' ? data.message.content.trim() : streamedText.trim();
+
+          if (!nextAssistantText) {
+            throw new Error('LLM response did not contain assistant text.');
+          }
+
+          streamedText = nextAssistantText;
+          replaceMessageInChat(
+            targetChatId,
+            placeholderMessage.id,
+            createMessage('assistant', nextAssistantText, 'normal', {
+              id: placeholderMessage.id,
+              kind: 'normal',
+            }),
+          );
+          run.completed = true;
+        },
+        error: (data) => {
+          if (run.cancelled || run.finalized || activeChatCompletionRun?.runId !== runId) {
+            return;
+          }
+
+          const error = new Error(data?.error?.message ?? data?.message ?? 'Request failed');
+          error.statusCode = data?.error?.code ? 503 : undefined;
+          error.response = data;
+          throw error;
+        },
       },
-      error: (data) => {
-        const error = new Error(data?.error?.message ?? data?.message ?? 'Request failed');
-        error.statusCode = data?.error?.code ? 503 : undefined;
-        error.response = data;
-        throw error;
-      },
-    });
+      { signal: controller.signal },
+    );
+
+    if (run.cancelled || controller.signal.aborted || activeChatCompletionRun?.runId !== runId) {
+      return;
+    }
 
     if (!streamedText.trim()) {
       throw new Error('The language model returned no reply.');
@@ -2709,11 +2905,16 @@ async function runChatCompletion(targetChatId, userMessage) {
     clearTimeout(productStateSaveTimer);
     productStateSaveTimer = null;
     await saveProductStateNow();
+    run.finalized = true;
   } catch (error) {
+    if (run.cancelled || run.finalized || controller.signal.aborted || isAbortError(error) || activeChatCompletionRun?.runId !== runId) {
+      return;
+    }
+
     const responseCode = error?.response?.error?.code ?? null;
     if (!streamStarted && responseCode !== 'invalid_request') {
       try {
-        const fallbackResponse = await postChatCompletion(requestBody);
+        const fallbackResponse = await postChatCompletion(requestBody, { signal: controller.signal });
         const nextAssistantText = typeof fallbackResponse?.message?.content === 'string' ? fallbackResponse.message.content.trim() : '';
 
         if (nextAssistantText) {
@@ -2725,6 +2926,7 @@ async function runChatCompletion(targetChatId, userMessage) {
               kind: 'normal',
             }),
           );
+          run.finalized = true;
           clearTimeout(productStateSaveTimer);
           productStateSaveTimer = null;
           await saveProductStateNow();
@@ -2743,13 +2945,42 @@ async function runChatCompletion(targetChatId, userMessage) {
         kind: 'error',
       }),
     );
+    run.finalized = true;
     clearTimeout(productStateSaveTimer);
     productStateSaveTimer = null;
     await saveProductStateNow();
   } finally {
-    setBusy(false);
-    composerInput.focus();
+    if (activeChatCompletionRun?.runId === runId) {
+      activeChatCompletionRun = null;
+      updateChatCompletionControls();
+      setBusy(false);
+      composerInput.focus();
+      renderMessages({ autoScroll: true });
+    }
   }
+}
+
+async function retryChatCompletion(targetChatId, assistantMessageId) {
+  if (activeChatCompletionRun) {
+    return;
+  }
+
+  const chat = getChatById(targetChatId);
+  if (!chat) {
+    return;
+  }
+
+  const assistantMessage = chat.messages.find((message) => message.id === assistantMessageId);
+  if (!assistantMessage || !isChatCompletionAssistantReply(assistantMessage)) {
+    return;
+  }
+
+  const userMessage = getRetrySourceUserMessage(chat, assistantMessageId);
+  if (!userMessage) {
+    return;
+  }
+
+  await runChatCompletion(targetChatId, userMessage, { responseMessageId: assistantMessageId });
 }
 
 async function readJsonResponse(response) {
@@ -3134,6 +3365,18 @@ composerForm.addEventListener('submit', (event) => {
   hideSlashMenu();
   void handleUserSubmission(text);
   composerInput.focus();
+});
+
+messagesEl.addEventListener('click', (event) => {
+  const button = event.target instanceof HTMLElement ? event.target.closest('button[data-action]') : null;
+  if (!(button instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  if (button.dataset.action === 'retry-message' && button.dataset.messageId) {
+    event.preventDefault();
+    void retryChatCompletion(state.currentChatId, button.dataset.messageId);
+  }
 });
 
 composerInput.addEventListener('input', () => {

@@ -6,6 +6,7 @@ Baseline conversacional simple para RufusChat usando el LLM provider existente d
 
 Phase 18C keeps slash-command results as compact product events so the user/assistant conversation remains the primary reading path.
 Phase 18D adds a discreet animated Thinking placeholder so streaming feels alive before the first delta arrives.
+Phase 18E adds lightweight Retry / Cancel controls for the streaming conversation, without adding deep memory or RCK/Hermes wiring.
 
 ## Existing Pi LLM provider
 

@@ -863,6 +863,31 @@ textarea:disabled {
   max-width: min(80%, 640px);
 }
 
+.message__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.message__action {
+  flex: 0 0 auto;
+  color: var(--muted-strong);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.message__action:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+
+.message__action--retry {
+  padding-inline: 0.62rem;
+}
+
+
 .message--context-pack .message__body {
   max-width: min(100%, 560px);
 }
@@ -1138,6 +1163,17 @@ textarea:disabled {
 .composer__hint {
   color: var(--muted-strong);
   font-size: 0.8rem;
+}
+
+.composer__cancel-button {
+  color: var(--muted);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.composer__cancel-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text);
 }
 
 .composer .button--primary {

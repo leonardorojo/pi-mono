@@ -856,6 +856,11 @@ textarea:disabled {
   border: 1px solid rgba(255, 92, 92, 0.32);
 }
 
+.message--placeholder .message__body {
+  opacity: 0.78;
+  font-style: italic;
+}
+
 .message__role {
   display: none;
 }

@@ -2,7 +2,20 @@
 
 This app is the ChatGPT-like product shell for RufusChat.
 
-It is intentionally local-only and does not connect to the LLM, OpenAI, Hermes execution, or the RCK backend yet. The goal of 10A is to lock the final product shape before wiring any real automation.
+It is intentionally local-first in the browser shell. Phase 17 adds a backend LLM baseline through `/api/chat/complete`, while Hermes execution and the RCK backend remain disconnected in the UI flow.
+
+## LLM conversation baseline
+
+- Phase 17 introduces a backend chat completion baseline for RufusChat.
+- Endpoint: `POST /api/chat/complete`
+- The endpoint talks to the existing Pi AI provider contract from `packages/ai`.
+- v0 is non-streaming.
+- The backend requires a configured model/provider and the matching API key or bearer token in the environment or Pi auth storage.
+- The browser UI does **not** call the LLM directly.
+- Normal chat messages are sent to `/api/chat/complete`.
+- Real assistant replies use the Pi Agent configured provider/model by default (`github-copilot/gpt-5.4-mini` in this workspace).
+- If you override the defaults, set `RUFUSCHAT_LLM_PROVIDER` and `RUFUSCHAT_LLM_MODEL`.
+- Do **not** set `OPENAI_API_KEY` unless the selected provider is actually OpenAI.
 
 ## Context Pack boundary
 

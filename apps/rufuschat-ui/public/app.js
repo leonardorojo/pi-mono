@@ -87,6 +87,17 @@ function formatCompactMetadata(items) {
   return items.filter(Boolean).join(' · ');
 }
 
+function syncComposerHeight() {
+  if (!composerInput) {
+    return;
+  }
+
+  composerInput.style.height = 'auto';
+  const nextHeight = Math.min(Math.max(composerInput.scrollHeight, composerMinHeight), composerMaxHeight);
+  composerInput.style.height = `${nextHeight}px`;
+  composerInput.style.overflowY = nextHeight >= composerMaxHeight ? 'auto' : 'hidden';
+}
+
 const chatCompletionEndpoint = '/api/chat/complete';
 const chatStreamingEndpoint = '/api/chat/stream';
 const chatCompletionContextLimit = 12;
@@ -95,6 +106,8 @@ const chatResponseCancelledMessage = 'Response cancelled.';
 const chatRetryFailureMessage = "I couldn't retry that response. Please try again.";
 const chatConfigMissingMessage = 'LLM provider is not configured. Check the Pi Agent GitHub Copilot authentication.';
 const chatCompletionFailureMessage = "I couldn't reach the language model. Check the LLM configuration and try again.";
+const composerMinHeight = 58;
+const composerMaxHeight = 220;
 const traceLinkedPlaceholderMessage =
   'Trace linking is not connected yet. This chat is currently not linked to a trace. Future versions will link chats to the trace system.';
 const traceLinkPlaceholderMessage =
@@ -2230,6 +2243,7 @@ function renderSlashMenu() {
 function insertCommandText(insertText) {
   composerInput.value = insertText;
   slashMenuSuppressed = false;
+  syncComposerHeight();
   renderSlashMenu();
   composerInput.focus();
   const cursor = composerInput.value.length;
@@ -3373,10 +3387,12 @@ composerForm.addEventListener('submit', (event) => {
   const text = composerInput.value.trim();
   if (!text) {
     hideSlashMenu();
+    syncComposerHeight();
     return;
   }
 
   composerInput.value = '';
+  syncComposerHeight();
   hideSlashMenu();
   void handleUserSubmission(text);
   composerInput.focus();
@@ -3396,6 +3412,7 @@ messagesEl.addEventListener('click', (event) => {
 
 composerInput.addEventListener('input', () => {
   slashMenuSuppressed = false;
+  syncComposerHeight();
   renderSlashMenu();
 });
 
@@ -3611,6 +3628,7 @@ if (slashMenuEl) {
 async function bootstrapApp() {
   setBusy(false);
   render();
+  syncComposerHeight();
   renderSlashMenu();
   await hydrateRuntimeStatus();
   composerInput.focus();

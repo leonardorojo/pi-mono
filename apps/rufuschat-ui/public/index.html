@@ -67,159 +67,176 @@
           </div>
         </header>
 
-        <section class="context-pack-preview context-scope-suggestion" id="context-scope-suggestion" hidden aria-label="Suggested RCK scope">
-          <div class="context-pack-preview__header">
-            <div>
-              <p class="context-pack-preview__eyebrow">Suggested RCK scope</p>
-              <h2 id="context-scope-suggestion-title">Suggested RCK scope</h2>
-            </div>
-            <span class="context-pack-preview__status" id="context-scope-suggestion-status">Placeholder / not generated</span>
+        <div class="chat-pane__body">
+          <div class="chat-pane__workspace">
+            <section class="messages" id="messages" aria-live="polite" aria-label="Messages">
+              <div class="messages__inner" id="messages-inner"></div>
+            </section>
+
+            <div class="slash-menu" id="slash-menu" hidden aria-label="Slash commands"></div>
+
+            <form class="composer" id="composer-form">
+              <label class="sr-only" for="composer-input">Ask RufusChat</label>
+              <textarea id="composer-input" name="message" rows="1" placeholder="Ask RufusChat..." autocomplete="off" spellcheck="false"></textarea>
+              <div class="composer__footer">
+                <span class="composer__hint">Type / for commands</span>
+                <button class="button button--primary" type="submit" aria-label="Send message">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 18V6" />
+                    <path d="M7.5 10.5 12 6l4.5 4.5" />
+                  </svg>
+                  <span class="sr-only">Send</span>
+                </button>
+              </div>
+            </form>
           </div>
 
-          <p class="context-pack-preview__summary" id="context-scope-suggestion-summary">
-            This suggestion is demo/dev-only and never calls RCK or an LLM.
-          </p>
+          <aside class="chat-pane__rck-panel" id="context-side-panel" hidden aria-label="RCK context side panel">
+            <div class="chat-pane__rck-panel-header">
+              <div>
+                <p class="chat-pane__rck-panel-eyebrow">RCK context</p>
+                <h2>Placeholder / not connected</h2>
+              </div>
+              <div class="chat-pane__rck-panel-actions">
+                <span class="chat-pane__rck-panel-badge" id="context-side-panel-badge">Placeholder</span>
+                <button class="button button--ghost button--compact chat-pane__rck-panel-close" id="context-side-panel-close" type="button">Close panel</button>
+              </div>
+            </div>
 
-          <div class="context-pack-preview__grid">
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">User intent</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-intent"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Suggested target</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-target"></div>
-            </div>
-            <div class="context-pack-preview__field">
-              <div class="context-pack-preview__label">Suggested depth</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-depth"></div>
-            </div>
-            <div class="context-pack-preview__field">
-              <div class="context-pack-preview__label">Confidence</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-confidence"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Selected artifacts</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-selected"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Candidate artifacts</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-candidates"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Excluded artifacts</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-excluded"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Rationale</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-rationale"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Warnings</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-warnings"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">User decision</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-decision"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">ContextPack preview relation</div>
-              <div class="context-pack-preview__value" id="context-scope-suggestion-preview"></div>
-            </div>
-          </div>
+            <section class="context-pack-preview context-scope-suggestion" id="context-scope-suggestion" hidden aria-label="Suggested RCK scope">
+              <div class="context-pack-preview__header">
+                <div>
+                  <p class="context-pack-preview__eyebrow">Suggested RCK scope</p>
+                  <h2 id="context-scope-suggestion-title">Suggested RCK scope</h2>
+                </div>
+                <span class="context-pack-preview__status" id="context-scope-suggestion-status">Placeholder / not generated</span>
+              </div>
 
-          <div class="context-pack-preview__actions">
-            <button class="button button--primary button--compact" id="context-scope-suggestion-approve" type="button">Approve scope</button>
-            <button class="button button--ghost button--compact" id="context-scope-suggestion-reject" type="button">Reject</button>
-            <button class="button button--ghost button--compact" id="context-scope-suggestion-adjust" type="button">Adjust manually</button>
-          </div>
-        </section>
+              <p class="context-pack-preview__summary" id="context-scope-suggestion-summary">
+                This suggestion is demo/dev-only and never calls RCK or an LLM.
+              </p>
 
-        <section class="context-pack-preview" id="context-pack-preview" hidden aria-label="ContextPack preview placeholder">
-          <div class="context-pack-preview__header">
-            <div>
-              <p class="context-pack-preview__eyebrow">Dev preview</p>
-              <h2 id="context-pack-preview-title">Attach RCK Context</h2>
-            </div>
-            <span class="context-pack-preview__status" id="context-pack-preview-status">Placeholder / not connected</span>
-          </div>
+              <div class="context-pack-preview__grid">
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-intent">
+                  <div class="context-pack-preview__label">User intent</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-intent"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-target">
+                  <div class="context-pack-preview__label">Suggested target</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-target"></div>
+                </div>
+                <div class="context-pack-preview__field" id="context-scope-suggestion-field-depth">
+                  <div class="context-pack-preview__label">Suggested depth</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-depth"></div>
+                </div>
+                <div class="context-pack-preview__field" id="context-scope-suggestion-field-confidence">
+                  <div class="context-pack-preview__label">Confidence</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-confidence"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-selected-artifacts">
+                  <div class="context-pack-preview__label">Selected artifacts</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-selected"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-candidate-artifacts">
+                  <div class="context-pack-preview__label">Candidate artifacts</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-candidates"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-excluded-artifacts">
+                  <div class="context-pack-preview__label">Excluded artifacts</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-excluded"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-rationale">
+                  <div class="context-pack-preview__label">Rationale</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-rationale"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-warnings">
+                  <div class="context-pack-preview__label">Warnings</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-warnings"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-decision">
+                  <div class="context-pack-preview__label">User decision</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-decision"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-scope-suggestion-field-preview">
+                  <div class="context-pack-preview__label">ContextPack preview relation</div>
+                  <div class="context-pack-preview__value" id="context-scope-suggestion-preview"></div>
+                </div>
+              </div>
 
-          <p class="context-pack-preview__summary" id="context-pack-preview-summary">
-            This phase only exposes a contract-shaped placeholder preview.
-          </p>
+              <div class="context-pack-preview__actions">
+                <button class="button button--primary button--compact" id="context-scope-suggestion-approve" type="button">Approve scope</button>
+                <button class="button button--ghost button--compact" id="context-scope-suggestion-reject" type="button">Reject</button>
+                <button class="button button--ghost button--compact" id="context-scope-suggestion-adjust" type="button">Adjust manually</button>
+              </div>
+            </section>
 
-          <div class="context-pack-preview__grid">
-            <div class="context-pack-preview__field">
-              <div class="context-pack-preview__label">ContextPack reference</div>
-              <div class="context-pack-preview__value" id="context-pack-preview-reference"></div>
-            </div>
-            <div class="context-pack-preview__field">
-              <div class="context-pack-preview__label">Source trace slice hashes</div>
-              <div class="context-pack-preview__value context-pack-preview__value--mono" id="context-pack-preview-trace-hashes"></div>
-            </div>
-            <div class="context-pack-preview__field">
-              <div class="context-pack-preview__label">Visible sections</div>
-              <div class="context-pack-preview__value" id="context-pack-preview-sections"></div>
-            </div>
-            <div class="context-pack-preview__field">
-              <div class="context-pack-preview__label">Estimated token cost</div>
-              <div class="context-pack-preview__value" id="context-pack-preview-token-cost"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Warnings</div>
-              <div class="context-pack-preview__value" id="context-pack-preview-warnings"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Constraints</div>
-              <div class="context-pack-preview__value" id="context-pack-preview-constraints"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Provenance summary</div>
-              <div class="context-pack-preview__value" id="context-pack-preview-provenance"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Scope derivation</div>
-              <div class="context-pack-preview__value" id="context-pack-preview-scope-derivation"></div>
-            </div>
-            <div class="context-pack-preview__field context-pack-preview__field--wide">
-              <div class="context-pack-preview__label">Exact text to inject</div>
-              <pre class="context-pack-preview__text" id="context-pack-preview-exact-text"></pre>
-            </div>
-            <div class="context-pack-preview__field">
-              <div class="context-pack-preview__label">User approval status</div>
-              <div class="context-pack-preview__value" id="context-pack-preview-approval-status"></div>
-            </div>
-          </div>
+            <section class="context-pack-preview" id="context-pack-preview" hidden aria-label="ContextPack preview placeholder">
+              <div class="context-pack-preview__header">
+                <div>
+                  <p class="context-pack-preview__eyebrow">Dev preview</p>
+                  <h2 id="context-pack-preview-title">Attach RCK Context</h2>
+                </div>
+                <span class="context-pack-preview__status" id="context-pack-preview-status">Placeholder / not connected</span>
+              </div>
 
-          <div class="context-pack-preview__actions">
-            <button class="button button--primary button--compact" id="context-pack-preview-confirm" type="button" disabled>
-              Not available in this phase
-            </button>
-            <button class="button button--ghost button--compact" id="context-pack-preview-close" type="button">
-              Close preview
-            </button>
-          </div>
-        </section>
+              <p class="context-pack-preview__summary" id="context-pack-preview-summary">
+                This phase only exposes a contract-shaped placeholder preview.
+              </p>
 
-        <section class="messages" id="messages" aria-live="polite" aria-label="Messages">
-          <div class="messages__inner" id="messages-inner"></div>
-        </section>
+              <div class="context-pack-preview__grid">
+                <div class="context-pack-preview__field" id="context-pack-preview-field-reference">
+                  <div class="context-pack-preview__label">ContextPack reference</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-reference"></div>
+                </div>
+                <div class="context-pack-preview__field" id="context-pack-preview-field-trace-hashes">
+                  <div class="context-pack-preview__label">Source trace slice hashes</div>
+                  <div class="context-pack-preview__value context-pack-preview__value--mono" id="context-pack-preview-trace-hashes"></div>
+                </div>
+                <div class="context-pack-preview__field" id="context-pack-preview-field-sections">
+                  <div class="context-pack-preview__label">Visible sections</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-sections"></div>
+                </div>
+                <div class="context-pack-preview__field" id="context-pack-preview-field-token-cost">
+                  <div class="context-pack-preview__label">Estimated token cost</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-token-cost"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-warnings">
+                  <div class="context-pack-preview__label">Warnings</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-warnings"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-constraints">
+                  <div class="context-pack-preview__label">Constraints</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-constraints"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-provenance">
+                  <div class="context-pack-preview__label">Provenance summary</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-provenance"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-scope-derivation">
+                  <div class="context-pack-preview__label">Scope derivation</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-scope-derivation"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-exact-text">
+                  <div class="context-pack-preview__label">Exact text to inject</div>
+                  <pre class="context-pack-preview__text" id="context-pack-preview-exact-text"></pre>
+                </div>
+                <div class="context-pack-preview__field" id="context-pack-preview-field-approval-status">
+                  <div class="context-pack-preview__label">User approval status</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-approval-status"></div>
+                </div>
+              </div>
 
-        <div class="slash-menu" id="slash-menu" hidden aria-label="Slash commands"></div>
-
-        <form class="composer" id="composer-form">
-          <label class="sr-only" for="composer-input">Ask RufusChat</label>
-          <textarea id="composer-input" name="message" rows="1" placeholder="Ask RufusChat..." autocomplete="off" spellcheck="false"></textarea>
-          <div class="composer__footer">
-            <span class="composer__hint">Type / for commands</span>
-            <button class="button button--primary" type="submit" aria-label="Send message">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 18V6" />
-                <path d="M7.5 10.5 12 6l4.5 4.5" />
-              </svg>
-              <span class="sr-only">Send</span>
-            </button>
-          </div>
-        </form>
+              <div class="context-pack-preview__actions">
+                <button class="button button--primary button--compact" id="context-pack-preview-confirm" type="button" disabled>
+                  Not available in this phase
+                </button>
+                <button class="button button--ghost button--compact" id="context-pack-preview-close" type="button">
+                  Close preview
+                </button>
+              </div>
+            </section>
+          </aside>
+        </div>
       </main>
     </div>
 

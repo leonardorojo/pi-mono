@@ -33,6 +33,9 @@ const productStateImportButton = document.getElementById('product-state-import-b
 const productStateResetButton = document.getElementById('product-state-reset-button');
 const productStateImportInput = document.getElementById('product-state-import-input');
 const attachContextPackButton = document.getElementById('attach-context-pack-button');
+const contextSidePanelEl = document.getElementById('context-side-panel');
+const contextSidePanelBadgeEl = document.getElementById('context-side-panel-badge');
+const contextSidePanelCloseButton = document.getElementById('context-side-panel-close');
 const contextScopeSuggestionPanel = document.getElementById('context-scope-suggestion');
 const contextScopeSuggestionTitleEl = document.getElementById('context-scope-suggestion-title');
 const contextScopeSuggestionStatusEl = document.getElementById('context-scope-suggestion-status');
@@ -96,6 +99,7 @@ const tracePlaceholder = {
 };
 let activeContextScopeSuggestion = null;
 let activeContextPackPreview = null;
+let isContextSidePanelOpen = false;
 const contextPackCandidateSummaryLines = [
   'Current chat context placeholder',
   'ProductState metadata placeholder',
@@ -664,29 +668,78 @@ function createContextPackResultContent(_contextPackId, status) {
 }
 
 function formatContextScopeList(items) {
-  return Array.isArray(items) && items.length > 0
-    ? items
-        .map((item) => {
-          if (!item || typeof item !== 'object') {
-            return '';
-          }
+  if (!Array.isArray(items) || items.length === 0) {
+    return '';
+  }
 
-          const label = typeof item.label === 'string' && item.label.trim() ? item.label.trim() : item.path;
-          const path = typeof item.path === 'string' && item.path.trim() ? item.path.trim() : 'unknown';
-          const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '';
-          return reason ? `${label} (${path}) — ${reason}` : `${label} (${path})`;
-        })
-        .filter(Boolean)
-        .join(' · ')
-    : '—';
+  const formatted = items
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return '';
+      }
+
+      const label = typeof item.label === 'string' && item.label.trim() ? item.label.trim() : item.path;
+      const path = typeof item.path === 'string' && item.path.trim() ? item.path.trim() : 'unknown';
+      const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '';
+      return reason ? `${label} (${path}) — ${reason}` : `${label} (${path})`;
+    })
+    .filter(Boolean)
+    .join(' · ');
+
+  return formatted || '';
 }
 
 function formatContextScopeConfidence(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) {
-    return '—';
+    return '';
   }
 
   return `${Math.round(value * 100)}%`;
+}
+
+function hasRenderableValue(value) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === 'boolean') {
+    return true;
+  }
+
+  if (typeof value === 'object') {
+    return Object.keys(value).length > 0;
+  }
+
+  return false;
+}
+
+function setFieldVisibility(fieldEl, value) {
+  if (!fieldEl) {
+    return;
+  }
+
+  fieldEl.hidden = !hasRenderableValue(value);
+}
+
+function setTextField(fieldEl, value, fallback = '') {
+  if (!fieldEl) {
+    return;
+  }
+
+  const nextValue = hasRenderableValue(value) ? String(value).trim() : fallback;
+  fieldEl.textContent = nextValue;
 }
 
 function createFallbackContextScopeSuggestion(intentText = '') {
@@ -825,6 +878,11 @@ function normalizeContextScopeSuggestion(candidate) {
 }
 
 async function loadContextScopeSuggestion(intentText = '') {
+  activeContextScopeSuggestion = normalizeContextScopeSuggestion(createFallbackContextScopeSuggestion(intentText));
+  activeContextPackPreview = null;
+  isContextSidePanelOpen = true;
+  renderContextScopeSuggestionPanel();
+
   try {
     const data = await postJson(contextScopeSuggestionEndpoint, { intent: intentText });
     activeContextScopeSuggestion = normalizeContextScopeSuggestion(data.suggestion ?? data);
@@ -839,7 +897,6 @@ async function loadContextScopeSuggestion(intentText = '') {
     });
   }
 
-  activeContextPackPreview = null;
   renderContextScopeSuggestionPanel();
 }
 
@@ -854,13 +911,18 @@ function updateContextScopeSuggestionState(nextSuggestion) {
   renderContextScopeSuggestionPanel();
 }
 
-function openContextPackPreview() {
-  return loadContextScopeSuggestion(getSuggestedScopeIntentText());
+async function openContextPackPreview() {
+  isContextSidePanelOpen = true;
+  if (!activeContextScopeSuggestion) {
+    await loadContextScopeSuggestion(getSuggestedScopeIntentText());
+    return;
+  }
+
+  renderContextScopeSuggestionPanel();
 }
 
 function closeContextPackPreview() {
-  activeContextScopeSuggestion = null;
-  activeContextPackPreview = null;
+  isContextSidePanelOpen = false;
   renderContextScopeSuggestionPanel();
 }
 
@@ -931,20 +993,53 @@ async function adjustContextScopeSuggestion() {
 }
 
 function renderContextScopeSuggestionPanel() {
-  if (!contextScopeSuggestionPanel) {
+  if (!contextSidePanelEl) {
+    return;
+  }
+
+  contextSidePanelEl.hidden = !isContextSidePanelOpen;
+  if (attachContextPackButton) {
+    attachContextPackButton.textContent = isContextSidePanelOpen ? 'Close RCK Context' : 'Attach RCK Context';
+    attachContextPackButton.setAttribute('aria-expanded', isContextSidePanelOpen ? 'true' : 'false');
+  }
+
+  if (!isContextSidePanelOpen) {
+    if (contextScopeSuggestionPanel) {
+      contextScopeSuggestionPanel.hidden = true;
+    }
+    if (contextPackPreviewPanel) {
+      contextPackPreviewPanel.hidden = true;
+    }
+    if (contextSidePanelBadgeEl) {
+      contextSidePanelBadgeEl.textContent = 'Placeholder / not connected';
+    }
     return;
   }
 
   const suggestion = activeContextScopeSuggestion;
+  if (contextSidePanelBadgeEl) {
+    contextSidePanelBadgeEl.textContent = suggestion?.status === 'approved'
+      ? 'Approved placeholder'
+      : suggestion?.status === 'rejected'
+        ? 'Rejected locally'
+        : suggestion?.status === 'adjusted'
+          ? 'Adjusted locally'
+          : 'Placeholder / not connected';
+  }
+
   if (!suggestion) {
-    contextScopeSuggestionPanel.hidden = true;
+    if (contextScopeSuggestionPanel) {
+      contextScopeSuggestionPanel.hidden = true;
+    }
     if (contextPackPreviewPanel) {
       contextPackPreviewPanel.hidden = true;
     }
     return;
   }
 
-  contextScopeSuggestionPanel.hidden = false;
+  if (contextScopeSuggestionPanel) {
+    contextScopeSuggestionPanel.hidden = false;
+  }
 
   if (contextScopeSuggestionTitleEl) {
     contextScopeSuggestionTitleEl.textContent = 'Suggested RCK scope';
@@ -972,63 +1067,57 @@ function renderContextScopeSuggestionPanel() {
             : 'This suggestion is demo/dev-only and never calls RCK or an LLM.';
   }
 
-  if (contextScopeSuggestionIntentEl) {
-    contextScopeSuggestionIntentEl.textContent = suggestion.userIntentText || '—';
-  }
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-intent'), suggestion.userIntentText);
+  setTextField(contextScopeSuggestionIntentEl, suggestion.userIntentText, '');
 
-  if (contextScopeSuggestionTargetEl) {
-    const target = suggestion.suggestedTarget ?? {};
-    contextScopeSuggestionTargetEl.textContent = `${target.targetType ?? 'unknown'} · ${target.label ?? '—'} · ${target.targetId ?? '—'}`;
-  }
+  const target = suggestion.suggestedTarget ?? {};
+  const targetText = [target.targetType, target.label, target.targetId].filter(Boolean).join(' · ');
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-target'), targetText);
+  setTextField(contextScopeSuggestionTargetEl, targetText, '');
 
-  if (contextScopeSuggestionDepthEl) {
-    contextScopeSuggestionDepthEl.textContent = String(suggestion.suggestedDepth ?? '—');
-  }
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-depth'), suggestion.suggestedDepth);
+  setTextField(contextScopeSuggestionDepthEl, suggestion.suggestedDepth, '');
 
-  if (contextScopeSuggestionArtifactsSelectedEl) {
-    contextScopeSuggestionArtifactsSelectedEl.textContent = formatContextScopeList(suggestion.selectedArtifacts);
-  }
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-confidence'), suggestion.confidence);
+  setTextField(contextScopeSuggestionConfidenceEl, formatContextScopeConfidence(suggestion.confidence), '');
 
-  if (contextScopeSuggestionArtifactsCandidatesEl) {
-    contextScopeSuggestionArtifactsCandidatesEl.textContent = formatContextScopeList(suggestion.candidateArtifacts);
-  }
+  const selectedArtifacts = formatContextScopeList(suggestion.selectedArtifacts);
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-selected-artifacts'), selectedArtifacts);
+  setTextField(contextScopeSuggestionArtifactsSelectedEl, selectedArtifacts, '');
 
-  if (contextScopeSuggestionArtifactsExcludedEl) {
-    contextScopeSuggestionArtifactsExcludedEl.textContent = formatContextScopeList(suggestion.excludedArtifacts);
-  }
+  const candidateArtifacts = formatContextScopeList(suggestion.candidateArtifacts);
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-candidate-artifacts'), candidateArtifacts);
+  setTextField(contextScopeSuggestionArtifactsCandidatesEl, candidateArtifacts, '');
 
-  if (contextScopeSuggestionRationaleEl) {
-    contextScopeSuggestionRationaleEl.textContent = suggestion.rationale || '—';
-  }
+  const excludedArtifacts = formatContextScopeList(suggestion.excludedArtifacts);
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-excluded-artifacts'), excludedArtifacts);
+  setTextField(contextScopeSuggestionArtifactsExcludedEl, excludedArtifacts, '');
 
-  if (contextScopeSuggestionConfidenceEl) {
-    contextScopeSuggestionConfidenceEl.textContent = formatContextScopeConfidence(suggestion.confidence);
-  }
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-rationale'), suggestion.rationale);
+  setTextField(contextScopeSuggestionRationaleEl, suggestion.rationale, '');
 
-  if (contextScopeSuggestionWarningsEl) {
-    contextScopeSuggestionWarningsEl.textContent = Array.isArray(suggestion.warnings) && suggestion.warnings.length > 0
-      ? suggestion.warnings.join(' · ')
-      : '—';
-  }
+  const warningsText = Array.isArray(suggestion.warnings) ? suggestion.warnings.filter(Boolean).join(' · ') : '';
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-warnings'), warningsText);
+  setTextField(contextScopeSuggestionWarningsEl, warningsText, '');
 
-  if (contextScopeSuggestionDecisionEl) {
-    const decision = suggestion.userDecision ?? {};
-    const decisionLabel = decision.decision === 'approved'
-      ? 'Approved placeholder'
-      : decision.decision === 'rejected'
-        ? 'Rejected locally'
-        : decision.decision === 'adjusted'
-          ? 'Adjusted locally'
-          : 'Pending approval';
-    const decidedAt = typeof decision.decidedAt === 'string' && decision.decidedAt ? decision.decidedAt : '—';
-    contextScopeSuggestionDecisionEl.textContent = `${decisionLabel} · ${decidedAt}`;
-  }
+  const decision = suggestion.userDecision ?? {};
+  const decisionLabel = decision.decision === 'approved'
+    ? 'Approved placeholder'
+    : decision.decision === 'rejected'
+      ? 'Rejected locally'
+      : decision.decision === 'adjusted'
+        ? 'Adjusted locally'
+        : 'Pending approval';
+  const decidedAt = typeof decision.decidedAt === 'string' && decision.decidedAt ? decision.decidedAt : '—';
+  const decisionText = `${decisionLabel} · ${decidedAt}`;
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-decision'), decisionText);
+  setTextField(contextScopeSuggestionDecisionEl, decisionText, '');
 
-  if (contextScopeSuggestionPreviewEl) {
-    contextScopeSuggestionPreviewEl.textContent = suggestion.preview?.derivedFromSuggestion
-      ? 'Preview is derived from the approved scope.'
-      : 'Preview placeholder exists, but it was not generated from this scope. Demo/dev-only only.';
-  }
+  const previewRelationText = suggestion.preview?.derivedFromSuggestion
+    ? 'Preview is derived from the approved scope.'
+    : 'Preview placeholder exists, but it was not generated from this scope. Demo/dev-only only.';
+  setFieldVisibility(document.getElementById('context-scope-suggestion-field-preview'), previewRelationText);
+  setTextField(contextScopeSuggestionPreviewEl, previewRelationText, '');
 
   if (contextScopeSuggestionApproveButton) {
     contextScopeSuggestionApproveButton.disabled = suggestion.status === 'approved';
@@ -1194,7 +1283,12 @@ function normalizeContextPackPreview(candidate) {
 }
 
 function formatContextPackPreviewList(items) {
-  return Array.isArray(items) && items.length > 0 ? items.join(' · ') : '—';
+  if (!Array.isArray(items) || items.length === 0) {
+    return '';
+  }
+
+  const formatted = items.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim()).join(' · ');
+  return formatted || '';
 }
 
 function renderContextPackPreviewPanel() {
@@ -1204,12 +1298,19 @@ function renderContextPackPreviewPanel() {
 
   const preview = activeContextPackPreview;
   const scopeApproved = activeContextScopeSuggestion?.status === 'approved';
-  if (!preview || !scopeApproved) {
-    contextPackPreviewPanel.hidden = true;
+  const shouldShow = Boolean(preview && scopeApproved && isContextSidePanelOpen);
+  contextPackPreviewPanel.hidden = !shouldShow;
+
+  if (!shouldShow) {
+    if (contextSidePanelBadgeEl && !activeContextScopeSuggestion) {
+      contextSidePanelBadgeEl.textContent = 'Placeholder';
+    }
     return;
   }
 
-  contextPackPreviewPanel.hidden = false;
+  if (contextSidePanelBadgeEl) {
+    contextSidePanelBadgeEl.textContent = 'Approved placeholder';
+  }
 
   if (contextPackPreviewTitleEl) {
     contextPackPreviewTitleEl.textContent = preview.title;
@@ -1225,57 +1326,56 @@ function renderContextPackPreviewPanel() {
       : 'A live preview is connected.';
   }
 
-  if (contextPackPreviewReferenceEl) {
-    contextPackPreviewReferenceEl.textContent = `${preview.reference?.contextPackId ?? preview.contextPackId} · ${preview.reference?.contextPackHash ?? preview.contextPackHash}`;
-  }
+  const referenceText = `${preview.reference?.contextPackId ?? preview.contextPackId} · ${preview.reference?.contextPackHash ?? preview.contextPackHash}`;
+  setFieldVisibility(document.getElementById('context-pack-preview-field-reference'), referenceText);
+  setTextField(contextPackPreviewReferenceEl, referenceText, '');
 
-  if (contextPackPreviewTraceHashesEl) {
-    contextPackPreviewTraceHashesEl.textContent = formatContextPackPreviewList(preview.sourceTraceSliceHashes);
-  }
+  const traceHashText = formatContextPackPreviewList(preview.sourceTraceSliceHashes);
+  setFieldVisibility(document.getElementById('context-pack-preview-field-trace-hashes'), traceHashText);
+  setTextField(contextPackPreviewTraceHashesEl, traceHashText, '');
 
-  if (contextPackPreviewSectionsEl) {
-    contextPackPreviewSectionsEl.textContent = preview.sectionsVisible
-      .filter((section) => section?.visible !== false)
-      .map((section) => `${section.title}: ${section.summary}`)
-      .join(' · ');
-  }
+  const visibleSectionsText = Array.isArray(preview.sectionsVisible)
+    ? preview.sectionsVisible
+        .filter((section) => section?.visible !== false)
+        .map((section) => `${section.title}: ${section.summary}`)
+        .join(' · ')
+    : '';
+  setFieldVisibility(document.getElementById('context-pack-preview-field-sections'), visibleSectionsText);
+  setTextField(contextPackPreviewSectionsEl, visibleSectionsText, '');
 
-  if (contextPackPreviewTokenCostEl) {
-    contextPackPreviewTokenCostEl.textContent = preview.estimatedTokenCost === null ? '—' : String(preview.estimatedTokenCost);
-  }
+  setFieldVisibility(document.getElementById('context-pack-preview-field-token-cost'), preview.estimatedTokenCost);
+  setTextField(contextPackPreviewTokenCostEl, preview.estimatedTokenCost === null ? '' : String(preview.estimatedTokenCost), '');
 
-  if (contextPackPreviewWarningsEl) {
-    contextPackPreviewWarningsEl.textContent = formatContextPackPreviewList(preview.warnings);
-  }
+  const warningsText = formatContextPackPreviewList(preview.warnings);
+  setFieldVisibility(document.getElementById('context-pack-preview-field-warnings'), warningsText);
+  setTextField(contextPackPreviewWarningsEl, warningsText, '');
 
-  if (contextPackPreviewConstraintsEl) {
-    contextPackPreviewConstraintsEl.textContent = formatContextPackPreviewList(preview.constraints);
-  }
+  const constraintsText = formatContextPackPreviewList(preview.constraints);
+  setFieldVisibility(document.getElementById('context-pack-preview-field-constraints'), constraintsText);
+  setTextField(contextPackPreviewConstraintsEl, constraintsText, '');
 
-  if (contextPackPreviewProvenanceEl) {
-    const provenance = preview.provenanceSummary ?? {};
-    contextPackPreviewProvenanceEl.textContent = [
-      provenance.sourceDocument,
-      provenance.contractDocument,
-      provenance.schemaDocument,
-      provenance.publishedCommit,
-      provenance.mode,
-    ]
-      .filter(Boolean)
-      .join(' · ');
-  }
+  const provenance = preview.provenanceSummary ?? {};
+  const provenanceText = [
+    provenance.sourceDocument,
+    provenance.contractDocument,
+    provenance.schemaDocument,
+    provenance.publishedCommit,
+    provenance.mode,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  setFieldVisibility(document.getElementById('context-pack-preview-field-provenance'), provenanceText);
+  setTextField(contextPackPreviewProvenanceEl, provenanceText, '');
 
-  if (contextPackPreviewScopeDerivationEl) {
-    contextPackPreviewScopeDerivationEl.textContent = `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview was not generated from that scope.`;
-  }
+  const scopeDerivationText = `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview was not generated from that scope.`;
+  setFieldVisibility(document.getElementById('context-pack-preview-field-scope-derivation'), scopeDerivationText);
+  setTextField(contextPackPreviewScopeDerivationEl, scopeDerivationText, '');
 
-  if (contextPackPreviewExactTextEl) {
-    contextPackPreviewExactTextEl.textContent = preview.exactTextToInject;
-  }
+  setFieldVisibility(document.getElementById('context-pack-preview-field-exact-text'), preview.exactTextToInject);
+  setTextField(contextPackPreviewExactTextEl, preview.exactTextToInject, '');
 
-  if (contextPackPreviewApprovalStatusEl) {
-    contextPackPreviewApprovalStatusEl.textContent = 'Approved placeholder';
-  }
+  setFieldVisibility(document.getElementById('context-pack-preview-field-approval-status'), 'Approved placeholder');
+  setTextField(contextPackPreviewApprovalStatusEl, 'Approved placeholder', '');
 
   if (contextPackPreviewConfirmButton) {
     contextPackPreviewConfirmButton.disabled = true;
@@ -4292,7 +4392,18 @@ if (productStateResetButton) {
 
 if (attachContextPackButton) {
   attachContextPackButton.addEventListener('click', () => {
+    if (isContextSidePanelOpen) {
+      closeContextPackPreview();
+      return;
+    }
+
     void openContextPackPreview();
+  });
+}
+
+if (contextSidePanelCloseButton) {
+  contextSidePanelCloseButton.addEventListener('click', () => {
+    closeContextPackPreview();
   });
 }
 

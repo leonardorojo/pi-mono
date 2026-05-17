@@ -549,12 +549,89 @@ textarea:disabled {
   background: var(--bg);
 }
 
+.chat-pane__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 32vw, 460px);
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 0 12px 12px;
+}
+
+.chat-pane__workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-pane__rck-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 16%), rgba(11, 11, 11, 0.98);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.chat-pane__rck-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-pane__rck-panel-eyebrow {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.62rem;
+  color: var(--muted-strong);
+}
+
+.chat-pane__rck-panel-header h2 {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.2;
+}
+
+.chat-pane__rck-panel-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.chat-pane__rck-panel-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.56rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.chat-pane__rck-panel-close {
+  min-width: 0;
+}
+
 .context-pack-preview {
   display: grid;
   gap: 14px;
-  width: min(100%, var(--chat-width));
-  margin: 10px auto 12px;
-  padding: 16px 18px 18px;
+  width: 100%;
+  margin: 0;
+  padding: 16px 16px 18px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 18px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
@@ -565,7 +642,7 @@ textarea:disabled {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .context-pack-preview__eyebrow {
@@ -1548,6 +1625,17 @@ button[hidden] {
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .chat-pane__body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .chat-pane__rck-panel {
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    max-height: 46vh;
   }
 
   .chat-header,

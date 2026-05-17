@@ -8,6 +8,7 @@ This phase implements a **placeholder / dev-preview contract** for RufusChat.
 - A dev-safe endpoint: `GET /api/rck/context-pack/preview-placeholder`.
 - A secondary UI panel labeled **Attach RCK Context**.
 - The confirmation action is disabled and shows **Not available in this phase**.
+- The preview can appear after the user approves the placeholder scope suggestion, but it remains a dev-only placeholder.
 
 ## What is not in scope
 
@@ -19,6 +20,7 @@ This phase implements a **placeholder / dev-preview contract** for RufusChat.
 - No LLM generation.
 - No embeddings, ranking, or memory automation.
 - No persisted injection records.
+- No real injection chain.
 
 ## Contract source
 

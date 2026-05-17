@@ -33,6 +33,24 @@ const productStateImportButton = document.getElementById('product-state-import-b
 const productStateResetButton = document.getElementById('product-state-reset-button');
 const productStateImportInput = document.getElementById('product-state-import-input');
 const attachContextPackButton = document.getElementById('attach-context-pack-button');
+const contextScopeSuggestionPanel = document.getElementById('context-scope-suggestion');
+const contextScopeSuggestionTitleEl = document.getElementById('context-scope-suggestion-title');
+const contextScopeSuggestionStatusEl = document.getElementById('context-scope-suggestion-status');
+const contextScopeSuggestionSummaryEl = document.getElementById('context-scope-suggestion-summary');
+const contextScopeSuggestionIntentEl = document.getElementById('context-scope-suggestion-intent');
+const contextScopeSuggestionTargetEl = document.getElementById('context-scope-suggestion-target');
+const contextScopeSuggestionDepthEl = document.getElementById('context-scope-suggestion-depth');
+const contextScopeSuggestionArtifactsSelectedEl = document.getElementById('context-scope-suggestion-artifacts-selected');
+const contextScopeSuggestionArtifactsCandidatesEl = document.getElementById('context-scope-suggestion-artifacts-candidates');
+const contextScopeSuggestionArtifactsExcludedEl = document.getElementById('context-scope-suggestion-artifacts-excluded');
+const contextScopeSuggestionRationaleEl = document.getElementById('context-scope-suggestion-rationale');
+const contextScopeSuggestionConfidenceEl = document.getElementById('context-scope-suggestion-confidence');
+const contextScopeSuggestionWarningsEl = document.getElementById('context-scope-suggestion-warnings');
+const contextScopeSuggestionDecisionEl = document.getElementById('context-scope-suggestion-decision');
+const contextScopeSuggestionPreviewEl = document.getElementById('context-scope-suggestion-preview');
+const contextScopeSuggestionApproveButton = document.getElementById('context-scope-suggestion-approve');
+const contextScopeSuggestionRejectButton = document.getElementById('context-scope-suggestion-reject');
+const contextScopeSuggestionAdjustButton = document.getElementById('context-scope-suggestion-adjust');
 const contextPackPreviewPanel = document.getElementById('context-pack-preview');
 const contextPackPreviewTitleEl = document.getElementById('context-pack-preview-title');
 const contextPackPreviewStatusEl = document.getElementById('context-pack-preview-status');
@@ -44,12 +62,14 @@ const contextPackPreviewTokenCostEl = document.getElementById('context-pack-prev
 const contextPackPreviewWarningsEl = document.getElementById('context-pack-preview-warnings');
 const contextPackPreviewConstraintsEl = document.getElementById('context-pack-preview-constraints');
 const contextPackPreviewProvenanceEl = document.getElementById('context-pack-preview-provenance');
+const contextPackPreviewScopeDerivationEl = document.getElementById('context-pack-preview-scope-derivation');
 const contextPackPreviewExactTextEl = document.getElementById('context-pack-preview-exact-text');
 const contextPackPreviewApprovalStatusEl = document.getElementById('context-pack-preview-approval-status');
 const contextPackPreviewConfirmButton = document.getElementById('context-pack-preview-confirm');
 const contextPackPreviewCloseButton = document.getElementById('context-pack-preview-close');
 
 const productStateEndpoint = '/api/product-state';
+const contextScopeSuggestionEndpoint = '/api/rck/context-scope/suggest-placeholder';
 const contextPackPreviewEndpoint = '/api/rck/context-pack/preview-placeholder';
 const idleStatusText = 'Browser-local session';
 const loadingStatusText = 'Loading local data...';
@@ -74,6 +94,7 @@ const tracePlaceholder = {
   futureProvider: 'rck-core-kernel',
   mode: 'placeholder',
 };
+let activeContextScopeSuggestion = null;
 let activeContextPackPreview = null;
 const contextPackCandidateSummaryLines = [
   'Current chat context placeholder',
@@ -219,7 +240,7 @@ const commandCatalog = [
   {
     name: '/inject',
     kind: 'placeholder',
-    description: 'Open the placeholder RCK Context preview.',
+    description: 'Open the placeholder RCK scope suggestion flow.',
     insertText: '/inject',
     usage: '/inject',
   },
@@ -642,6 +663,388 @@ function createContextPackResultContent(_contextPackId, status) {
   return [title, detail, 'Product event only · No raw evidence stored'].join('\n');
 }
 
+function formatContextScopeList(items) {
+  return Array.isArray(items) && items.length > 0
+    ? items
+        .map((item) => {
+          if (!item || typeof item !== 'object') {
+            return '';
+          }
+
+          const label = typeof item.label === 'string' && item.label.trim() ? item.label.trim() : item.path;
+          const path = typeof item.path === 'string' && item.path.trim() ? item.path.trim() : 'unknown';
+          const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '';
+          return reason ? `${label} (${path}) — ${reason}` : `${label} (${path})`;
+        })
+        .filter(Boolean)
+        .join(' · ')
+    : '—';
+}
+
+function formatContextScopeConfidence(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return '—';
+  }
+
+  return `${Math.round(value * 100)}%`;
+}
+
+function createFallbackContextScopeSuggestion(intentText = '') {
+  const userIntentText = typeof intentText === 'string' && intentText.trim() ? intentText.trim() : 'Qué decisiones tomamos sobre ContextPack y RufusChat?';
+
+  return {
+    suggestionId: 'rck-scope-suggestion-placeholder-v1',
+    status: 'suggested',
+    userIntentText,
+    suggestedTarget: {
+      targetType: 'anchor',
+      targetId: 'mock-anchor-rufuschat-contextpack-adapter',
+      label: 'RufusChat ContextPack adapter boundary',
+    },
+    suggestedDepth: 4,
+    includeAnchors: true,
+    includeEvidenceRefs: true,
+    includeDocs: true,
+    selectedArtifacts: [
+      {
+        path: 'docs/CONTEXT_PACK_BOUNDARY.md',
+        label: 'ContextPack boundary',
+        reason: 'Defines the scope contract and the user approval boundary.',
+      },
+      {
+        path: 'docs/RUFUSCHAT_ADAPTER_DESIGN.md',
+        label: 'RufusChat adapter design',
+        reason: 'Contains the integration boundary for the placeholder flow.',
+      },
+      {
+        path: 'apps/rufuschat-ui/RCK_CONTEXTPACK_PREVIEW.md',
+        label: 'ContextPack preview placeholder doc',
+        reason: 'Documents the placeholder preview that appears after approval.',
+      },
+    ],
+    candidateArtifacts: [
+      {
+        path: 'apps/rufuschat-ui/RCK_CONTEXT_SCOPE_SUGGESTION.md',
+        label: 'Context scope suggestion doc',
+        reason: 'Documents this dev-only suggestion layer.',
+      },
+      {
+        path: 'apps/rufuschat-ui/server.mjs',
+        label: 'RufusChat UI server',
+        reason: 'Hosts the placeholder suggestion endpoint.',
+      },
+      {
+        path: 'apps/rufuschat-ui/public/app.js',
+        label: 'RufusChat UI client',
+        reason: 'Renders the placeholder suggestion flow in memory only.',
+      },
+      {
+        path: 'apps/rufuschat-ui/public/index.html',
+        label: 'RufusChat UI shell',
+        reason: 'Contains the visible Attach RCK Context panel.',
+      },
+    ],
+    excludedArtifacts: [
+      {
+        path: 'storage/CLI docs',
+        label: 'Storage / CLI docs',
+        reason: 'Excluded because this phase is placeholder/dev-only and does not use storage data.',
+      },
+      {
+        path: '.data product state',
+        label: 'Product state files',
+        reason: 'Excluded because suggestions stay in memory and do not persist to .data.',
+      },
+      {
+        path: 'rck-core internals',
+        label: 'RCK Core internals',
+        reason: 'Excluded because the implementation does not read or execute RCK Core.',
+      },
+    ],
+    rationale:
+      'The intent mentions ContextPack and RufusChat integration, so the placeholder scope centers the adapter boundary, preview placeholder, and the UI/server files that host the dev-only flow.',
+    confidence: 0.83,
+    warnings: [
+      'Placeholder / dev-only suggestion.',
+      'No LLM call was made.',
+      'No TraceSlice was generated.',
+      'No ContextPack was generated.',
+      'Confirm injection stays disabled.',
+    ],
+    preview: {
+      previewId: 'rck-context-scope-preview-placeholder-v1',
+      status: 'placeholder',
+      placeholder: true,
+      available: true,
+      title: 'RufusChat ContextPack preview placeholder',
+      summary: 'Demo/dev-only preview. The real TraceSlice and ContextPack chain is still pending.',
+      derivedFromSuggestion: false,
+      confirmationDisabled: true,
+      nextSteps: [
+        'Connect the scope to a real selector in a later phase.',
+        'Generate a real TraceSlice from an approved scope.',
+        'Build a real ContextPack from that TraceSlice.',
+        'Show a real preview of the generated chain.',
+        'Enable confirm injection only after the real chain exists.',
+      ],
+    },
+    userDecision: {
+      decision: 'pending',
+      decidedAt: null,
+      decidedBy: 'user',
+      notes: ['User approval is required before the suggestion becomes approved locally.'],
+    },
+  };
+}
+
+function normalizeContextScopeSuggestion(candidate) {
+  if (!candidate || typeof candidate !== 'object') {
+    return createFallbackContextScopeSuggestion();
+  }
+
+  return {
+    ...createFallbackContextScopeSuggestion(candidate.userIntentText),
+    ...candidate,
+    suggestedTarget: {
+      ...createFallbackContextScopeSuggestion().suggestedTarget,
+      ...(candidate.suggestedTarget ?? {}),
+    },
+    selectedArtifacts: Array.isArray(candidate.selectedArtifacts) ? candidate.selectedArtifacts : createFallbackContextScopeSuggestion().selectedArtifacts,
+    candidateArtifacts: Array.isArray(candidate.candidateArtifacts) ? candidate.candidateArtifacts : createFallbackContextScopeSuggestion().candidateArtifacts,
+    excludedArtifacts: Array.isArray(candidate.excludedArtifacts) ? candidate.excludedArtifacts : createFallbackContextScopeSuggestion().excludedArtifacts,
+    warnings: Array.isArray(candidate.warnings) ? candidate.warnings : createFallbackContextScopeSuggestion().warnings,
+    preview: {
+      ...createFallbackContextScopeSuggestion().preview,
+      ...(candidate.preview ?? {}),
+    },
+    userDecision: {
+      ...createFallbackContextScopeSuggestion().userDecision,
+      ...(candidate.userDecision ?? {}),
+    },
+  };
+}
+
+async function loadContextScopeSuggestion(intentText = '') {
+  try {
+    const data = await postJson(contextScopeSuggestionEndpoint, { intent: intentText });
+    activeContextScopeSuggestion = normalizeContextScopeSuggestion(data.suggestion ?? data);
+  } catch {
+    activeContextScopeSuggestion = normalizeContextScopeSuggestion({
+      ...createFallbackContextScopeSuggestion(intentText),
+      warnings: [
+        'Placeholder / dev-only suggestion.',
+        'Suggestion endpoint is unavailable.',
+        'Using local fallback mock only.',
+      ],
+    });
+  }
+
+  activeContextPackPreview = null;
+  renderContextScopeSuggestionPanel();
+}
+
+function getSuggestedScopeIntentText() {
+  return typeof composerInput?.value === 'string' && composerInput.value.trim()
+    ? composerInput.value.trim()
+    : 'Qué decisiones tomamos sobre ContextPack y RufusChat?';
+}
+
+function updateContextScopeSuggestionState(nextSuggestion) {
+  activeContextScopeSuggestion = normalizeContextScopeSuggestion(nextSuggestion);
+  renderContextScopeSuggestionPanel();
+}
+
+function openContextPackPreview() {
+  return loadContextScopeSuggestion(getSuggestedScopeIntentText());
+}
+
+function closeContextPackPreview() {
+  activeContextScopeSuggestion = null;
+  activeContextPackPreview = null;
+  renderContextScopeSuggestionPanel();
+}
+
+async function approveContextScopeSuggestion() {
+  if (!activeContextScopeSuggestion) {
+    return;
+  }
+
+  updateContextScopeSuggestionState({
+    ...activeContextScopeSuggestion,
+    status: 'approved',
+    userDecision: {
+      ...activeContextScopeSuggestion.userDecision,
+      decision: 'approved',
+      decidedAt: nowIso(),
+      notes: ['Approved locally only. No TraceSlice, ContextPack, or injection was generated.'],
+    },
+  });
+
+  await loadContextPackPreview();
+}
+
+function rejectContextScopeSuggestion() {
+  if (!activeContextScopeSuggestion) {
+    return;
+  }
+
+  updateContextScopeSuggestionState({
+    ...activeContextScopeSuggestion,
+    status: 'rejected',
+    userDecision: {
+      ...activeContextScopeSuggestion.userDecision,
+      decision: 'rejected',
+      decidedAt: nowIso(),
+      notes: ['Rejected locally. Nothing was generated, persisted, or injected.'],
+    },
+  });
+  activeContextPackPreview = null;
+}
+
+async function adjustContextScopeSuggestion() {
+  if (!activeContextScopeSuggestion) {
+    return;
+  }
+
+  const currentIntent = activeContextScopeSuggestion.userIntentText || getSuggestedScopeIntentText();
+  const nextIntent = window.prompt('Adjust the suggested scope intent', currentIntent);
+  if (nextIntent === null) {
+    return;
+  }
+
+  await loadContextScopeSuggestion(nextIntent);
+  if (!activeContextScopeSuggestion) {
+    return;
+  }
+
+  updateContextScopeSuggestionState({
+    ...activeContextScopeSuggestion,
+    status: 'adjusted',
+    userIntentText: nextIntent.trim() || currentIntent,
+    userDecision: {
+      ...activeContextScopeSuggestion.userDecision,
+      decision: 'adjusted',
+      decidedAt: nowIso(),
+      notes: ['Adjusted locally. The scope suggestion remains placeholder/dev-only.'],
+    },
+  });
+}
+
+function renderContextScopeSuggestionPanel() {
+  if (!contextScopeSuggestionPanel) {
+    return;
+  }
+
+  const suggestion = activeContextScopeSuggestion;
+  if (!suggestion) {
+    contextScopeSuggestionPanel.hidden = true;
+    if (contextPackPreviewPanel) {
+      contextPackPreviewPanel.hidden = true;
+    }
+    return;
+  }
+
+  contextScopeSuggestionPanel.hidden = false;
+
+  if (contextScopeSuggestionTitleEl) {
+    contextScopeSuggestionTitleEl.textContent = 'Suggested RCK scope';
+  }
+
+  if (contextScopeSuggestionStatusEl) {
+    contextScopeSuggestionStatusEl.textContent =
+      suggestion.status === 'approved'
+        ? 'Approved placeholder'
+        : suggestion.status === 'rejected'
+          ? 'Rejected locally'
+          : suggestion.status === 'adjusted'
+            ? 'Adjusted locally'
+            : 'Placeholder / not generated';
+  }
+
+  if (contextScopeSuggestionSummaryEl) {
+    contextScopeSuggestionSummaryEl.textContent =
+      suggestion.status === 'approved'
+        ? 'Approved locally only. No TraceSlice, ContextPack, or injection was generated.'
+        : suggestion.status === 'rejected'
+          ? 'Rejected locally. Nothing was generated, persisted, or injected.'
+          : suggestion.status === 'adjusted'
+            ? 'Adjusted locally. This remains a demo/dev-only placeholder.'
+            : 'This suggestion is demo/dev-only and never calls RCK or an LLM.';
+  }
+
+  if (contextScopeSuggestionIntentEl) {
+    contextScopeSuggestionIntentEl.textContent = suggestion.userIntentText || '—';
+  }
+
+  if (contextScopeSuggestionTargetEl) {
+    const target = suggestion.suggestedTarget ?? {};
+    contextScopeSuggestionTargetEl.textContent = `${target.targetType ?? 'unknown'} · ${target.label ?? '—'} · ${target.targetId ?? '—'}`;
+  }
+
+  if (contextScopeSuggestionDepthEl) {
+    contextScopeSuggestionDepthEl.textContent = String(suggestion.suggestedDepth ?? '—');
+  }
+
+  if (contextScopeSuggestionArtifactsSelectedEl) {
+    contextScopeSuggestionArtifactsSelectedEl.textContent = formatContextScopeList(suggestion.selectedArtifacts);
+  }
+
+  if (contextScopeSuggestionArtifactsCandidatesEl) {
+    contextScopeSuggestionArtifactsCandidatesEl.textContent = formatContextScopeList(suggestion.candidateArtifacts);
+  }
+
+  if (contextScopeSuggestionArtifactsExcludedEl) {
+    contextScopeSuggestionArtifactsExcludedEl.textContent = formatContextScopeList(suggestion.excludedArtifacts);
+  }
+
+  if (contextScopeSuggestionRationaleEl) {
+    contextScopeSuggestionRationaleEl.textContent = suggestion.rationale || '—';
+  }
+
+  if (contextScopeSuggestionConfidenceEl) {
+    contextScopeSuggestionConfidenceEl.textContent = formatContextScopeConfidence(suggestion.confidence);
+  }
+
+  if (contextScopeSuggestionWarningsEl) {
+    contextScopeSuggestionWarningsEl.textContent = Array.isArray(suggestion.warnings) && suggestion.warnings.length > 0
+      ? suggestion.warnings.join(' · ')
+      : '—';
+  }
+
+  if (contextScopeSuggestionDecisionEl) {
+    const decision = suggestion.userDecision ?? {};
+    const decisionLabel = decision.decision === 'approved'
+      ? 'Approved placeholder'
+      : decision.decision === 'rejected'
+        ? 'Rejected locally'
+        : decision.decision === 'adjusted'
+          ? 'Adjusted locally'
+          : 'Pending approval';
+    const decidedAt = typeof decision.decidedAt === 'string' && decision.decidedAt ? decision.decidedAt : '—';
+    contextScopeSuggestionDecisionEl.textContent = `${decisionLabel} · ${decidedAt}`;
+  }
+
+  if (contextScopeSuggestionPreviewEl) {
+    contextScopeSuggestionPreviewEl.textContent = suggestion.preview?.derivedFromSuggestion
+      ? 'Preview is derived from the approved scope.'
+      : 'Preview placeholder exists, but it was not generated from this scope. Demo/dev-only only.';
+  }
+
+  if (contextScopeSuggestionApproveButton) {
+    contextScopeSuggestionApproveButton.disabled = suggestion.status === 'approved';
+  }
+
+  if (contextScopeSuggestionRejectButton) {
+    contextScopeSuggestionRejectButton.disabled = suggestion.status === 'rejected';
+  }
+
+  if (contextScopeSuggestionAdjustButton) {
+    contextScopeSuggestionAdjustButton.disabled = false;
+  }
+
+  renderContextPackPreviewPanel();
+}
+
 function createFallbackContextPackPreview() {
   return {
     phase: 19,
@@ -800,7 +1203,8 @@ function renderContextPackPreviewPanel() {
   }
 
   const preview = activeContextPackPreview;
-  if (!preview) {
+  const scopeApproved = activeContextScopeSuggestion?.status === 'approved';
+  if (!preview || !scopeApproved) {
     contextPackPreviewPanel.hidden = true;
     return;
   }
@@ -817,7 +1221,7 @@ function renderContextPackPreviewPanel() {
 
   if (contextPackPreviewSummaryEl) {
     contextPackPreviewSummaryEl.textContent = preview.placeholder
-      ? 'This phase only exposes a contract-shaped placeholder preview.'
+      ? 'Approved scope acknowledged locally. This preview is still a demo/dev-only placeholder and was not generated from the approved scope.'
       : 'A live preview is connected.';
   }
 
@@ -861,17 +1265,21 @@ function renderContextPackPreviewPanel() {
       .join(' · ');
   }
 
+  if (contextPackPreviewScopeDerivationEl) {
+    contextPackPreviewScopeDerivationEl.textContent = `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview was not generated from that scope.`;
+  }
+
   if (contextPackPreviewExactTextEl) {
     contextPackPreviewExactTextEl.textContent = preview.exactTextToInject;
   }
 
   if (contextPackPreviewApprovalStatusEl) {
-    contextPackPreviewApprovalStatusEl.textContent = preview.userApprovalStatus;
+    contextPackPreviewApprovalStatusEl.textContent = 'Approved placeholder';
   }
 
   if (contextPackPreviewConfirmButton) {
     contextPackPreviewConfirmButton.disabled = true;
-    contextPackPreviewConfirmButton.textContent = 'Not available in this phase';
+    contextPackPreviewConfirmButton.textContent = 'Confirm injection (disabled)';
     contextPackPreviewConfirmButton.title = preview.injectionPolicy?.reason ?? 'Not available in this phase.';
   }
 }
@@ -897,15 +1305,6 @@ async function loadContextPackPreview() {
   }
 
   renderContextPackPreviewPanel();
-}
-
-function closeContextPackPreview() {
-  activeContextPackPreview = null;
-  renderContextPackPreviewPanel();
-}
-
-async function openContextPackPreview() {
-  await loadContextPackPreview();
 }
 
 function isContextPackCandidateMessage(message) {
@@ -3894,6 +4293,24 @@ if (productStateResetButton) {
 if (attachContextPackButton) {
   attachContextPackButton.addEventListener('click', () => {
     void openContextPackPreview();
+  });
+}
+
+if (contextScopeSuggestionApproveButton) {
+  contextScopeSuggestionApproveButton.addEventListener('click', () => {
+    void approveContextScopeSuggestion();
+  });
+}
+
+if (contextScopeSuggestionRejectButton) {
+  contextScopeSuggestionRejectButton.addEventListener('click', () => {
+    rejectContextScopeSuggestion();
+  });
+}
+
+if (contextScopeSuggestionAdjustButton) {
+  contextScopeSuggestionAdjustButton.addEventListener('click', () => {
+    void adjustContextScopeSuggestion();
   });
 }
 

@@ -67,6 +67,73 @@
           </div>
         </header>
 
+        <section class="context-pack-preview context-scope-suggestion" id="context-scope-suggestion" hidden aria-label="Suggested RCK scope">
+          <div class="context-pack-preview__header">
+            <div>
+              <p class="context-pack-preview__eyebrow">Suggested RCK scope</p>
+              <h2 id="context-scope-suggestion-title">Suggested RCK scope</h2>
+            </div>
+            <span class="context-pack-preview__status" id="context-scope-suggestion-status">Placeholder / not generated</span>
+          </div>
+
+          <p class="context-pack-preview__summary" id="context-scope-suggestion-summary">
+            This suggestion is demo/dev-only and never calls RCK or an LLM.
+          </p>
+
+          <div class="context-pack-preview__grid">
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">User intent</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-intent"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Suggested target</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-target"></div>
+            </div>
+            <div class="context-pack-preview__field">
+              <div class="context-pack-preview__label">Suggested depth</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-depth"></div>
+            </div>
+            <div class="context-pack-preview__field">
+              <div class="context-pack-preview__label">Confidence</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-confidence"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Selected artifacts</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-selected"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Candidate artifacts</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-candidates"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Excluded artifacts</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-artifacts-excluded"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Rationale</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-rationale"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Warnings</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-warnings"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">User decision</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-decision"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">ContextPack preview relation</div>
+              <div class="context-pack-preview__value" id="context-scope-suggestion-preview"></div>
+            </div>
+          </div>
+
+          <div class="context-pack-preview__actions">
+            <button class="button button--primary button--compact" id="context-scope-suggestion-approve" type="button">Approve scope</button>
+            <button class="button button--ghost button--compact" id="context-scope-suggestion-reject" type="button">Reject</button>
+            <button class="button button--ghost button--compact" id="context-scope-suggestion-adjust" type="button">Adjust manually</button>
+          </div>
+        </section>
+
         <section class="context-pack-preview" id="context-pack-preview" hidden aria-label="ContextPack preview placeholder">
           <div class="context-pack-preview__header">
             <div>
@@ -108,6 +175,10 @@
             <div class="context-pack-preview__field context-pack-preview__field--wide">
               <div class="context-pack-preview__label">Provenance summary</div>
               <div class="context-pack-preview__value" id="context-pack-preview-provenance"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Scope derivation</div>
+              <div class="context-pack-preview__value" id="context-pack-preview-scope-derivation"></div>
             </div>
             <div class="context-pack-preview__field context-pack-preview__field--wide">
               <div class="context-pack-preview__label">Exact text to inject</div>

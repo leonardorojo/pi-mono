@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildMockContextPackPreview } from './contextpack-preview-provider.mjs';
+import { buildMockContextScopeSuggestion } from './context-scope-suggestion-provider.mjs';
 import { completeChatCompletion, createChatCompletionStream } from './chat-completion-provider.mjs';
 import {
   createChatCompletionErrorResponse,
@@ -428,6 +429,30 @@ const server = createServer(async (req, res) => {
       summary: buildSafeContextSummary(),
       message: `Safe context injected. Summary: ${buildSafeContextSummary()}`,
     });
+    return;
+  }
+
+  if (url.pathname === '/api/rck/context-scope/suggest-placeholder') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      const body = await readRequestJson(req);
+      const intent = typeof body.intent === 'string' ? body.intent.trim() : '';
+
+      sendJson(res, 200, {
+        ok: true,
+        suggestion: buildMockContextScopeSuggestion({ userIntentText: intent }),
+        message: 'Placeholder RCK scope suggestion returned without LLM, TraceSlice, or ContextPack generation.',
+      });
+    } catch (error) {
+      sendJson(res, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Scope suggestion request failed',
+      });
+    }
     return;
   }
 

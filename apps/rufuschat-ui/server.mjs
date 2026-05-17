@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildMockContextPackPreview } from './contextpack-preview-provider.mjs';
 import { completeChatCompletion, createChatCompletionStream } from './chat-completion-provider.mjs';
 import {
   createChatCompletionErrorResponse,
@@ -426,6 +427,20 @@ const server = createServer(async (req, res) => {
       safeContextAvailable: sessionState.safeContextAvailable,
       summary: buildSafeContextSummary(),
       message: `Safe context injected. Summary: ${buildSafeContextSummary()}`,
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/rck/context-pack/preview-placeholder') {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      preview: buildMockContextPackPreview(),
+      message: 'Placeholder ContextPack preview returned without reading RCK Core.',
     });
     return;
   }

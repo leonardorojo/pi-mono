@@ -39,6 +39,13 @@
           <input id="product-state-import-input" type="file" accept="application/json,.json" hidden />
         </div>
 
+        <section class="sidebar__section sidebar__section--preview" aria-label="RCK context preview">
+          <div class="sidebar__section-label">RCK preview</div>
+          <button class="button button--ghost button--compact" id="attach-context-pack-button" type="button">
+            Attach RCK Context
+          </button>
+        </section>
+
         <div class="sidebar__footer">
           <span>Local data stays local</span>
         </div>
@@ -59,6 +66,68 @@
             </div>
           </div>
         </header>
+
+        <section class="context-pack-preview" id="context-pack-preview" hidden aria-label="ContextPack preview placeholder">
+          <div class="context-pack-preview__header">
+            <div>
+              <p class="context-pack-preview__eyebrow">Dev preview</p>
+              <h2 id="context-pack-preview-title">Attach RCK Context</h2>
+            </div>
+            <span class="context-pack-preview__status" id="context-pack-preview-status">Placeholder / not connected</span>
+          </div>
+
+          <p class="context-pack-preview__summary" id="context-pack-preview-summary">
+            This phase only exposes a contract-shaped placeholder preview.
+          </p>
+
+          <div class="context-pack-preview__grid">
+            <div class="context-pack-preview__field">
+              <div class="context-pack-preview__label">ContextPack reference</div>
+              <div class="context-pack-preview__value" id="context-pack-preview-reference"></div>
+            </div>
+            <div class="context-pack-preview__field">
+              <div class="context-pack-preview__label">Source trace slice hashes</div>
+              <div class="context-pack-preview__value context-pack-preview__value--mono" id="context-pack-preview-trace-hashes"></div>
+            </div>
+            <div class="context-pack-preview__field">
+              <div class="context-pack-preview__label">Visible sections</div>
+              <div class="context-pack-preview__value" id="context-pack-preview-sections"></div>
+            </div>
+            <div class="context-pack-preview__field">
+              <div class="context-pack-preview__label">Estimated token cost</div>
+              <div class="context-pack-preview__value" id="context-pack-preview-token-cost"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Warnings</div>
+              <div class="context-pack-preview__value" id="context-pack-preview-warnings"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Constraints</div>
+              <div class="context-pack-preview__value" id="context-pack-preview-constraints"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Provenance summary</div>
+              <div class="context-pack-preview__value" id="context-pack-preview-provenance"></div>
+            </div>
+            <div class="context-pack-preview__field context-pack-preview__field--wide">
+              <div class="context-pack-preview__label">Exact text to inject</div>
+              <pre class="context-pack-preview__text" id="context-pack-preview-exact-text"></pre>
+            </div>
+            <div class="context-pack-preview__field">
+              <div class="context-pack-preview__label">User approval status</div>
+              <div class="context-pack-preview__value" id="context-pack-preview-approval-status"></div>
+            </div>
+          </div>
+
+          <div class="context-pack-preview__actions">
+            <button class="button button--primary button--compact" id="context-pack-preview-confirm" type="button" disabled>
+              Not available in this phase
+            </button>
+            <button class="button button--ghost button--compact" id="context-pack-preview-close" type="button">
+              Close preview
+            </button>
+          </div>
+        </section>
 
         <section class="messages" id="messages" aria-live="polite" aria-label="Messages">
           <div class="messages__inner" id="messages-inner"></div>

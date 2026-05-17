@@ -32,8 +32,25 @@ const productStateExportButton = document.getElementById('product-state-export-b
 const productStateImportButton = document.getElementById('product-state-import-button');
 const productStateResetButton = document.getElementById('product-state-reset-button');
 const productStateImportInput = document.getElementById('product-state-import-input');
+const attachContextPackButton = document.getElementById('attach-context-pack-button');
+const contextPackPreviewPanel = document.getElementById('context-pack-preview');
+const contextPackPreviewTitleEl = document.getElementById('context-pack-preview-title');
+const contextPackPreviewStatusEl = document.getElementById('context-pack-preview-status');
+const contextPackPreviewSummaryEl = document.getElementById('context-pack-preview-summary');
+const contextPackPreviewReferenceEl = document.getElementById('context-pack-preview-reference');
+const contextPackPreviewTraceHashesEl = document.getElementById('context-pack-preview-trace-hashes');
+const contextPackPreviewSectionsEl = document.getElementById('context-pack-preview-sections');
+const contextPackPreviewTokenCostEl = document.getElementById('context-pack-preview-token-cost');
+const contextPackPreviewWarningsEl = document.getElementById('context-pack-preview-warnings');
+const contextPackPreviewConstraintsEl = document.getElementById('context-pack-preview-constraints');
+const contextPackPreviewProvenanceEl = document.getElementById('context-pack-preview-provenance');
+const contextPackPreviewExactTextEl = document.getElementById('context-pack-preview-exact-text');
+const contextPackPreviewApprovalStatusEl = document.getElementById('context-pack-preview-approval-status');
+const contextPackPreviewConfirmButton = document.getElementById('context-pack-preview-confirm');
+const contextPackPreviewCloseButton = document.getElementById('context-pack-preview-close');
 
 const productStateEndpoint = '/api/product-state';
+const contextPackPreviewEndpoint = '/api/rck/context-pack/preview-placeholder';
 const idleStatusText = 'Browser-local session';
 const loadingStatusText = 'Loading local data...';
 const savingStatusText = 'Saving local data...';
@@ -57,6 +74,7 @@ const tracePlaceholder = {
   futureProvider: 'rck-core-kernel',
   mode: 'placeholder',
 };
+let activeContextPackPreview = null;
 const contextPackCandidateSummaryLines = [
   'Current chat context placeholder',
   'ProductState metadata placeholder',
@@ -200,8 +218,8 @@ const commandCatalog = [
   },
   {
     name: '/inject',
-    kind: 'mutating',
-    description: 'Prepare a safe Context Pack candidate for this chat.',
+    kind: 'placeholder',
+    description: 'Open the placeholder RCK Context preview.',
     insertText: '/inject',
     usage: '/inject',
   },
@@ -624,11 +642,279 @@ function createContextPackResultContent(_contextPackId, status) {
   return [title, detail, 'Product event only · No raw evidence stored'].join('\n');
 }
 
+function createFallbackContextPackPreview() {
+  return {
+    phase: 19,
+    previewMode: 'placeholder',
+    placeholder: true,
+    contextPackId: 'cp_preview_placeholder_v1',
+    contextPackHash: 'sha256:placeholder-context-pack-v1',
+    title: 'RufusChat ContextPack preview placeholder',
+    sourceTraceSliceHashes: ['trace-slice-placeholder-a', 'trace-slice-placeholder-b'],
+    sectionsVisible: [
+      {
+        id: 'summary',
+        title: 'Summary',
+        visible: true,
+        summary: 'Placeholder only. No live RCK preview is connected.',
+        text: 'This phase only exposes a contract-shaped mock preview for RufusChat.',
+      },
+      {
+        id: 'provenance',
+        title: 'Provenance',
+        visible: true,
+        summary: 'Source docs and commit reference for the contract preview.',
+        text: 'docs/RUFUSCHAT_ADAPTER_DESIGN.md · docs/CONTEXT_PACK_BOUNDARY.md · schemas/rck.context_pack.v0.schema.json',
+      },
+      {
+        id: 'constraints',
+        title: 'Constraints',
+        visible: true,
+        summary: 'No RCK reads, no trace slice generation, no injection.',
+        text: 'Placeholder-only contract. This panel is dev-preview and not connected to RCK Core.',
+      },
+    ],
+    estimatedTokenCost: null,
+    warnings: ['Placeholder / dev-only preview.', 'No RCK Core integration is active yet.', 'Confirm injection is disabled in this phase.'],
+    constraints: ['Do not read .rck directly.', 'Do not execute RCK Core.', 'Do not generate a real ContextPack yet.', 'Do not persist injection records yet.'],
+    provenanceSummary: {
+      sourceDocument: 'docs/RUFUSCHAT_ADAPTER_DESIGN.md',
+      contractDocument: 'docs/CONTEXT_PACK_BOUNDARY.md',
+      schemaDocument: 'schemas/rck.context_pack.v0.schema.json',
+      publishedCommit: '048d4c3',
+      mode: 'placeholder',
+      notes: ['Mock provenance only.', 'No RCK Core internals are read in this phase.'],
+    },
+    exactTextToInject: 'Not available in this phase.',
+    userApprovalStatus: 'not-available',
+    injectionPolicy: {
+      canPreview: true,
+      canConfirm: false,
+      canPersistRecord: false,
+      canReadRckFilesystem: false,
+      canCallRckCore: false,
+      reason: 'Phase 19 is placeholder-only. Confirm injection is not available yet.',
+    },
+    injectionRecordDraft: {
+      status: 'draft',
+      recordId: null,
+      createdAt: null,
+      updatedAt: null,
+      injectedAt: null,
+      contextPackId: 'cp_preview_placeholder_v1',
+      contextPackHash: 'sha256:placeholder-context-pack-v1',
+      notes: ['Mock injection record draft only. No persistence in this phase.'],
+    },
+    reference: {
+      contextPackId: 'cp_preview_placeholder_v1',
+      contextPackHash: 'sha256:placeholder-context-pack-v1',
+      title: 'RufusChat ContextPack preview placeholder',
+      kind: 'placeholder',
+    },
+    sourceDocuments: [
+      'docs/RUFUSCHAT_ADAPTER_DESIGN.md',
+      'docs/CONTEXT_PACK_BOUNDARY.md',
+      'schemas/rck.context_pack.v0.schema.json',
+    ],
+  };
+}
+
+function normalizeContextPackPreview(candidate) {
+  if (!candidate || typeof candidate !== 'object') {
+    return createFallbackContextPackPreview();
+  }
+
+  const fallback = createFallbackContextPackPreview();
+  const reference = candidate.reference && typeof candidate.reference === 'object' ? candidate.reference : candidate;
+
+  return {
+    ...fallback,
+    ...candidate,
+    contextPackId: typeof candidate.contextPackId === 'string' && candidate.contextPackId.trim() ? candidate.contextPackId.trim() : fallback.contextPackId,
+    contextPackHash: typeof candidate.contextPackHash === 'string' && candidate.contextPackHash.trim() ? candidate.contextPackHash.trim() : fallback.contextPackHash,
+    title: typeof candidate.title === 'string' && candidate.title.trim() ? candidate.title.trim() : fallback.title,
+    sourceTraceSliceHashes: Array.isArray(candidate.sourceTraceSliceHashes) && candidate.sourceTraceSliceHashes.length > 0
+      ? candidate.sourceTraceSliceHashes.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+      : fallback.sourceTraceSliceHashes,
+    sectionsVisible: Array.isArray(candidate.sectionsVisible) && candidate.sectionsVisible.length > 0
+      ? candidate.sectionsVisible.map((section, index) => ({
+          id: typeof section?.id === 'string' && section.id.trim() ? section.id.trim() : `section_${index + 1}`,
+          title: typeof section?.title === 'string' && section.title.trim() ? section.title.trim() : `Section ${index + 1}`,
+          visible: section?.visible !== false,
+          summary: typeof section?.summary === 'string' && section.summary.trim() ? section.summary.trim() : 'Placeholder section summary.',
+          text: typeof section?.text === 'string' && section.text.trim() ? section.text.trim() : 'Placeholder section content.',
+        }))
+      : fallback.sectionsVisible,
+    estimatedTokenCost: typeof candidate.estimatedTokenCost === 'number' ? candidate.estimatedTokenCost : null,
+    warnings: Array.isArray(candidate.warnings) && candidate.warnings.length > 0
+      ? candidate.warnings.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+      : fallback.warnings,
+    constraints: Array.isArray(candidate.constraints) && candidate.constraints.length > 0
+      ? candidate.constraints.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+      : fallback.constraints,
+    provenanceSummary: {
+      ...fallback.provenanceSummary,
+      ...(typeof candidate.provenanceSummary === 'object' && candidate.provenanceSummary ? candidate.provenanceSummary : {}),
+    },
+    exactTextToInject: typeof candidate.exactTextToInject === 'string' && candidate.exactTextToInject.trim()
+      ? candidate.exactTextToInject.trim()
+      : fallback.exactTextToInject,
+    userApprovalStatus: typeof candidate.userApprovalStatus === 'string' && candidate.userApprovalStatus.trim()
+      ? candidate.userApprovalStatus.trim()
+      : fallback.userApprovalStatus,
+    injectionPolicy: {
+      ...fallback.injectionPolicy,
+      ...(typeof candidate.injectionPolicy === 'object' && candidate.injectionPolicy ? candidate.injectionPolicy : {}),
+    },
+    injectionRecordDraft: {
+      ...fallback.injectionRecordDraft,
+      ...(typeof candidate.injectionRecordDraft === 'object' && candidate.injectionRecordDraft ? candidate.injectionRecordDraft : {}),
+      contextPackId: typeof candidate.injectionRecordDraft?.contextPackId === 'string' && candidate.injectionRecordDraft.contextPackId.trim()
+        ? candidate.injectionRecordDraft.contextPackId.trim()
+        : fallback.injectionRecordDraft.contextPackId,
+      contextPackHash: typeof candidate.injectionRecordDraft?.contextPackHash === 'string' && candidate.injectionRecordDraft.contextPackHash.trim()
+        ? candidate.injectionRecordDraft.contextPackHash.trim()
+        : fallback.injectionRecordDraft.contextPackHash,
+    },
+    reference: {
+      ...fallback.reference,
+      ...(typeof reference === 'object' && reference ? reference : {}),
+      contextPackId: typeof reference?.contextPackId === 'string' && reference.contextPackId.trim() ? reference.contextPackId.trim() : fallback.reference.contextPackId,
+      contextPackHash: typeof reference?.contextPackHash === 'string' && reference.contextPackHash.trim() ? reference.contextPackHash.trim() : fallback.reference.contextPackHash,
+      title: typeof reference?.title === 'string' && reference.title.trim() ? reference.title.trim() : fallback.reference.title,
+      kind: typeof reference?.kind === 'string' && reference.kind.trim() ? reference.kind.trim() : fallback.reference.kind,
+    },
+    sourceDocuments: Array.isArray(candidate.sourceDocuments) && candidate.sourceDocuments.length > 0
+      ? candidate.sourceDocuments.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+      : fallback.sourceDocuments,
+  };
+}
+
+function formatContextPackPreviewList(items) {
+  return Array.isArray(items) && items.length > 0 ? items.join(' · ') : '—';
+}
+
+function renderContextPackPreviewPanel() {
+  if (!contextPackPreviewPanel) {
+    return;
+  }
+
+  const preview = activeContextPackPreview;
+  if (!preview) {
+    contextPackPreviewPanel.hidden = true;
+    return;
+  }
+
+  contextPackPreviewPanel.hidden = false;
+
+  if (contextPackPreviewTitleEl) {
+    contextPackPreviewTitleEl.textContent = preview.title;
+  }
+
+  if (contextPackPreviewStatusEl) {
+    contextPackPreviewStatusEl.textContent = preview.placeholder ? 'Placeholder / not connected' : 'Connected';
+  }
+
+  if (contextPackPreviewSummaryEl) {
+    contextPackPreviewSummaryEl.textContent = preview.placeholder
+      ? 'This phase only exposes a contract-shaped placeholder preview.'
+      : 'A live preview is connected.';
+  }
+
+  if (contextPackPreviewReferenceEl) {
+    contextPackPreviewReferenceEl.textContent = `${preview.reference?.contextPackId ?? preview.contextPackId} · ${preview.reference?.contextPackHash ?? preview.contextPackHash}`;
+  }
+
+  if (contextPackPreviewTraceHashesEl) {
+    contextPackPreviewTraceHashesEl.textContent = formatContextPackPreviewList(preview.sourceTraceSliceHashes);
+  }
+
+  if (contextPackPreviewSectionsEl) {
+    contextPackPreviewSectionsEl.textContent = preview.sectionsVisible
+      .filter((section) => section?.visible !== false)
+      .map((section) => `${section.title}: ${section.summary}`)
+      .join(' · ');
+  }
+
+  if (contextPackPreviewTokenCostEl) {
+    contextPackPreviewTokenCostEl.textContent = preview.estimatedTokenCost === null ? '—' : String(preview.estimatedTokenCost);
+  }
+
+  if (contextPackPreviewWarningsEl) {
+    contextPackPreviewWarningsEl.textContent = formatContextPackPreviewList(preview.warnings);
+  }
+
+  if (contextPackPreviewConstraintsEl) {
+    contextPackPreviewConstraintsEl.textContent = formatContextPackPreviewList(preview.constraints);
+  }
+
+  if (contextPackPreviewProvenanceEl) {
+    const provenance = preview.provenanceSummary ?? {};
+    contextPackPreviewProvenanceEl.textContent = [
+      provenance.sourceDocument,
+      provenance.contractDocument,
+      provenance.schemaDocument,
+      provenance.publishedCommit,
+      provenance.mode,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  if (contextPackPreviewExactTextEl) {
+    contextPackPreviewExactTextEl.textContent = preview.exactTextToInject;
+  }
+
+  if (contextPackPreviewApprovalStatusEl) {
+    contextPackPreviewApprovalStatusEl.textContent = preview.userApprovalStatus;
+  }
+
+  if (contextPackPreviewConfirmButton) {
+    contextPackPreviewConfirmButton.disabled = true;
+    contextPackPreviewConfirmButton.textContent = 'Not available in this phase';
+    contextPackPreviewConfirmButton.title = preview.injectionPolicy?.reason ?? 'Not available in this phase.';
+  }
+}
+
+async function loadContextPackPreview() {
+  try {
+    const response = await fetch(contextPackPreviewEndpoint, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      throw new Error(`Preview request failed with ${response.status}`);
+    }
+
+    const data = await response.json();
+    activeContextPackPreview = normalizeContextPackPreview(data.preview ?? data);
+  } catch {
+    activeContextPackPreview = normalizeContextPackPreview({
+      ...createFallbackContextPackPreview(),
+      warnings: [
+        'Placeholder / dev-only preview.',
+        'ContextPack preview endpoint is unavailable.',
+        'Using local fallback mock only.',
+      ],
+    });
+  }
+
+  renderContextPackPreviewPanel();
+}
+
+function closeContextPackPreview() {
+  activeContextPackPreview = null;
+  renderContextPackPreviewPanel();
+}
+
+async function openContextPackPreview() {
+  await loadContextPackPreview();
+}
+
 function isContextPackCandidateMessage(message) {
   return getMessageContextPackId(message) !== null && isContextPackCandidateContent(message?.content);
 }
 
 function createContextPackCandidateControls(chatId, contextPackId, status) {
+  void chatId;
+  void contextPackId;
   const container = document.createElement('div');
   container.className = 'context-pack-card__actions';
 
@@ -640,23 +926,21 @@ function createContextPackCandidateControls(chatId, contextPackId, status) {
     return container;
   }
 
-  const injectButton = document.createElement('button');
-  injectButton.type = 'button';
-  injectButton.className = 'button button--primary button--compact context-pack-card__action';
-  injectButton.textContent = 'Inject';
-  injectButton.addEventListener('click', () => {
-    finalizeContextPackCandidate(chatId, contextPackId, 'inject');
-  });
+  const placeholderButton = document.createElement('button');
+  placeholderButton.type = 'button';
+  placeholderButton.className = 'button button--primary button--compact context-pack-card__action';
+  placeholderButton.textContent = 'Not available in this phase';
+  placeholderButton.disabled = true;
+  placeholderButton.title = 'Attach / confirm injection is not available in this phase.';
 
   const cancelButton = document.createElement('button');
   cancelButton.type = 'button';
   cancelButton.className = 'button button--ghost button--compact context-pack-card__action';
-  cancelButton.textContent = 'Cancel';
-  cancelButton.addEventListener('click', () => {
-    finalizeContextPackCandidate(chatId, contextPackId, 'cancel');
-  });
+  cancelButton.textContent = 'Not available in this phase';
+  cancelButton.disabled = true;
+  cancelButton.title = 'ContextPack injection is placeholder-only in this phase.';
 
-  container.append(injectButton, cancelButton);
+  container.append(placeholderButton, cancelButton);
   return container;
 }
 
@@ -2407,6 +2691,7 @@ function renderMessages({ autoScroll = false } = {}) {
 function render() {
   renderHeader();
   renderSidebar();
+  renderContextPackPreviewPanel();
   renderMessages();
   scrollChatToBottom();
   setBusy(false);
@@ -3316,68 +3601,15 @@ async function runCheckpoint(targetChatId, label, sourceMessage = null) {
 }
 
 function finalizeContextPackCandidate(targetChatId, contextPackId, decision) {
-  const chat = getChatById(targetChatId);
-  if (!chat) {
-    return;
-  }
-
-  const historyItem = upsertChatInjectionHistoryItem(chat, contextPackId, {
-    status: decision === 'inject' ? 'injected' : 'cancelled',
-    injectedAt: decision === 'inject' ? nowIso() : null,
-    cancelledAt: decision === 'cancel' ? nowIso() : null,
-  });
-
-  if (decision === 'inject') {
-    const message = appendMessageToChat(targetChatId, 'assistant', createContextPackResultContent(contextPackId, 'injected'), 'normal', {
-      kind: 'command-result',
-      links: { contextPackId },
-    });
-    historyItem.resultMessageId = message?.id ?? null;
-    historyItem.updatedAt = nowIso();
-    touchChat(chat);
-    touchProject(getProjectByChatId(chat.id));
-    markProductStateChanged();
-    render();
-    return;
-  }
-
-  const message = appendMessageToChat(targetChatId, 'assistant', createContextPackResultContent(contextPackId, 'cancelled'), 'normal', {
-    kind: 'command-result',
-    links: { contextPackId },
-  });
-  historyItem.resultMessageId = message?.id ?? null;
-  historyItem.updatedAt = nowIso();
-  touchChat(chat);
-  touchProject(getProjectByChatId(chat.id));
-  markProductStateChanged();
-  render();
+  void targetChatId;
+  void contextPackId;
+  void decision;
+  return;
 }
 
 async function runInject(targetChatId) {
-  const contextPackId = makeContextPackId();
-  const chat = getChatById(targetChatId);
-  if (!chat) {
-    return;
-  }
-
-  const historyItem = upsertChatInjectionHistoryItem(chat, contextPackId, {
-    status: 'candidate',
-    injectedAt: null,
-    cancelledAt: null,
-    resultMessageId: null,
-  });
-
-  const candidateMessage = appendMessageToChat(targetChatId, 'assistant', createContextPackCandidateContent(contextPackId), 'normal', {
-    kind: 'placeholder',
-    links: { contextPackId },
-  });
-
-  historyItem.candidateMessageId = candidateMessage?.id ?? null;
-  historyItem.updatedAt = nowIso();
-  touchChat(chat);
-  touchProject(getProjectByChatId(chat.id));
-  markProductStateChanged();
-  render();
+  void targetChatId;
+  await openContextPackPreview();
 }
 
 async function runHermesFake(targetChatId, prompt) {
@@ -3656,6 +3888,24 @@ if (productStateImportButton && productStateImportInput) {
 if (productStateResetButton) {
   productStateResetButton.addEventListener('click', () => {
     void resetProductState();
+  });
+}
+
+if (attachContextPackButton) {
+  attachContextPackButton.addEventListener('click', () => {
+    void openContextPackPreview();
+  });
+}
+
+if (contextPackPreviewCloseButton) {
+  contextPackPreviewCloseButton.addEventListener('click', () => {
+    closeContextPackPreview();
+  });
+}
+
+if (contextPackPreviewConfirmButton) {
+  contextPackPreviewConfirmButton.addEventListener('click', () => {
+    closeContextPackPreview();
   });
 }
 

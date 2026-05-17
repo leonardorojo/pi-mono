@@ -34,6 +34,7 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 
 - Boundary document: [`CONTEXT_PACK.md`](./CONTEXT_PACK.md)
 - Checkpoint boundary: [`CHECKPOINTS.md`](./CHECKPOINTS.md)
+- RCK ContextPack preview contract: [`RCK_CONTEXTPACK_PREVIEW.md`](./RCK_CONTEXTPACK_PREVIEW.md)
 - Fase 13A is documentation / contract only
 - Fase 13B adds a placeholder `/inject` candidate UX in the browser
 - Fase 13C adds minimal per-chat injection history metadata

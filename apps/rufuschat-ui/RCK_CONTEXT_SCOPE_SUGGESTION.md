@@ -18,6 +18,7 @@ It is **not** a real RCK selection engine.
   - Reject
   - Adjust manually
 - A placeholder relation to the existing ContextPack preview placeholder.
+- When the user approves the scope, the approved scope becomes a local ContextPack generation request contract.
 
 ## What is not in scope
 
@@ -68,12 +69,13 @@ The suggestion placeholder exposes:
 - The server returns stable placeholder output from the request intent.
 - The UI stores the suggestion only in memory.
 - Approving the scope only changes local UI state to `approved`.
+- Approving the scope also triggers the placeholder approved-scope → ContextPack generation request contract in memory.
 - Approving the scope does **not**:
   - trigger real TraceSlice generation
   - trigger real ContextPack generation
   - enable confirm injection
   - inject context into the real chat runtime
-- The existing ContextPack preview placeholder may be shown after approval, but it stays a demo/dev-only placeholder and is not derived from the approved scope.
+- The existing ContextPack preview placeholder may be shown after approval, and it is derived from the local request contract in this phase.
 
 ## Next steps
 

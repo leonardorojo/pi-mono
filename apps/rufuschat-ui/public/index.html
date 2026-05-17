@@ -188,6 +188,59 @@
               </div>
             </section>
 
+            <section class="context-pack-preview" id="context-pack-generation-request" hidden aria-label="ContextPack generation request placeholder">
+              <div class="context-pack-preview__header">
+                <div>
+                  <p class="context-pack-preview__eyebrow">Approved scope → request</p>
+                  <h2 id="context-pack-generation-request-title">ContextPack generation request</h2>
+                </div>
+                <span class="context-pack-preview__status" id="context-pack-generation-request-status">Placeholder / not connected</span>
+              </div>
+
+              <p class="context-pack-preview__summary" id="context-pack-generation-request-summary">
+                Approved scope has been converted into a contract-shaped request, but real RCK generation is still disabled in this phase.
+              </p>
+
+              <div class="context-pack-preview__grid">
+                <div class="context-pack-preview__field" id="context-pack-generation-request-field-id">
+                  <div class="context-pack-preview__label">Request ID</div>
+                  <div class="context-pack-preview__value context-pack-preview__value--mono" id="context-pack-generation-request-id"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-generation-request-field-target">
+                  <div class="context-pack-preview__label">Approved target</div>
+                  <div class="context-pack-preview__value" id="context-pack-generation-request-target"></div>
+                </div>
+                <div class="context-pack-preview__field" id="context-pack-generation-request-field-depth">
+                  <div class="context-pack-preview__label">Depth</div>
+                  <div class="context-pack-preview__value" id="context-pack-generation-request-depth"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-generation-request-field-artifacts">
+                  <div class="context-pack-preview__label">Selected artifacts</div>
+                  <div class="context-pack-preview__value" id="context-pack-generation-request-artifacts"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-generation-request-field-warnings">
+                  <div class="context-pack-preview__label">Warnings</div>
+                  <div class="context-pack-preview__value" id="context-pack-generation-request-warnings"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-generation-request-field-constraints">
+                  <div class="context-pack-preview__label">Constraints</div>
+                  <div class="context-pack-preview__value" id="context-pack-generation-request-constraints"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-generation-request-field-provenance">
+                  <div class="context-pack-preview__label">Provenance summary</div>
+                  <div class="context-pack-preview__value" id="context-pack-generation-request-provenance"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-generation-request-field-message">
+                  <div class="context-pack-preview__label">Message</div>
+                  <div class="context-pack-preview__value" id="context-pack-generation-request-message"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-generation-request-field-preview">
+                  <div class="context-pack-preview__label">ContextPack preview relation</div>
+                  <div class="context-pack-preview__value" id="context-pack-generation-request-preview"></div>
+                </div>
+              </div>
+            </section>
+
             <section class="context-pack-preview" id="context-pack-preview" hidden aria-label="ContextPack preview placeholder">
               <div class="context-pack-preview__header">
                 <div>
@@ -307,6 +360,6 @@
       </section>
     </div>
 
-    <script src="/app.js" type="module"></script>
+    <script src="/app.js?phase=22" type="module"></script>
   </body>
 </html>

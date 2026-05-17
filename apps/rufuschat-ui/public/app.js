@@ -70,9 +70,23 @@ const contextPackPreviewExactTextEl = document.getElementById('context-pack-prev
 const contextPackPreviewApprovalStatusEl = document.getElementById('context-pack-preview-approval-status');
 const contextPackPreviewConfirmButton = document.getElementById('context-pack-preview-confirm');
 const contextPackPreviewCloseButton = document.getElementById('context-pack-preview-close');
+const contextPackGenerationRequestPanel = document.getElementById('context-pack-generation-request');
+const contextPackGenerationRequestTitleEl = document.getElementById('context-pack-generation-request-title');
+const contextPackGenerationRequestStatusEl = document.getElementById('context-pack-generation-request-status');
+const contextPackGenerationRequestSummaryEl = document.getElementById('context-pack-generation-request-summary');
+const contextPackGenerationRequestIdEl = document.getElementById('context-pack-generation-request-id');
+const contextPackGenerationRequestTargetEl = document.getElementById('context-pack-generation-request-target');
+const contextPackGenerationRequestDepthEl = document.getElementById('context-pack-generation-request-depth');
+const contextPackGenerationRequestArtifactsEl = document.getElementById('context-pack-generation-request-artifacts');
+const contextPackGenerationRequestWarningsEl = document.getElementById('context-pack-generation-request-warnings');
+const contextPackGenerationRequestConstraintsEl = document.getElementById('context-pack-generation-request-constraints');
+const contextPackGenerationRequestProvenanceEl = document.getElementById('context-pack-generation-request-provenance');
+const contextPackGenerationRequestMessageEl = document.getElementById('context-pack-generation-request-message');
+const contextPackGenerationRequestPreviewEl = document.getElementById('context-pack-generation-request-preview');
 
 const productStateEndpoint = '/api/product-state';
 const contextScopeSuggestionEndpoint = '/api/rck/context-scope/suggest-placeholder';
+const contextPackGenerationPlaceholderEndpoint = '/api/rck/context-pack/generate-placeholder';
 const contextPackPreviewEndpoint = '/api/rck/context-pack/preview-placeholder';
 const idleStatusText = 'Browser-local session';
 const loadingStatusText = 'Loading local data...';
@@ -99,6 +113,8 @@ const tracePlaceholder = {
 };
 let activeContextScopeSuggestion = null;
 let activeContextPackPreview = null;
+let activeContextPackGenerationRequest = null;
+let activeContextPackGenerationResponse = null;
 let isContextSidePanelOpen = false;
 const contextPackCandidateSummaryLines = [
   'Current chat context placeholder',
@@ -880,6 +896,8 @@ function normalizeContextScopeSuggestion(candidate) {
 async function loadContextScopeSuggestion(intentText = '') {
   activeContextScopeSuggestion = normalizeContextScopeSuggestion(createFallbackContextScopeSuggestion(intentText));
   activeContextPackPreview = null;
+  activeContextPackGenerationRequest = null;
+  activeContextPackGenerationResponse = null;
   isContextSidePanelOpen = true;
   renderContextScopeSuggestionPanel();
 
@@ -909,6 +927,50 @@ function getSuggestedScopeIntentText() {
 function updateContextScopeSuggestionState(nextSuggestion) {
   activeContextScopeSuggestion = normalizeContextScopeSuggestion(nextSuggestion);
   renderContextScopeSuggestionPanel();
+}
+
+async function loadContextPackGenerationFromApprovedScope() {
+  if (!activeContextScopeSuggestion || activeContextScopeSuggestion.status !== 'approved') {
+    return null;
+  }
+
+  const approvedScope = {
+    suggestionId: activeContextScopeSuggestion.suggestionId,
+    targetType: activeContextScopeSuggestion.targetType ?? activeContextScopeSuggestion.suggestedTarget?.targetType ?? 'unknown',
+    targetId: activeContextScopeSuggestion.targetId ?? activeContextScopeSuggestion.suggestedTarget?.targetId ?? 'mock-context-scope-target-unknown',
+    targetLabel:
+      activeContextScopeSuggestion.targetLabel ??
+      activeContextScopeSuggestion.suggestedTarget?.label ??
+      activeContextScopeSuggestion.suggestedTarget?.targetLabel ??
+      'Unresolved placeholder target',
+    depth: activeContextScopeSuggestion.depth ?? activeContextScopeSuggestion.suggestedDepth ?? 0,
+    includeAnchors: activeContextScopeSuggestion.includeAnchors === true,
+    includeEvidenceRefs: activeContextScopeSuggestion.includeEvidenceRefs === true,
+    includeDocs: activeContextScopeSuggestion.includeDocs === true,
+    selectedArtifacts: Array.isArray(activeContextScopeSuggestion.selectedArtifacts)
+      ? activeContextScopeSuggestion.selectedArtifacts
+      : [],
+  };
+  const userIntentText = approvedScope.userIntentText || getSuggestedScopeIntentText();
+  const request = normalizeContextPackGenerationRequest(createFallbackContextPackGenerationRequest(approvedScope, userIntentText));
+  activeContextPackGenerationRequest = request;
+
+  try {
+    const data = await postJson(contextPackGenerationPlaceholderEndpoint, {
+      approvedScope: request.approvedScope,
+      userIntentText: request.userIntentText,
+    });
+    activeContextPackGenerationResponse = normalizeContextPackGenerationResponse(data.response ?? data);
+  } catch {
+    activeContextPackGenerationResponse = normalizeContextPackGenerationResponse(
+      createFallbackContextPackGenerationResponse(request.approvedScope, request.userIntentText),
+    );
+  }
+
+  activeContextPackPreview = normalizeContextPackPreview(activeContextPackGenerationResponse.contextPackPreview ?? createFallbackContextPackPreview());
+  renderContextPackGenerationRequestPanel();
+  renderContextPackPreviewPanel();
+  return activeContextPackGenerationResponse;
 }
 
 async function openContextPackPreview() {
@@ -942,8 +1004,9 @@ async function approveContextScopeSuggestion() {
     },
   });
 
-  await loadContextPackPreview();
+  await loadContextPackGenerationFromApprovedScope();
 }
+
 
 function rejectContextScopeSuggestion() {
   if (!activeContextScopeSuggestion) {
@@ -961,6 +1024,8 @@ function rejectContextScopeSuggestion() {
     },
   });
   activeContextPackPreview = null;
+  activeContextPackGenerationRequest = null;
+  activeContextPackGenerationResponse = null;
 }
 
 async function adjustContextScopeSuggestion() {
@@ -1131,12 +1196,13 @@ function renderContextScopeSuggestionPanel() {
     contextScopeSuggestionAdjustButton.disabled = false;
   }
 
+  renderContextPackGenerationRequestPanel();
   renderContextPackPreviewPanel();
 }
 
 function createFallbackContextPackPreview() {
   return {
-    phase: 19,
+    phase: 22,
     previewMode: 'placeholder',
     placeholder: true,
     contextPackId: 'cp_preview_placeholder_v1',
@@ -1156,7 +1222,7 @@ function createFallbackContextPackPreview() {
         title: 'Provenance',
         visible: true,
         summary: 'Source docs and commit reference for the contract preview.',
-        text: 'docs/RUFUSCHAT_ADAPTER_DESIGN.md · docs/CONTEXT_PACK_BOUNDARY.md · schemas/rck.context_pack.v0.schema.json',
+        text: 'apps/rufuschat-ui/RCK_CONTEXTPACK_GENERATION_CONTRACT.md · docs/CONTEXT_PACK_BOUNDARY.md · schemas/rck.context_pack.v0.schema.json',
       },
       {
         id: 'constraints',
@@ -1170,10 +1236,10 @@ function createFallbackContextPackPreview() {
     warnings: ['Placeholder / dev-only preview.', 'No RCK Core integration is active yet.', 'Confirm injection is disabled in this phase.'],
     constraints: ['Do not read .rck directly.', 'Do not execute RCK Core.', 'Do not generate a real ContextPack yet.', 'Do not persist injection records yet.'],
     provenanceSummary: {
-      sourceDocument: 'docs/RUFUSCHAT_ADAPTER_DESIGN.md',
-      contractDocument: 'docs/CONTEXT_PACK_BOUNDARY.md',
+      sourceDocument: 'apps/rufuschat-ui/RCK_CONTEXTPACK_GENERATION_CONTRACT.md',
+      contractDocument: 'apps/rufuschat-ui/RCK_CONTEXTPACK_PREVIEW.md',
       schemaDocument: 'schemas/rck.context_pack.v0.schema.json',
-      publishedCommit: '048d4c3',
+      publishedCommit: '6a446731',
       mode: 'placeholder',
       notes: ['Mock provenance only.', 'No RCK Core internals are read in this phase.'],
     },
@@ -1185,7 +1251,7 @@ function createFallbackContextPackPreview() {
       canPersistRecord: false,
       canReadRckFilesystem: false,
       canCallRckCore: false,
-      reason: 'Phase 19 is placeholder-only. Confirm injection is not available yet.',
+      reason: 'Phase 22 is placeholder-only. Confirm injection is not available yet.',
     },
     injectionRecordDraft: {
       status: 'draft',
@@ -1204,8 +1270,8 @@ function createFallbackContextPackPreview() {
       kind: 'placeholder',
     },
     sourceDocuments: [
-      'docs/RUFUSCHAT_ADAPTER_DESIGN.md',
-      'docs/CONTEXT_PACK_BOUNDARY.md',
+      'apps/rufuschat-ui/RCK_CONTEXTPACK_GENERATION_CONTRACT.md',
+      'apps/rufuschat-ui/RCK_CONTEXTPACK_PREVIEW.md',
       'schemas/rck.context_pack.v0.schema.json',
     ],
   };
@@ -1217,78 +1283,270 @@ function normalizeContextPackPreview(candidate) {
   }
 
   const fallback = createFallbackContextPackPreview();
-  const reference = candidate.reference && typeof candidate.reference === 'object' ? candidate.reference : candidate;
-
   return {
     ...fallback,
     ...candidate,
-    contextPackId: typeof candidate.contextPackId === 'string' && candidate.contextPackId.trim() ? candidate.contextPackId.trim() : fallback.contextPackId,
-    contextPackHash: typeof candidate.contextPackHash === 'string' && candidate.contextPackHash.trim() ? candidate.contextPackHash.trim() : fallback.contextPackHash,
-    title: typeof candidate.title === 'string' && candidate.title.trim() ? candidate.title.trim() : fallback.title,
-    sourceTraceSliceHashes: Array.isArray(candidate.sourceTraceSliceHashes) && candidate.sourceTraceSliceHashes.length > 0
-      ? candidate.sourceTraceSliceHashes.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
-      : fallback.sourceTraceSliceHashes,
-    sectionsVisible: Array.isArray(candidate.sectionsVisible) && candidate.sectionsVisible.length > 0
-      ? candidate.sectionsVisible.map((section, index) => ({
-          id: typeof section?.id === 'string' && section.id.trim() ? section.id.trim() : `section_${index + 1}`,
-          title: typeof section?.title === 'string' && section.title.trim() ? section.title.trim() : `Section ${index + 1}`,
-          visible: section?.visible !== false,
-          summary: typeof section?.summary === 'string' && section.summary.trim() ? section.summary.trim() : 'Placeholder section summary.',
-          text: typeof section?.text === 'string' && section.text.trim() ? section.text.trim() : 'Placeholder section content.',
-        }))
-      : fallback.sectionsVisible,
-    estimatedTokenCost: typeof candidate.estimatedTokenCost === 'number' ? candidate.estimatedTokenCost : null,
-    warnings: Array.isArray(candidate.warnings) && candidate.warnings.length > 0
-      ? candidate.warnings.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
-      : fallback.warnings,
-    constraints: Array.isArray(candidate.constraints) && candidate.constraints.length > 0
-      ? candidate.constraints.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
-      : fallback.constraints,
-    provenanceSummary: {
-      ...fallback.provenanceSummary,
-      ...(typeof candidate.provenanceSummary === 'object' && candidate.provenanceSummary ? candidate.provenanceSummary : {}),
+    reference: {
+      ...fallback.reference,
+      ...(candidate.reference ?? {}),
     },
-    exactTextToInject: typeof candidate.exactTextToInject === 'string' && candidate.exactTextToInject.trim()
-      ? candidate.exactTextToInject.trim()
-      : fallback.exactTextToInject,
-    userApprovalStatus: typeof candidate.userApprovalStatus === 'string' && candidate.userApprovalStatus.trim()
-      ? candidate.userApprovalStatus.trim()
-      : fallback.userApprovalStatus,
     injectionPolicy: {
       ...fallback.injectionPolicy,
-      ...(typeof candidate.injectionPolicy === 'object' && candidate.injectionPolicy ? candidate.injectionPolicy : {}),
+      ...(candidate.injectionPolicy ?? {}),
     },
     injectionRecordDraft: {
       ...fallback.injectionRecordDraft,
-      ...(typeof candidate.injectionRecordDraft === 'object' && candidate.injectionRecordDraft ? candidate.injectionRecordDraft : {}),
-      contextPackId: typeof candidate.injectionRecordDraft?.contextPackId === 'string' && candidate.injectionRecordDraft.contextPackId.trim()
-        ? candidate.injectionRecordDraft.contextPackId.trim()
-        : fallback.injectionRecordDraft.contextPackId,
-      contextPackHash: typeof candidate.injectionRecordDraft?.contextPackHash === 'string' && candidate.injectionRecordDraft.contextPackHash.trim()
-        ? candidate.injectionRecordDraft.contextPackHash.trim()
-        : fallback.injectionRecordDraft.contextPackHash,
+      ...(candidate.injectionRecordDraft ?? {}),
     },
-    reference: {
-      ...fallback.reference,
-      ...(typeof reference === 'object' && reference ? reference : {}),
-      contextPackId: typeof reference?.contextPackId === 'string' && reference.contextPackId.trim() ? reference.contextPackId.trim() : fallback.reference.contextPackId,
-      contextPackHash: typeof reference?.contextPackHash === 'string' && reference.contextPackHash.trim() ? reference.contextPackHash.trim() : fallback.reference.contextPackHash,
-      title: typeof reference?.title === 'string' && reference.title.trim() ? reference.title.trim() : fallback.reference.title,
-      kind: typeof reference?.kind === 'string' && reference.kind.trim() ? reference.kind.trim() : fallback.reference.kind,
+    provenanceSummary: {
+      ...fallback.provenanceSummary,
+      ...(candidate.provenanceSummary ?? {}),
     },
-    sourceDocuments: Array.isArray(candidate.sourceDocuments) && candidate.sourceDocuments.length > 0
-      ? candidate.sourceDocuments.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
-      : fallback.sourceDocuments,
+    preview: {
+      ...fallback.preview,
+      ...(candidate.preview ?? {}),
+    },
   };
 }
 
-function formatContextPackPreviewList(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return '';
+function createFallbackContextPackGenerationRequest(approvedScope = {}, userIntentText = '') {
+  const approvedTarget = approvedScope?.targetLabel ?? approvedScope?.suggestedTarget?.label ?? 'Unresolved placeholder target';
+  const requestId = `rck-context-pack-generation-request-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+
+  return {
+    requestId,
+    createdAtUtc: nowIso(),
+    source: 'approved-scope',
+    userIntentText: typeof userIntentText === 'string' && userIntentText.trim() ? userIntentText.trim() : 'Qué decisiones tomamos sobre ContextPack y RufusChat?',
+    approvedScope: {
+      suggestionId: typeof approvedScope?.suggestionId === 'string' && approvedScope.suggestionId.trim()
+        ? approvedScope.suggestionId.trim()
+        : 'rck-scope-suggestion-placeholder-v1',
+      targetType: typeof approvedScope?.targetType === 'string' && approvedScope.targetType.trim()
+        ? approvedScope.targetType.trim()
+        : 'unknown',
+      targetId: typeof approvedScope?.targetId === 'string' && approvedScope.targetId.trim()
+        ? approvedScope.targetId.trim()
+        : 'mock-context-scope-target-unknown',
+      targetLabel: typeof approvedScope?.targetLabel === 'string' && approvedScope.targetLabel.trim()
+        ? approvedScope.targetLabel.trim()
+        : approvedTarget,
+      depth: typeof approvedScope?.depth === 'number' && Number.isFinite(approvedScope.depth) ? approvedScope.depth : 0,
+      includeAnchors: approvedScope?.includeAnchors === true,
+      includeEvidenceRefs: approvedScope?.includeEvidenceRefs === true,
+      includeDocs: approvedScope?.includeDocs === true,
+      selectedArtifacts: Array.isArray(approvedScope?.selectedArtifacts) ? approvedScope.selectedArtifacts : [],
+    },
+    requestedOutput: {
+      contextPackSchemaVersion: 'rck.context_pack.v0',
+      previewOnly: true,
+    },
+    safety: {
+      requireUserApprovalForInjection: true,
+      allowAutomaticInjection: false,
+    },
+  };
+}
+
+function normalizeContextPackGenerationRequest(candidate) {
+  if (!candidate || typeof candidate !== 'object') {
+    return createFallbackContextPackGenerationRequest();
   }
 
-  const formatted = items.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim()).join(' · ');
-  return formatted || '';
+  const approvedScope = candidate.approvedScope && typeof candidate.approvedScope === 'object' ? candidate.approvedScope : {};
+  return {
+    requestId: typeof candidate.requestId === 'string' && candidate.requestId.trim() ? candidate.requestId.trim() : createFallbackContextPackGenerationRequest(approvedScope, candidate.userIntentText).requestId,
+    createdAtUtc: typeof candidate.createdAtUtc === 'string' && candidate.createdAtUtc.trim()
+      ? candidate.createdAtUtc.trim()
+      : nowIso(),
+    source: candidate.source === 'approved-scope' ? candidate.source : 'approved-scope',
+    userIntentText: typeof candidate.userIntentText === 'string' && candidate.userIntentText.trim()
+      ? candidate.userIntentText.trim()
+      : createFallbackContextPackGenerationRequest(approvedScope, '').userIntentText,
+    approvedScope: {
+      suggestionId: typeof approvedScope.suggestionId === 'string' && approvedScope.suggestionId.trim() ? approvedScope.suggestionId.trim() : 'rck-scope-suggestion-placeholder-v1',
+      targetType: typeof approvedScope.targetType === 'string' && approvedScope.targetType.trim() ? approvedScope.targetType.trim() : 'unknown',
+      targetId: typeof approvedScope.targetId === 'string' && approvedScope.targetId.trim() ? approvedScope.targetId.trim() : 'mock-context-scope-target-unknown',
+      targetLabel: typeof approvedScope.targetLabel === 'string' && approvedScope.targetLabel.trim() ? approvedScope.targetLabel.trim() : 'Unresolved placeholder target',
+      depth: typeof approvedScope.depth === 'number' && Number.isFinite(approvedScope.depth) ? approvedScope.depth : 0,
+      includeAnchors: approvedScope.includeAnchors === true,
+      includeEvidenceRefs: approvedScope.includeEvidenceRefs === true,
+      includeDocs: approvedScope.includeDocs === true,
+      selectedArtifacts: Array.isArray(approvedScope.selectedArtifacts) ? approvedScope.selectedArtifacts : [],
+    },
+    requestedOutput: {
+      contextPackSchemaVersion:
+        typeof candidate.requestedOutput?.contextPackSchemaVersion === 'string' && candidate.requestedOutput.contextPackSchemaVersion.trim()
+          ? candidate.requestedOutput.contextPackSchemaVersion.trim()
+          : 'rck.context_pack.v0',
+      previewOnly: candidate.requestedOutput?.previewOnly !== false,
+    },
+    safety: {
+      requireUserApprovalForInjection: candidate.safety?.requireUserApprovalForInjection !== false,
+      allowAutomaticInjection: candidate.safety?.allowAutomaticInjection === true,
+    },
+  };
+}
+
+function createFallbackContextPackGenerationResponse(approvedScope = {}, userIntentText = '') {
+  const request = createFallbackContextPackGenerationRequest(approvedScope, userIntentText);
+  const preview = createFallbackContextPackPreview();
+  return {
+    requestId: request.requestId,
+    status: 'not_connected',
+    contextPackReference: {
+      contextPackId: `cp_${request.requestId}`,
+      contextPackHash: `sha256:placeholder-${request.requestId}`,
+      title: 'RufusChat ContextPack generation placeholder',
+      kind: 'placeholder',
+    },
+    contextPackPreview: preview,
+    warnings: [
+      'Placeholder / dev-only generation request.',
+      'Not connected to real RCK generation in this phase.',
+      'No TraceSlice was generated.',
+      'No ContextPack was generated.',
+      'Confirm injection stays disabled.',
+    ],
+    constraints: [
+      'No RCK Core execution.',
+      'No .rck reads.',
+      'No TraceSlice generation.',
+      'No ContextPack generation.',
+      'No persistence of the request.',
+      'No persistence of injection records.',
+      'No chat injection.',
+      'No LLM calls.',
+    ],
+    provenanceSummary: {
+      sourceDocument: 'apps/rufuschat-ui/RCK_CONTEXTPACK_GENERATION_CONTRACT.md',
+      requestContractDocument: 'apps/rufuschat-ui/rck-contextpack-generation-contract.mjs',
+      previewContractDocument: 'apps/rufuschat-ui/rck-contextpack-contract.mjs',
+      previewProviderDocument: 'apps/rufuschat-ui/contextpack-preview-provider.mjs',
+      mode: 'placeholder',
+      notes: ['Approved scope is represented as a request contract first.', 'The response is placeholder / not connected.'],
+    },
+    message: 'Not connected to real RCK generation in this phase.',
+  };
+}
+
+function normalizeContextPackGenerationResponse(candidate) {
+  if (!candidate || typeof candidate !== 'object') {
+    return createFallbackContextPackGenerationResponse();
+  }
+
+  return {
+    requestId: typeof candidate.requestId === 'string' && candidate.requestId.trim() ? candidate.requestId.trim() : createFallbackContextPackGenerationResponse().requestId,
+    status: typeof candidate.status === 'string' && candidate.status.trim() ? candidate.status.trim() : 'not_connected',
+    contextPackReference: candidate.contextPackReference && typeof candidate.contextPackReference === 'object'
+      ? {
+          contextPackId: typeof candidate.contextPackReference.contextPackId === 'string' && candidate.contextPackReference.contextPackId.trim()
+            ? candidate.contextPackReference.contextPackId.trim()
+            : createFallbackContextPackGenerationResponse().contextPackReference.contextPackId,
+          contextPackHash: typeof candidate.contextPackReference.contextPackHash === 'string' && candidate.contextPackReference.contextPackHash.trim()
+            ? candidate.contextPackReference.contextPackHash.trim()
+            : createFallbackContextPackGenerationResponse().contextPackReference.contextPackHash,
+          title: typeof candidate.contextPackReference.title === 'string' && candidate.contextPackReference.title.trim()
+            ? candidate.contextPackReference.title.trim()
+            : createFallbackContextPackGenerationResponse().contextPackReference.title,
+          kind: typeof candidate.contextPackReference.kind === 'string' && candidate.contextPackReference.kind.trim()
+            ? candidate.contextPackReference.kind.trim()
+            : createFallbackContextPackGenerationResponse().contextPackReference.kind,
+        }
+      : null,
+    contextPackPreview: candidate.contextPackPreview && typeof candidate.contextPackPreview === 'object' ? candidate.contextPackPreview : createFallbackContextPackGenerationResponse().contextPackPreview,
+    warnings: Array.isArray(candidate.warnings) && candidate.warnings.length > 0
+      ? candidate.warnings.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+      : createFallbackContextPackGenerationResponse().warnings,
+    constraints: Array.isArray(candidate.constraints) && candidate.constraints.length > 0
+      ? candidate.constraints.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+      : createFallbackContextPackGenerationResponse().constraints,
+    provenanceSummary: {
+      ...createFallbackContextPackGenerationResponse().provenanceSummary,
+      ...(typeof candidate.provenanceSummary === 'object' && candidate.provenanceSummary ? candidate.provenanceSummary : {}),
+    },
+    message: typeof candidate.message === 'string' && candidate.message.trim()
+      ? candidate.message.trim()
+      : 'Not connected to real RCK generation in this phase.',
+  };
+}
+
+function formatContextPackGenerationRequestTarget(request) {
+  const approvedScope = request?.approvedScope ?? {};
+  return [approvedScope.targetType, approvedScope.targetLabel, approvedScope.targetId].filter(Boolean).join(' · ');
+}
+
+function formatContextPackGenerationRequestArtifacts(request) {
+  return formatContextScopeList(request?.approvedScope?.selectedArtifacts ?? []);
+}
+
+function renderContextPackGenerationRequestPanel() {
+  if (!contextPackGenerationRequestPanel) {
+    return;
+  }
+
+  const request = activeContextPackGenerationRequest;
+  const response = activeContextPackGenerationResponse ?? createFallbackContextPackGenerationResponse(request?.approvedScope, request?.userIntentText);
+  const shouldShow = Boolean(request && isContextSidePanelOpen && activeContextScopeSuggestion?.status === 'approved');
+  contextPackGenerationRequestPanel.hidden = !shouldShow;
+
+  if (!shouldShow) {
+    return;
+  }
+
+  if (contextPackGenerationRequestTitleEl) {
+    contextPackGenerationRequestTitleEl.textContent = 'ContextPack generation request';
+  }
+
+  if (contextPackGenerationRequestStatusEl) {
+    contextPackGenerationRequestStatusEl.textContent = response.status === 'ready' ? 'ready' : response.status === 'failed' ? 'failed' : 'placeholder / not_connected';
+  }
+
+  if (contextPackGenerationRequestSummaryEl) {
+    contextPackGenerationRequestSummaryEl.textContent = response.message;
+  }
+
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-id'), request.requestId);
+  setTextField(contextPackGenerationRequestIdEl, request.requestId, '');
+
+  const targetText = formatContextPackGenerationRequestTarget(request);
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-target'), targetText);
+  setTextField(contextPackGenerationRequestTargetEl, targetText, '');
+
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-depth'), request.approvedScope?.depth);
+  setTextField(contextPackGenerationRequestDepthEl, String(request.approvedScope?.depth ?? ''), '');
+
+  const artifactsText = formatContextPackGenerationRequestArtifacts(request);
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-artifacts'), artifactsText);
+  setTextField(contextPackGenerationRequestArtifactsEl, artifactsText, '');
+
+  const warningsText = formatContextPackPreviewList(response.warnings);
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-warnings'), warningsText);
+  setTextField(contextPackGenerationRequestWarningsEl, warningsText, '');
+
+  const constraintsText = formatContextPackPreviewList(response.constraints);
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-constraints'), constraintsText);
+  setTextField(contextPackGenerationRequestConstraintsEl, constraintsText, '');
+
+  const provenanceText = [
+    response.provenanceSummary?.sourceDocument,
+    response.provenanceSummary?.requestContractDocument,
+    response.provenanceSummary?.previewContractDocument,
+    response.provenanceSummary?.mode,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-provenance'), provenanceText);
+  setTextField(contextPackGenerationRequestProvenanceEl, provenanceText, '');
+
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-message'), response.message);
+  setTextField(contextPackGenerationRequestMessageEl, response.message, '');
+
+  const previewRelationText = response.contextPackPreview?.placeholder
+    ? 'Preview placeholder is derived from this approved-scope request contract.'
+    : 'Preview is not connected to real generation in this phase.';
+  setFieldVisibility(document.getElementById('context-pack-generation-request-field-preview'), previewRelationText);
+  setTextField(contextPackGenerationRequestPreviewEl, previewRelationText, '');
 }
 
 function renderContextPackPreviewPanel() {
@@ -1296,7 +1554,7 @@ function renderContextPackPreviewPanel() {
     return;
   }
 
-  const preview = activeContextPackPreview;
+  const preview = activeContextPackGenerationResponse?.contextPackPreview ?? activeContextPackPreview;
   const scopeApproved = activeContextScopeSuggestion?.status === 'approved';
   const shouldShow = Boolean(preview && scopeApproved && isContextSidePanelOpen);
   contextPackPreviewPanel.hidden = !shouldShow;
@@ -1367,7 +1625,9 @@ function renderContextPackPreviewPanel() {
   setFieldVisibility(document.getElementById('context-pack-preview-field-provenance'), provenanceText);
   setTextField(contextPackPreviewProvenanceEl, provenanceText, '');
 
-  const scopeDerivationText = `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview was not generated from that scope.`;
+  const scopeDerivationText = activeContextPackGenerationRequest?.requestId
+    ? `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview is derived from the approved-scope generation request ${activeContextPackGenerationRequest.requestId}.`
+    : `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview was not generated from that scope.`;
   setFieldVisibility(document.getElementById('context-pack-preview-field-scope-derivation'), scopeDerivationText);
   setTextField(contextPackPreviewScopeDerivationEl, scopeDerivationText, '');
 

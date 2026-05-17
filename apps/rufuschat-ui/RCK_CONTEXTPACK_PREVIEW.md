@@ -8,7 +8,8 @@ This phase implements a **placeholder / dev-preview contract** for RufusChat.
 - A dev-safe endpoint: `GET /api/rck/context-pack/preview-placeholder`.
 - A secondary UI panel labeled **Attach RCK Context**.
 - The confirmation action is disabled and shows **Not available in this phase**.
-- The preview can appear after the user approves the placeholder scope suggestion, but it remains a dev-only placeholder.
+- The preview can appear after the user approves the placeholder scope suggestion and the approved-scope → ContextPack generation request contract is built.
+- It still remains a dev-only placeholder and is not a real generated ContextPack.
 
 ## What is not in scope
 
@@ -30,6 +31,7 @@ The contract is derived from:
 - `docs/CONTEXT_PACK_BOUNDARY.md`
 - `schemas/rck.context_pack.v0.schema.json`
 - published RCK Core commit: `048d4c3`
+- `RCK_CONTEXTPACK_GENERATION_CONTRACT.md`
 
 ## Preview shape
 
@@ -50,8 +52,8 @@ The placeholder preview exposes:
 
 ## Next steps
 
-1. Add the real endpoint that loads a ContextPack.
-2. Connect the preview to live data.
-3. Wire confirm injection.
-4. Add injection record persistence when the product phase allows it.
-5. Optionally add Anchor recording later.
+1. Connect the approved-scope request contract to exported `rck-core` ContextPack JSON.
+2. Load a real ContextPack payload.
+3. Validate the schema.
+4. Render a real preview.
+5. Add an explicit confirm-injection step only after the real chain exists.

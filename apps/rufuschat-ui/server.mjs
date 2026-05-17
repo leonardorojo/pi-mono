@@ -5,6 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildMockContextPackPreview } from './contextpack-preview-provider.mjs';
+import {
+  buildContextPackGenerationRequestFromApprovedScope,
+  buildPlaceholderContextPackGenerationResponse,
+} from './contextpack-generation-provider.mjs';
 import { buildMockContextScopeSuggestion } from './context-scope-suggestion-provider.mjs';
 import { completeChatCompletion, createChatCompletionStream } from './chat-completion-provider.mjs';
 import {
@@ -467,6 +471,33 @@ const server = createServer(async (req, res) => {
       preview: buildMockContextPackPreview(),
       message: 'Placeholder ContextPack preview returned without reading RCK Core.',
     });
+    return;
+  }
+
+  if (url.pathname === '/api/rck/context-pack/generate-placeholder') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      const body = await readRequestJson(req);
+      const userIntentText = typeof body.userIntentText === 'string' ? body.userIntentText.trim() : '';
+      const approvedScope = body.approvedScope ?? {};
+      const request = buildContextPackGenerationRequestFromApprovedScope(approvedScope, userIntentText);
+      const response = buildPlaceholderContextPackGenerationResponse({
+        request,
+        approvedScope,
+        userIntentText,
+      });
+
+      sendJson(res, 200, response);
+    } catch (error) {
+      sendJson(res, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : 'ContextPack generation request failed',
+      });
+    }
     return;
   }
 

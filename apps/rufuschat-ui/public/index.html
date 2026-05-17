@@ -69,26 +69,43 @@
 
         <div class="chat-pane__body">
           <div class="chat-pane__workspace">
-            <section class="messages" id="messages" aria-live="polite" aria-label="Messages">
-              <div class="messages__inner" id="messages-inner"></div>
-            </section>
+            <div class="chat-pane__shell">
+              <header class="chat-header">
+                <div class="chat-header__copy">
+                  <div class="chat-header__title" aria-label="Current project and chat">
+                    <strong id="current-project">PI Agent</strong>
+                    <span class="chat-header__separator" aria-hidden="true">/</span>
+                    <span id="current-chat">Branch · RufusChat Fase 10</span>
+                  </div>
+                  <div class="chat-header__statusline" aria-label="Chat status">
+                    <span class="chat-header__chip" id="current-memory-status">Memory off</span>
+                    <span class="chat-header__chip" id="current-summary-status">Context off</span>
+                    <span class="chat-header__chip" id="current-rck-trace-status">Trace not linked</span>
+                  </div>
+                </div>
+              </header>
 
-            <div class="slash-menu" id="slash-menu" hidden aria-label="Slash commands"></div>
+              <section class="messages" id="messages" aria-live="polite" aria-label="Messages">
+                <div class="messages__inner" id="messages-inner"></div>
+              </section>
 
-            <form class="composer" id="composer-form">
-              <label class="sr-only" for="composer-input">Ask RufusChat</label>
-              <textarea id="composer-input" name="message" rows="1" placeholder="Ask RufusChat..." autocomplete="off" spellcheck="false"></textarea>
-              <div class="composer__footer">
-                <span class="composer__hint">Type / for commands</span>
-                <button class="button button--primary" type="submit" aria-label="Send message">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="M12 18V6" />
-                    <path d="M7.5 10.5 12 6l4.5 4.5" />
-                  </svg>
-                  <span class="sr-only">Send</span>
-                </button>
-              </div>
-            </form>
+              <div class="slash-menu" id="slash-menu" hidden aria-label="Slash commands"></div>
+
+              <form class="composer" id="composer-form">
+                <label class="sr-only" for="composer-input">Ask RufusChat</label>
+                <textarea id="composer-input" name="message" rows="1" placeholder="Ask RufusChat..." autocomplete="off" spellcheck="false"></textarea>
+                <div class="composer__footer">
+                  <span class="composer__hint">Type / for commands</span>
+                  <button class="button button--primary" type="submit" aria-label="Send message">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M12 18V6" />
+                      <path d="M7.5 10.5 12 6l4.5 4.5" />
+                    </svg>
+                    <span class="sr-only">Send</span>
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
 
           <aside class="chat-pane__rck-panel" id="context-side-panel" hidden aria-label="RCK context side panel">
@@ -103,7 +120,8 @@
               </div>
             </div>
 
-            <section class="context-pack-preview context-scope-suggestion" id="context-scope-suggestion" hidden aria-label="Suggested RCK scope">
+            <div class="chat-pane__rck-panel-body">
+              <section class="context-pack-preview context-scope-suggestion" id="context-scope-suggestion" hidden aria-label="Suggested RCK scope">
               <div class="context-pack-preview__header">
                 <div>
                   <p class="context-pack-preview__eyebrow">Suggested RCK scope</p>
@@ -235,6 +253,7 @@
                 </button>
               </div>
             </section>
+            </div>
           </aside>
         </div>
       </main>

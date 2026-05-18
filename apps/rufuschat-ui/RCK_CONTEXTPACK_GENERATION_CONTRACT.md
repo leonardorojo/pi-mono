@@ -1,6 +1,7 @@
 # RCK ContextPack generation contract
 
-This phase adds a **placeholder / dev-only** contract that turns an approved RCK scope into a ContextPack generation request.
+This phase keeps the approved-scope → generation flow as a **placeholder / dev-only** contract.
+It is still not a real RCK generation pipeline.
 
 ## What it is
 
@@ -14,6 +15,7 @@ In this phase, the request stays local and the response is still a placeholder. 
 - A dev-safe endpoint: `POST /api/rck/context-pack/generate-placeholder`.
 - A UI section that appears after the scope is approved.
 - A placeholder response that can carry the existing ContextPack preview placeholder.
+- A manual/dev-safe JSON load flow that can render a loaded preview without generating anything.
 - Explicitly disabled injection semantics.
 
 ## What is not in scope
@@ -22,6 +24,7 @@ In this phase, the request stays local and the response is still a placeholder. 
 - No `.rck` reads.
 - No TraceSlice generation.
 - No real ContextPack generation.
+- No automatic ContextPack generation from RufusChat.
 - No real preview generation.
 - No LLM calls.
 - No semantic ranking, embeddings, or summary generation.
@@ -30,6 +33,7 @@ In this phase, the request stays local and the response is still a placeholder. 
 - No chat context injection.
 - No product-state schema changes.
 - No `.data` writes.
+- No real injection chain.
 
 ## Contract shape
 
@@ -87,10 +91,16 @@ Minimum shape:
 - Approved scope becomes a request contract first.
 - The request is returned as a placeholder response.
 - The response may reuse the existing ContextPack preview placeholder.
+- A manually loaded ContextPack JSON preview can replace the placeholder preview in the UI.
 - Confirm injection remains disabled.
 - Nothing is persisted.
 - Nothing is injected.
 - No real RCK execution occurs.
+
+## Related docs
+
+- [`RCK_CONTEXTPACK_PREVIEW.md`](./RCK_CONTEXTPACK_PREVIEW.md)
+- [`RCK_LOAD_CONTEXTPACK_JSON_PREVIEW.md`](./RCK_LOAD_CONTEXTPACK_JSON_PREVIEW.md)
 
 ## Next steps
 

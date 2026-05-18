@@ -255,6 +255,14 @@
               </p>
 
               <div class="context-pack-preview__grid">
+                <div class="context-pack-preview__field" id="context-pack-preview-field-schema-version">
+                  <div class="context-pack-preview__label">Schema version</div>
+                  <div class="context-pack-preview__value context-pack-preview__value--mono" id="context-pack-preview-schema-version"></div>
+                </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-context-title">
+                  <div class="context-pack-preview__label">ContextPack title</div>
+                  <div class="context-pack-preview__value" id="context-pack-preview-context-title"></div>
+                </div>
                 <div class="context-pack-preview__field" id="context-pack-preview-field-reference">
                   <div class="context-pack-preview__label">ContextPack reference</div>
                   <div class="context-pack-preview__value" id="context-pack-preview-reference"></div>
@@ -295,9 +303,15 @@
                   <div class="context-pack-preview__label">User approval status</div>
                   <div class="context-pack-preview__value" id="context-pack-preview-approval-status"></div>
                 </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-load">
+                  <div class="context-pack-preview__label">Load ContextPack JSON</div>
+                  <textarea class="context-pack-preview__json-input" id="context-pack-preview-json" rows="8" spellcheck="false" placeholder="Paste ContextPack JSON here. Manual/dev-safe load only."></textarea>
+                  <div class="context-pack-preview__helper" id="context-pack-preview-load-message">Manual/dev-safe load only. RufusChat did not generate this ContextPack automatically.</div>
+                </div>
               </div>
 
               <div class="context-pack-preview__actions">
+                <button class="button button--primary button--compact" id="context-pack-preview-load-button" type="button">Load preview</button>
                 <button class="button button--primary button--compact" id="context-pack-preview-confirm" type="button" disabled>
                   Not available in this phase
                 </button>

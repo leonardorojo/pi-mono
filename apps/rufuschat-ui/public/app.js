@@ -58,6 +58,8 @@ const contextPackPreviewPanel = document.getElementById('context-pack-preview');
 const contextPackPreviewTitleEl = document.getElementById('context-pack-preview-title');
 const contextPackPreviewStatusEl = document.getElementById('context-pack-preview-status');
 const contextPackPreviewSummaryEl = document.getElementById('context-pack-preview-summary');
+const contextPackPreviewSchemaVersionEl = document.getElementById('context-pack-preview-schema-version');
+const contextPackPreviewContextTitleEl = document.getElementById('context-pack-preview-context-title');
 const contextPackPreviewReferenceEl = document.getElementById('context-pack-preview-reference');
 const contextPackPreviewTraceHashesEl = document.getElementById('context-pack-preview-trace-hashes');
 const contextPackPreviewSectionsEl = document.getElementById('context-pack-preview-sections');
@@ -68,6 +70,9 @@ const contextPackPreviewProvenanceEl = document.getElementById('context-pack-pre
 const contextPackPreviewScopeDerivationEl = document.getElementById('context-pack-preview-scope-derivation');
 const contextPackPreviewExactTextEl = document.getElementById('context-pack-preview-exact-text');
 const contextPackPreviewApprovalStatusEl = document.getElementById('context-pack-preview-approval-status');
+const contextPackPreviewJsonEl = document.getElementById('context-pack-preview-json');
+const contextPackPreviewLoadButton = document.getElementById('context-pack-preview-load-button');
+const contextPackPreviewLoadMessageEl = document.getElementById('context-pack-preview-load-message');
 const contextPackPreviewConfirmButton = document.getElementById('context-pack-preview-confirm');
 const contextPackPreviewCloseButton = document.getElementById('context-pack-preview-close');
 const contextPackGenerationRequestPanel = document.getElementById('context-pack-generation-request');
@@ -87,6 +92,7 @@ const contextPackGenerationRequestPreviewEl = document.getElementById('context-p
 const productStateEndpoint = '/api/product-state';
 const contextScopeSuggestionEndpoint = '/api/rck/context-scope/suggest-placeholder';
 const contextPackGenerationPlaceholderEndpoint = '/api/rck/context-pack/generate-placeholder';
+const contextPackLoadPreviewEndpoint = '/api/rck/context-pack/load-preview';
 const contextPackPreviewEndpoint = '/api/rck/context-pack/preview-placeholder';
 const idleStatusText = 'Browser-local session';
 const loadingStatusText = 'Loading local data...';
@@ -113,6 +119,7 @@ const tracePlaceholder = {
 };
 let activeContextScopeSuggestion = null;
 let activeContextPackPreview = null;
+let activeLoadedContextPackPreview = null;
 let activeContextPackGenerationRequest = null;
 let activeContextPackGenerationResponse = null;
 let isContextSidePanelOpen = false;
@@ -705,6 +712,31 @@ function formatContextScopeList(items) {
   return formatted || '';
 }
 
+function formatContextPackPreviewList(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return '';
+  }
+
+  return items
+    .map((item) => {
+      if (typeof item === 'string') {
+        return item.trim();
+      }
+
+      if (!item || typeof item !== 'object') {
+        return '';
+      }
+
+      const title = typeof item.title === 'string' && item.title.trim() ? item.title.trim() : '';
+      const summary = typeof item.summary === 'string' && item.summary.trim() ? item.summary.trim() : '';
+      const text = typeof item.text === 'string' && item.text.trim() ? item.text.trim() : '';
+      const label = title || summary || text;
+      return label;
+    })
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function formatContextScopeConfidence(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return '';
@@ -896,6 +928,7 @@ function normalizeContextScopeSuggestion(candidate) {
 async function loadContextScopeSuggestion(intentText = '') {
   activeContextScopeSuggestion = normalizeContextScopeSuggestion(createFallbackContextScopeSuggestion(intentText));
   activeContextPackPreview = null;
+  activeLoadedContextPackPreview = null;
   activeContextPackGenerationRequest = null;
   activeContextPackGenerationResponse = null;
   isContextSidePanelOpen = true;
@@ -1024,6 +1057,7 @@ function rejectContextScopeSuggestion() {
     },
   });
   activeContextPackPreview = null;
+  activeLoadedContextPackPreview = null;
   activeContextPackGenerationRequest = null;
   activeContextPackGenerationResponse = null;
 }
@@ -1554,7 +1588,7 @@ function renderContextPackPreviewPanel() {
     return;
   }
 
-  const preview = activeContextPackGenerationResponse?.contextPackPreview ?? activeContextPackPreview;
+  const preview = activeLoadedContextPackPreview ?? activeContextPackGenerationResponse?.contextPackPreview ?? activeContextPackPreview;
   const scopeApproved = activeContextScopeSuggestion?.status === 'approved';
   const shouldShow = Boolean(preview && scopeApproved && isContextSidePanelOpen);
   contextPackPreviewPanel.hidden = !shouldShow;
@@ -1563,26 +1597,46 @@ function renderContextPackPreviewPanel() {
     if (contextSidePanelBadgeEl && !activeContextScopeSuggestion) {
       contextSidePanelBadgeEl.textContent = 'Placeholder';
     }
+
+    if (contextPackPreviewLoadMessageEl) {
+      contextPackPreviewLoadMessageEl.textContent = '';
+    }
+
     return;
   }
 
+  const isLoadedPreview = Boolean(activeLoadedContextPackPreview);
+  const panelBadge = isLoadedPreview
+    ? 'Loaded JSON / preview only'
+    : preview.placeholder
+      ? 'Placeholder / not connected'
+      : 'Connected';
+
   if (contextSidePanelBadgeEl) {
-    contextSidePanelBadgeEl.textContent = 'Approved placeholder';
+    contextSidePanelBadgeEl.textContent = panelBadge;
   }
 
   if (contextPackPreviewTitleEl) {
-    contextPackPreviewTitleEl.textContent = preview.title;
+    contextPackPreviewTitleEl.textContent = isLoadedPreview ? 'Loaded ContextPack preview' : preview.title;
   }
 
   if (contextPackPreviewStatusEl) {
-    contextPackPreviewStatusEl.textContent = preview.placeholder ? 'Placeholder / not connected' : 'Connected';
+    contextPackPreviewStatusEl.textContent = panelBadge;
   }
 
   if (contextPackPreviewSummaryEl) {
-    contextPackPreviewSummaryEl.textContent = preview.placeholder
-      ? 'Approved scope acknowledged locally. This preview is still a demo/dev-only placeholder and was not generated from the approved scope.'
-      : 'A live preview is connected.';
+    contextPackPreviewSummaryEl.textContent = isLoadedPreview
+      ? 'Loaded manually from JSON. RufusChat did not generate this ContextPack automatically in this phase.'
+      : preview.placeholder
+        ? 'Approved scope acknowledged locally. This preview is still a demo/dev-only placeholder and was not generated from the approved scope.'
+        : 'A live preview is connected.';
   }
+
+  setFieldVisibility(document.getElementById('context-pack-preview-field-schema-version'), preview.schemaVersion ?? 'rck.context_pack.v0');
+  setTextField(contextPackPreviewSchemaVersionEl, preview.schemaVersion ?? 'rck.context_pack.v0', '');
+
+  setFieldVisibility(document.getElementById('context-pack-preview-field-context-title'), preview.contextPackTitle ?? preview.title);
+  setTextField(contextPackPreviewContextTitleEl, preview.contextPackTitle ?? preview.title, '');
 
   const referenceText = `${preview.reference?.contextPackId ?? preview.contextPackId} · ${preview.reference?.contextPackHash ?? preview.contextPackHash}`;
   setFieldVisibility(document.getElementById('context-pack-preview-field-reference'), referenceText);
@@ -1625,17 +1679,37 @@ function renderContextPackPreviewPanel() {
   setFieldVisibility(document.getElementById('context-pack-preview-field-provenance'), provenanceText);
   setTextField(contextPackPreviewProvenanceEl, provenanceText, '');
 
-  const scopeDerivationText = activeContextPackGenerationRequest?.requestId
-    ? `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview is derived from the approved-scope generation request ${activeContextPackGenerationRequest.requestId}.`
-    : `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview was not generated from that scope.`;
+  const scopeDerivationText = isLoadedPreview
+    ? 'Loaded manually from JSON. Not generated automatically by RufusChat in this phase.'
+    : activeContextPackGenerationRequest?.requestId
+      ? `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview is derived from the approved-scope generation request ${activeContextPackGenerationRequest.requestId}.`
+      : `Approved locally from ${activeContextScopeSuggestion.suggestionId}. Preview was not generated from that scope.`;
   setFieldVisibility(document.getElementById('context-pack-preview-field-scope-derivation'), scopeDerivationText);
   setTextField(contextPackPreviewScopeDerivationEl, scopeDerivationText, '');
 
   setFieldVisibility(document.getElementById('context-pack-preview-field-exact-text'), preview.exactTextToInject);
   setTextField(contextPackPreviewExactTextEl, preview.exactTextToInject, '');
 
-  setFieldVisibility(document.getElementById('context-pack-preview-field-approval-status'), 'Approved placeholder');
-  setTextField(contextPackPreviewApprovalStatusEl, 'Approved placeholder', '');
+  const approvalStatusText = isLoadedPreview
+    ? 'Loaded JSON / preview only'
+    : 'Approved placeholder';
+  setFieldVisibility(document.getElementById('context-pack-preview-field-approval-status'), approvalStatusText);
+  setTextField(contextPackPreviewApprovalStatusEl, approvalStatusText, '');
+
+  if (contextPackPreviewLoadMessageEl) {
+    contextPackPreviewLoadMessageEl.textContent = isLoadedPreview
+      ? 'Manual/dev-safe load only. RufusChat did not generate this ContextPack automatically.'
+      : 'Paste a ContextPack JSON object here, then load a preview.';
+  }
+
+  if (contextPackPreviewJsonEl && !contextPackPreviewJsonEl.value.trim() && !isLoadedPreview) {
+    contextPackPreviewJsonEl.placeholder = 'Paste ContextPack JSON here. Manual/dev-safe load only.';
+  }
+
+  if (contextPackPreviewLoadButton) {
+    contextPackPreviewLoadButton.disabled = false;
+    contextPackPreviewLoadButton.textContent = 'Load preview';
+  }
 
   if (contextPackPreviewConfirmButton) {
     contextPackPreviewConfirmButton.disabled = true;
@@ -1665,6 +1739,57 @@ async function loadContextPackPreview() {
   }
 
   renderContextPackPreviewPanel();
+}
+
+async function loadLoadedContextPackPreviewFromJson() {
+  if (!contextPackPreviewJsonEl) {
+    return null;
+  }
+
+  const rawJson = contextPackPreviewJsonEl.value.trim();
+  if (!rawJson) {
+    if (contextPackPreviewLoadMessageEl) {
+      contextPackPreviewLoadMessageEl.textContent = 'Paste a ContextPack JSON object first.';
+    }
+    return null;
+  }
+
+  if (rawJson.length > 200000 && contextPackPreviewLoadMessageEl) {
+    contextPackPreviewLoadMessageEl.textContent = 'The pasted JSON is large; RufusChat will still try to load it as a preview-only payload.';
+  }
+
+  if (contextPackPreviewLoadButton) {
+    contextPackPreviewLoadButton.disabled = true;
+    contextPackPreviewLoadButton.textContent = 'Loading preview...';
+  }
+
+  try {
+    const data = await postJson(contextPackLoadPreviewEndpoint, { contextPackJson: rawJson });
+    if (!data || data.ok !== true) {
+      const message = typeof data?.error?.message === 'string' ? data.error.message : 'ContextPack load request failed.';
+      const issuesText = Array.isArray(data?.issues) && data.issues.length > 0 ? ` ${data.issues.join(' · ')}` : '';
+      throw new Error(`${message}${issuesText}`.trim());
+    }
+
+    activeLoadedContextPackPreview = normalizeContextPackPreview(data.preview ?? data);
+    if (contextPackPreviewLoadMessageEl) {
+      contextPackPreviewLoadMessageEl.textContent = 'Loaded manually from JSON. RufusChat did not generate this ContextPack automatically.';
+    }
+    renderContextPackPreviewPanel();
+    return data;
+  } catch (error) {
+    if (contextPackPreviewLoadMessageEl) {
+      contextPackPreviewLoadMessageEl.textContent = error instanceof Error
+        ? error.message
+        : 'ContextPack JSON load failed.';
+    }
+    return null;
+  } finally {
+    if (contextPackPreviewLoadButton) {
+      contextPackPreviewLoadButton.disabled = false;
+      contextPackPreviewLoadButton.textContent = 'Load preview';
+    }
+  }
 }
 
 function isContextPackCandidateMessage(message) {
@@ -4658,6 +4783,12 @@ if (attachContextPackButton) {
     }
 
     void openContextPackPreview();
+  });
+}
+
+if (contextPackPreviewLoadButton) {
+  contextPackPreviewLoadButton.addEventListener('click', () => {
+    void loadLoadedContextPackPreviewFromJson();
   });
 }
 

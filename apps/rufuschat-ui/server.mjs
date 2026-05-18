@@ -10,6 +10,11 @@ import {
   buildPlaceholderContextPackGenerationResponse,
 } from './contextpack-generation-provider.mjs';
 import { buildMockContextScopeSuggestion } from './context-scope-suggestion-provider.mjs';
+import {
+  buildContextPackPreviewFromLoadedContextPack,
+  isContextPackValidationError,
+  parseContextPackJson,
+} from './contextpack-json-loader.mjs';
 import { completeChatCompletion, createChatCompletionStream } from './chat-completion-provider.mjs';
 import {
   createChatCompletionErrorResponse,
@@ -471,6 +476,49 @@ const server = createServer(async (req, res) => {
       preview: buildMockContextPackPreview(),
       message: 'Placeholder ContextPack preview returned without reading RCK Core.',
     });
+    return;
+  }
+
+  if (url.pathname === '/api/rck/context-pack/load-preview') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      const body = await readRequestJson(req);
+      const rawContextPack = typeof body.contextPackJson === 'string'
+        ? body.contextPackJson
+        : body.contextPack ?? body;
+      const parsed = parseContextPackJson(rawContextPack);
+      const preview = buildContextPackPreviewFromLoadedContextPack(parsed.value ?? parsed);
+      const warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+      const responseWarnings = [
+        ...warnings,
+        ...preview.warnings,
+      ];
+
+      sendJson(res, 200, {
+        ok: true,
+        preview,
+        warnings: responseWarnings,
+        constraints: Array.isArray(preview.constraints) ? preview.constraints : [],
+        source: 'loaded-contextpack-json',
+      });
+    } catch (error) {
+      const code = isContextPackValidationError(error) ? error.code : 'invalid_context_pack';
+      const message = error instanceof Error ? error.message : 'ContextPack load request failed';
+      const issues = isContextPackValidationError(error) && Array.isArray(error.issues) ? error.issues : [message];
+
+      sendJson(res, 400, {
+        ok: false,
+        error: {
+          code,
+          message,
+        },
+        issues,
+      });
+    }
     return;
   }
 

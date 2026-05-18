@@ -1,6 +1,7 @@
 # RCK ContextPack preview contract
 
 This phase implements a **placeholder / dev-preview contract** for RufusChat.
+It can also display a manually loaded ContextPack JSON preview, but that is still preview-only and not an injected live chain.
 
 ## What is in scope
 
@@ -9,7 +10,8 @@ This phase implements a **placeholder / dev-preview contract** for RufusChat.
 - A secondary UI panel labeled **Attach RCK Context**.
 - The confirmation action is disabled and shows **Not available in this phase**.
 - The preview can appear after the user approves the placeholder scope suggestion and the approved-scope → ContextPack generation request contract is built.
-- It still remains a dev-only placeholder and is not a real generated ContextPack.
+- A manually loaded ContextPack JSON payload can replace or supplement the placeholder preview.
+- It still remains a dev-only preview and is not a real generated ContextPack.
 
 ## What is not in scope
 
@@ -22,6 +24,7 @@ This phase implements a **placeholder / dev-preview contract** for RufusChat.
 - No embeddings, ranking, or memory automation.
 - No persisted injection records.
 - No real injection chain.
+- No automatic injection.
 
 ## Contract source
 
@@ -32,11 +35,13 @@ The contract is derived from:
 - `schemas/rck.context_pack.v0.schema.json`
 - published RCK Core commit: `048d4c3`
 - `RCK_CONTEXTPACK_GENERATION_CONTRACT.md`
+- `RCK_LOAD_CONTEXTPACK_JSON_PREVIEW.md`
 
 ## Preview shape
 
 The placeholder preview exposes:
 
+- `schemaVersion`
 - `contextPackId` / `contextPackHash`
 - `title`
 - `sourceTraceSliceHashes`
@@ -49,6 +54,15 @@ The placeholder preview exposes:
 - `userApprovalStatus`
 - `injectionPolicy`
 - `injectionRecordDraft`
+
+## UI behavior
+
+The preview panel can now show two safe states:
+
+- a placeholder / not connected preview
+- a loaded ContextPack JSON preview
+
+The loaded preview must remain clearly labeled as manual/dev-safe and must not be presented as something RufusChat generated automatically.
 
 ## Next steps
 

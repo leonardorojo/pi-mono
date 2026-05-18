@@ -37,7 +37,8 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - RCK ContextPack preview contract: [`RCK_CONTEXTPACK_PREVIEW.md`](./RCK_CONTEXTPACK_PREVIEW.md)
 - RCK ContextPack generation contract: [`RCK_CONTEXTPACK_GENERATION_CONTRACT.md`](./RCK_CONTEXTPACK_GENERATION_CONTRACT.md)
 - RCK Context Scope Suggestion contract: [`RCK_CONTEXT_SCOPE_SUGGESTION.md`](./RCK_CONTEXT_SCOPE_SUGGESTION.md)
-- The Attach RCK Context flow now starts with a placeholder scope suggestion, converts approved scope into a placeholder generation request, and then shows the placeholder preview.
+- Manual / dev-safe ContextPack JSON load preview: [`RCK_LOAD_CONTEXTPACK_JSON_PREVIEW.md`](./RCK_LOAD_CONTEXTPACK_JSON_PREVIEW.md)
+- The Attach RCK Context flow now starts with a placeholder scope suggestion, converts approved scope into a placeholder generation request, and can also load a real ContextPack JSON preview manually.
 - Fase 13A is documentation / contract only
 - Fase 13B adds a placeholder `/inject` candidate UX in the browser
 - Fase 13C adds minimal per-chat injection history metadata
@@ -54,28 +55,8 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
   - backend RCK/Hermes invisible
 - Future work should target `apps/rufuschat-ui` unless explicitly doing prototype maintenance.
 
-What is included
-- Left sidebar with clearer Projects / Chats hierarchy and local data tools
-- Center chat rail with header, message history, and composer
-- Local message handling for plain text input
-- Placeholder slash commands: /checkpoint, /inject, /status, /hermes, /trace, /help
-- Lightweight slash menu for discovering commands
-- Dark theme with a ChatGPT-like layout
+## What is not connected in 10E
 
-Command catalog
-- /status — read-only — Check safe project/RCK status.
-- /checkpoint <label> — mutating — Create a governed checkpoint for this chat/work.
-- /inject — mutating — Inject safe context into this chat.
-- /hermes fake <prompt> — mutating — Run a safe fake Hermes inspection.
-- /trace — read-only — Show trace-link placeholder information.
-- /trace link — placeholder — Does not create a real trace yet.
-- /help — read-only — Show the available command list.
-
-Notes
-- Mutating commands require confirmation in the UI.
-- The slash menu is only a discovery aid and does not execute anything by itself.
-
-What is not connected in 10E
 - No LLM calls
 - No OpenAI calls
 - No Hermes execution
@@ -84,14 +65,18 @@ What is not connected in 10E
 - No persistence or storage changes
 - No project memory
 - No technical RCK dashboard in the UI
+- No automatic ContextPack generation
+- No automatic context injection
 
-What 10E adds
+## What 10E adds
+
 - A chat-linked RCK trace placeholder in the session shell
 - A visible but non-functional `Trace: not linked` chip in the header
 - A placeholder `/trace` command that does not create or link any real trace
 - No real trace management yet
 
 ## Relationship to existing prototype
+
 - `scripts/rufuschat-ui-server.mjs` remains the validated Fase 8 prototype server
 - `apps/rufuschat-ui/` is the official product UI path
 - The prototype is frozen as a validation reference unless a critical bug or comparison is needed

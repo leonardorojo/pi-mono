@@ -865,6 +865,26 @@ textarea:disabled {
   word-break: break-word;
 }
 
+.context-pack-preview__json-input {
+  min-height: 168px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.42);
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.context-pack-preview__helper {
+  color: var(--muted-strong);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
 .context-pack-preview__actions {
   display: flex;
   flex-wrap: wrap;

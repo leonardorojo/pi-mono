@@ -32,6 +32,7 @@ The provider is a dev-safe stub that can:
 - build a normalized chat turn Delta payload
 - build a registration draft
 - return a placeholder registration result
+- retain completion metadata and evidence references in memory only
 
 It does not register anything in RCK Core.
 

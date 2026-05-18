@@ -2,12 +2,12 @@ import {
   createRckWritebackArtifactRef,
   createRckWritebackChatTurnDeltaPayload,
   createRckWritebackChatTurnStatePayload,
-  createRckWritebackContextUsed,
   createRckWritebackDecision,
   createRckWritebackEvidenceRef,
   createRckWritebackOpenQuestion,
   createRckWritebackRegistrationDraft,
   createRckWritebackRegistrationResult,
+  createRckWritebackStateEvidence,
   createRckWritebackToolExecution,
 } from './rck-writeback-contract.mjs';
 
@@ -32,6 +32,8 @@ function resolveChatTurn(input = {}) {
   const chat = toPlainObject(candidate.chat);
   const messages = toPlainObject(candidate.messages);
   const contextUsed = toPlainObject(candidate.contextUsed);
+  const evidence = toPlainObject(candidate.evidence);
+  const completionMetadata = toPlainObject(candidate.completionMetadata);
 
   return {
     chatId: chat.chatId ?? candidate.chatId ?? null,
@@ -40,6 +42,8 @@ function resolveChatTurn(input = {}) {
     userMessage: messages.user ?? candidate.userMessage ?? {},
     assistantMessage: messages.assistant ?? candidate.assistantMessage ?? {},
     contextUsed,
+    evidence,
+    completionMetadata,
     toolExecutions: toPlainArray(candidate.toolExecutions),
     artifacts: toPlainArray(candidate.artifacts),
     evidenceRefs: toPlainArray(candidate.evidenceRefs),
@@ -66,6 +70,12 @@ export function buildChatTurnStatePayload(input = {}) {
     contextUsed: {
       approvedRckContext: chatTurn.contextUsed?.approvedRckContext,
     },
+    evidence: createRckWritebackStateEvidence({
+      provider: chatTurn.evidence?.provider ?? chatTurn.completionMetadata?.provider ?? null,
+      model: chatTurn.evidence?.model ?? chatTurn.completionMetadata?.model ?? null,
+      requestMetadata: chatTurn.evidence?.requestMetadata ?? chatTurn.completionMetadata?.requestMetadata ?? {},
+      responseMetadata: chatTurn.evidence?.responseMetadata ?? chatTurn.completionMetadata ?? {},
+    }),
     toolExecutions: chatTurn.toolExecutions.map((entry) => createRckWritebackToolExecution(entry)),
     artifacts: chatTurn.artifacts.map((entry) => createRckWritebackArtifactRef(entry)),
     evidenceRefs: chatTurn.evidenceRefs.map((entry) => createRckWritebackEvidenceRef(entry)),

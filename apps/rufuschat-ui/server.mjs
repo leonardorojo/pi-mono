@@ -31,6 +31,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..', '..');
 const publicDir = path.join(__dirname, 'public');
+const sourceDir = __dirname;
+const sourceModuleAllowlist = new Set([
+  '/rck-writeback-provider.mjs',
+  '/rck-writeback-contract.mjs',
+]);
 const rckRoot = path.join(repoRoot, '.pi', 'rck');
 const port = Number(process.env.PORT ?? process.argv[2] ?? 4173);
 
@@ -86,14 +91,23 @@ function safeResolve(requestPath) {
     return null;
   }
 
-  const candidate = path.resolve(publicDir, `.${decodedPath}`);
-  const relative = path.relative(publicDir, candidate);
+  const publicCandidate = path.resolve(publicDir, `.${decodedPath}`);
+  const publicRelative = path.relative(publicDir, publicCandidate);
+  if (!publicRelative.startsWith('..') && !path.isAbsolute(publicRelative) && existsSync(publicCandidate)) {
+    return publicCandidate;
+  }
 
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+  if (!sourceModuleAllowlist.has(decodedPath)) {
     return null;
   }
 
-  return candidate;
+  const sourceCandidate = path.resolve(sourceDir, `.${decodedPath}`);
+  const sourceRelative = path.relative(sourceDir, sourceCandidate);
+  if (sourceRelative.startsWith('..') || path.isAbsolute(sourceRelative) || !existsSync(sourceCandidate)) {
+    return null;
+  }
+
+  return sourceCandidate;
 }
 
 async function serveFile(res, filePath) {

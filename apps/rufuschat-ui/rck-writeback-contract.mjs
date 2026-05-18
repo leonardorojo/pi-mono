@@ -52,6 +52,20 @@ function normalizeNullableNestedObject(candidate) {
   return { ...candidate };
 }
 
+export function normalizeRckWritebackStateEvidence(candidate) {
+  const input = normalizeNestedObject(candidate);
+  return {
+    provider: normalizeNullableString(input.provider),
+    model: normalizeNullableString(input.model),
+    requestMetadata: normalizeRecord(input.requestMetadata),
+    responseMetadata: normalizeRecord(input.responseMetadata),
+  };
+}
+
+export function createRckWritebackStateEvidence(input = {}) {
+  return normalizeRckWritebackStateEvidence(input);
+}
+
 export function normalizeRckWritebackArtifactRef(candidate) {
   const input = normalizeNestedObject(candidate);
   return {
@@ -191,6 +205,7 @@ export function normalizeRckWritebackChatTurnStatePayload(candidate) {
     contextUsed: {
       approvedRckContext: normalizeRckWritebackContextUsed(input.contextUsed).approvedRckContext,
     },
+    evidence: normalizeRckWritebackStateEvidence(input.evidence),
     toolExecutions: Array.isArray(input.toolExecutions)
       ? input.toolExecutions.map((entry) => normalizeRckWritebackToolExecution(entry))
       : [],

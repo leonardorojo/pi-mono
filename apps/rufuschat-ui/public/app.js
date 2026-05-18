@@ -1,3 +1,5 @@
+import { registerChatTurnPlaceholder } from '../rck-writeback-provider.mjs';
+
 const messagesEl = document.getElementById('messages');
 const composerForm = document.getElementById('composer-form');
 const composerInput = document.getElementById('composer-input');
@@ -93,6 +95,17 @@ const contextPackGenerationRequestConstraintsEl = document.getElementById('conte
 const contextPackGenerationRequestProvenanceEl = document.getElementById('context-pack-generation-request-provenance');
 const contextPackGenerationRequestMessageEl = document.getElementById('context-pack-generation-request-message');
 const contextPackGenerationRequestPreviewEl = document.getElementById('context-pack-generation-request-preview');
+const chatTurnWritebackPreviewPanel = document.getElementById('chat-turn-writeback-preview');
+const chatTurnWritebackPreviewTitleEl = document.getElementById('chat-turn-writeback-preview-title');
+const chatTurnWritebackPreviewStatusEl = document.getElementById('chat-turn-writeback-preview-status');
+const chatTurnWritebackPreviewSummaryEl = document.getElementById('chat-turn-writeback-preview-summary');
+const chatTurnWritebackPreviewTurnIdEl = document.getElementById('chat-turn-writeback-preview-turn-id');
+const chatTurnWritebackPreviewStateKindEl = document.getElementById('chat-turn-writeback-preview-state-kind');
+const chatTurnWritebackPreviewDeltaKindEl = document.getElementById('chat-turn-writeback-preview-delta-kind');
+const chatTurnWritebackPreviewStateIdEl = document.getElementById('chat-turn-writeback-preview-state-id');
+const chatTurnWritebackPreviewDeltaIdEl = document.getElementById('chat-turn-writeback-preview-delta-id');
+const chatTurnWritebackPreviewContextUsedEl = document.getElementById('chat-turn-writeback-preview-context-used');
+const chatTurnWritebackPreviewInjectionIdEl = document.getElementById('chat-turn-writeback-preview-injection-id');
 
 const productStateEndpoint = '/api/product-state';
 const contextScopeSuggestionEndpoint = '/api/rck/context-scope/suggest-placeholder';
@@ -129,6 +142,10 @@ let activeContextPackGenerationRequest = null;
 let activeContextPackGenerationResponse = null;
 let activeContextPackInjectionRecord = null;
 let activeContextPackInjectionError = null;
+let activeChatTurnWritebackResult = null;
+let activeChatTurnWritebackError = null;
+const chatTurnWritebackResultsByChatId = new Map();
+const chatTurnWritebackTurnIdsByChatId = new Map();
 const localContextPackInjectionRecords = new Map();
 let isContextSidePanelOpen = false;
 const contextPackCandidateSummaryLines = [
@@ -330,6 +347,10 @@ function isContextPackCandidateContent(content) {
     typeof content === 'string' &&
     (content.startsWith('Context candidate prepared') || content.startsWith('Context pack candidate prepared.'))
   );
+}
+
+function isContextPackCandidateMessage(message) {
+  return isContextPackCandidateContent(message?.content);
 }
 
 function isContextPackInjectedContent(content) {
@@ -1240,6 +1261,7 @@ function renderContextScopeSuggestionPanel() {
 
   renderContextPackGenerationRequestPanel();
   renderContextPackPreviewPanel();
+  renderChatTurnWritebackPreviewPanel();
 }
 
 function createFallbackContextPackPreview() {
@@ -1738,6 +1760,133 @@ function renderContextPackPreviewPanel() {
         ? 'This loaded ContextPack has already been confirmed for the current chat.'
         : 'Confirm requires an approved scope, a loaded JSON preview, and non-empty exactTextToInject.';
   }
+}
+
+function getCurrentChatTurnWritebackResult() {
+  if (!state.currentChatId) {
+    return null;
+  }
+
+  return chatTurnWritebackResultsByChatId.get(state.currentChatId) ?? null;
+}
+
+function buildChatTurnWritebackPlaceholderInput(chat, userMessage, assistantMessage, completionMetadata, approvedRckContext, turnId) {
+  const chatId = typeof chat?.id === 'string' && chat.id.trim() ? chat.id.trim() : 'local-chat';
+  const parentTurnId = chatTurnWritebackTurnIdsByChatId.get(chatId) ?? null;
+  const messageUser = isPlainObject(userMessage) ? userMessage : {};
+  const messageAssistant = isPlainObject(assistantMessage) ? assistantMessage : {};
+  const completion = isPlainObject(completionMetadata) ? completionMetadata : {};
+  const approvedContext = isPlainObject(approvedRckContext) ? approvedRckContext : null;
+  const hasApprovedContext = Boolean(approvedContext && approvedContext.injectionId);
+
+  return {
+    chatTurn: {
+      chatId,
+      turnId,
+      parentTurnId,
+      userMessage: {
+        messageId: typeof messageUser.id === 'string' ? messageUser.id : typeof messageUser.messageId === 'string' ? messageUser.messageId : null,
+        text: typeof messageUser.content === 'string' ? messageUser.content : typeof messageUser.text === 'string' ? messageUser.text : '',
+      },
+      assistantMessage: {
+        messageId: typeof messageAssistant.id === 'string' ? messageAssistant.id : typeof messageAssistant.messageId === 'string' ? messageAssistant.messageId : null,
+        text: typeof messageAssistant.content === 'string' ? messageAssistant.content : typeof messageAssistant.text === 'string' ? messageAssistant.text : '',
+      },
+      contextUsed: {
+        approvedRckContext: {
+          used: hasApprovedContext,
+          injectionId: hasApprovedContext ? approvedContext.injectionId : null,
+          sourceTraceSliceHashes: Array.isArray(approvedContext?.sourceTraceSliceHashes)
+            ? approvedContext.sourceTraceSliceHashes.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+            : [],
+          contextPackReference: approvedContext?.contextPackReference ?? null,
+        },
+      },
+      evidence: {
+        provider: typeof completion.provider === 'string' ? completion.provider : null,
+        model: typeof completion.model === 'string' ? completion.model : null,
+        requestMetadata: {
+          chatId,
+          turnId,
+          parentTurnId,
+          approvedRckContextUsed: hasApprovedContext,
+        },
+        responseMetadata: completion,
+      },
+      toolExecutions: [],
+      artifacts: [],
+      evidenceRefs: [],
+      decisions: [],
+      openQuestions: [],
+      verification: {
+        level: 'unverified',
+        status: 'draft',
+      },
+      completionMetadata: completion,
+    },
+  };
+}
+
+function renderChatTurnWritebackPreviewPanel() {
+  if (!chatTurnWritebackPreviewPanel) {
+    return;
+  }
+
+  const currentResult = getCurrentChatTurnWritebackResult();
+  const currentError = activeChatTurnWritebackError?.chatId === state.currentChatId ? activeChatTurnWritebackError : null;
+  const shouldShow = Boolean(currentResult || currentError);
+  chatTurnWritebackPreviewPanel.hidden = !shouldShow;
+
+  if (!shouldShow) {
+    return;
+  }
+
+  const result = currentError ? null : currentResult;
+  const panelTitle = 'RCK write-back preview';
+  const panelStatus = currentError ? 'placeholder / failed' : 'placeholder / not connected';
+  const summaryText = currentError
+    ? `${currentError.message} No state or delta was registered.`
+    : 'Registered locally after a closed assistant turn. No RCK write-back was performed in this phase.';
+  const turnIdText = currentError?.turnId ?? result?.statePayload?.chat?.turnId ?? result?.deltaPayload?.toTurnId ?? '—';
+  const stateKindText = result?.statePayload?.kind ?? '—';
+  const deltaKindText = result?.deltaPayload?.kind ?? '—';
+  const stateIdText = result?.stateId ?? 'null';
+  const deltaIdText = result?.deltaId ?? 'null';
+  const contextUsedText = result ? String(Boolean(result.statePayload?.contextUsed?.approvedRckContext?.used)) : 'false';
+  const injectionIdText = result?.statePayload?.contextUsed?.approvedRckContext?.injectionId ?? 'null';
+
+  if (chatTurnWritebackPreviewTitleEl) {
+    chatTurnWritebackPreviewTitleEl.textContent = panelTitle;
+  }
+
+  if (chatTurnWritebackPreviewStatusEl) {
+    chatTurnWritebackPreviewStatusEl.textContent = panelStatus;
+  }
+
+  if (chatTurnWritebackPreviewSummaryEl) {
+    chatTurnWritebackPreviewSummaryEl.textContent = summaryText;
+  }
+
+  setFieldVisibility(document.getElementById('chat-turn-writeback-preview-field-turn-id'), turnIdText);
+  setTextField(chatTurnWritebackPreviewTurnIdEl, turnIdText, '');
+
+  setFieldVisibility(document.getElementById('chat-turn-writeback-preview-field-state-kind'), stateKindText);
+  setTextField(chatTurnWritebackPreviewStateKindEl, stateKindText, '');
+
+  setFieldVisibility(document.getElementById('chat-turn-writeback-preview-field-delta-kind'), deltaKindText);
+  setTextField(chatTurnWritebackPreviewDeltaKindEl, deltaKindText, '');
+
+  setFieldVisibility(document.getElementById('chat-turn-writeback-preview-field-state-id'), stateIdText);
+  setTextField(chatTurnWritebackPreviewStateIdEl, stateIdText, '');
+
+  setFieldVisibility(document.getElementById('chat-turn-writeback-preview-field-delta-id'), deltaIdText);
+  setTextField(chatTurnWritebackPreviewDeltaIdEl, deltaIdText, '');
+
+  setFieldVisibility(document.getElementById('chat-turn-writeback-preview-field-context-used'), contextUsedText);
+  setTextField(chatTurnWritebackPreviewContextUsedEl, contextUsedText, '');
+
+  setFieldVisibility(document.getElementById('chat-turn-writeback-preview-field-injection-id'), injectionIdText);
+  setTextField(chatTurnWritebackPreviewInjectionIdEl, injectionIdText, '');
 }
 
 async function loadContextPackPreview() {
@@ -3860,6 +4009,7 @@ function render() {
   renderHeader();
   renderSidebar();
   renderContextPackPreviewPanel();
+  renderChatTurnWritebackPreviewPanel();
   renderMessages();
   scrollChatToBottom();
   setBusy(false);
@@ -4441,6 +4591,30 @@ async function runChatCompletion(targetChatId, userMessage, options = {}) {
   let streamedText = '';
   let streamStarted = false;
   let streamMetadata = null;
+  const turnId = makeId('chat-turn');
+
+  const registerChatTurnWritebackPreview = (assistantText, completionMetadata) => {
+    const writebackInput = buildChatTurnWritebackPlaceholderInput(
+      chat,
+      userMessage,
+      {
+        id: placeholderMessage.id,
+        content: assistantText,
+        text: assistantText,
+        createdAt: nowIso(),
+      },
+      completionMetadata,
+      approvedRckContext,
+      turnId,
+    );
+    const writebackResult = registerChatTurnPlaceholder(writebackInput);
+    chatTurnWritebackResultsByChatId.set(writebackInput.chatTurn.chatId, writebackResult);
+    chatTurnWritebackTurnIdsByChatId.set(writebackInput.chatTurn.chatId, writebackInput.chatTurn.turnId);
+    activeChatTurnWritebackResult = writebackResult;
+    activeChatTurnWritebackError = null;
+    renderChatTurnWritebackPreviewPanel();
+    return writebackResult;
+  };
 
   try {
     await postChatCompletionStream(
@@ -4477,6 +4651,7 @@ async function runChatCompletion(targetChatId, userMessage, options = {}) {
           }
 
           streamStarted = true;
+          streamMetadata = data?.metadata ?? streamMetadata;
           const nextAssistantText = typeof data?.message?.content === 'string' ? data.message.content.trim() : streamedText.trim();
 
           if (!nextAssistantText) {
@@ -4519,6 +4694,7 @@ async function runChatCompletion(targetChatId, userMessage, options = {}) {
     clearTimeout(productStateSaveTimer);
     productStateSaveTimer = null;
     await saveProductStateNow();
+    registerChatTurnWritebackPreview(streamedText.trim(), streamMetadata ?? {});
     run.finalized = true;
   } catch (error) {
     if (run.cancelled || run.finalized || controller.signal.aborted || isAbortError(error) || activeChatCompletionRun?.runId !== runId) {
@@ -4544,6 +4720,7 @@ async function runChatCompletion(targetChatId, userMessage, options = {}) {
           clearTimeout(productStateSaveTimer);
           productStateSaveTimer = null;
           await saveProductStateNow();
+          registerChatTurnWritebackPreview(nextAssistantText, fallbackResponse.metadata ?? {});
           return;
         }
       } catch (fallbackError) {
@@ -4559,6 +4736,12 @@ async function runChatCompletion(targetChatId, userMessage, options = {}) {
         kind: 'error',
       }),
     );
+    activeChatTurnWritebackError = {
+      chatId: targetChatId,
+      turnId,
+      message: 'RCK write-back was not registered because the assistant response did not complete.',
+    };
+    renderChatTurnWritebackPreviewPanel();
     run.finalized = true;
     clearTimeout(productStateSaveTimer);
     productStateSaveTimer = null;

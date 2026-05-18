@@ -20,6 +20,8 @@ The key boundary is that RufusChat prepares and submits trace write-back through
 
 This phase defines the shape, lifecycle, and ownership rules for write-back.
 
+Phase 28 then wires the stub into the closed-turn chat flow so RufusChat can build a placeholder write-back preview after each completed assistant response, without connecting to real RCK Core.
+
 In scope:
 - formal State / Delta concepts for a closed chat turn
 - adapter boundary names and responsibilities

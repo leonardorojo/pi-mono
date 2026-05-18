@@ -303,6 +303,14 @@
                   <div class="context-pack-preview__label">User approval status</div>
                   <div class="context-pack-preview__value" id="context-pack-preview-approval-status"></div>
                 </div>
+                <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-injection-record">
+                  <div class="context-pack-preview__label">Injection record</div>
+                  <div class="context-pack-preview__value" id="context-pack-injection-record-status">No injection confirmed yet.</div>
+                  <div class="context-pack-preview__value context-pack-preview__value--mono" id="context-pack-injection-record-id"></div>
+                  <div class="context-pack-preview__value context-pack-preview__value--mono" id="context-pack-injection-record-created-at"></div>
+                  <div class="context-pack-preview__value" id="context-pack-injection-record-source"></div>
+                  <pre class="context-pack-preview__text" id="context-pack-injection-record-exact-text"></pre>
+                </div>
                 <div class="context-pack-preview__field context-pack-preview__field--wide" id="context-pack-preview-field-load">
                   <div class="context-pack-preview__label">Load ContextPack JSON</div>
                   <textarea class="context-pack-preview__json-input" id="context-pack-preview-json" rows="8" spellcheck="false" placeholder="Paste ContextPack JSON here. Manual/dev-safe load only."></textarea>
@@ -313,7 +321,7 @@
               <div class="context-pack-preview__actions">
                 <button class="button button--primary button--compact" id="context-pack-preview-load-button" type="button">Load preview</button>
                 <button class="button button--primary button--compact" id="context-pack-preview-confirm" type="button" disabled>
-                  Not available in this phase
+                  Confirm injection
                 </button>
                 <button class="button button--ghost button--compact" id="context-pack-preview-close" type="button">
                   Close preview

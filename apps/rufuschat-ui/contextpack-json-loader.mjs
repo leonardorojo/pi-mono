@@ -358,11 +358,11 @@ export function buildContextPackPreviewFromLoadedContextPack(candidate) {
     userApprovalStatus: loaded.injectionPolicy.requiresUserApproval ? 'requires-user-approval' : 'approval-not-required',
     injectionPolicy: {
       canPreview: true,
-      canConfirm: false,
+      canConfirm: true,
       canPersistRecord: false,
       canReadRckFilesystem: false,
       canCallRckCore: false,
-      reason: 'Loaded manually from JSON. Confirm injection remains disabled in this phase.',
+      reason: 'Loaded manually from JSON. Confirm injection is available only after the exact text is visible.',
     },
     injectionRecordDraft: {
       status: 'not-available',

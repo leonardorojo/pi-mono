@@ -70,6 +70,11 @@ const contextPackPreviewProvenanceEl = document.getElementById('context-pack-pre
 const contextPackPreviewScopeDerivationEl = document.getElementById('context-pack-preview-scope-derivation');
 const contextPackPreviewExactTextEl = document.getElementById('context-pack-preview-exact-text');
 const contextPackPreviewApprovalStatusEl = document.getElementById('context-pack-preview-approval-status');
+const contextPackInjectionRecordStatusEl = document.getElementById('context-pack-injection-record-status');
+const contextPackInjectionRecordIdEl = document.getElementById('context-pack-injection-record-id');
+const contextPackInjectionRecordCreatedAtEl = document.getElementById('context-pack-injection-record-created-at');
+const contextPackInjectionRecordSourceEl = document.getElementById('context-pack-injection-record-source');
+const contextPackInjectionRecordExactTextEl = document.getElementById('context-pack-injection-record-exact-text');
 const contextPackPreviewJsonEl = document.getElementById('context-pack-preview-json');
 const contextPackPreviewLoadButton = document.getElementById('context-pack-preview-load-button');
 const contextPackPreviewLoadMessageEl = document.getElementById('context-pack-preview-load-message');
@@ -122,6 +127,9 @@ let activeContextPackPreview = null;
 let activeLoadedContextPackPreview = null;
 let activeContextPackGenerationRequest = null;
 let activeContextPackGenerationResponse = null;
+let activeContextPackInjectionRecord = null;
+let activeContextPackInjectionError = null;
+const localContextPackInjectionRecords = new Map();
 let isContextSidePanelOpen = false;
 const contextPackCandidateSummaryLines = [
   'Current chat context placeholder',
@@ -1696,6 +1704,11 @@ function renderContextPackPreviewPanel() {
   setFieldVisibility(document.getElementById('context-pack-preview-field-approval-status'), approvalStatusText);
   setTextField(contextPackPreviewApprovalStatusEl, approvalStatusText, '');
 
+  const existingRecord = getCurrentContextPackInjectionRecord();
+  activeContextPackInjectionRecord = existingRecord;
+  renderContextPackInjectionRecord(existingRecord);
+  setFieldVisibility(document.getElementById('context-pack-preview-field-injection-record'), existingRecord?.injectionId ?? 'No injection confirmed yet.');
+
   if (contextPackPreviewLoadMessageEl) {
     contextPackPreviewLoadMessageEl.textContent = isLoadedPreview
       ? 'Manual/dev-safe load only. RufusChat did not generate this ContextPack automatically.'
@@ -1712,9 +1725,18 @@ function renderContextPackPreviewPanel() {
   }
 
   if (contextPackPreviewConfirmButton) {
-    contextPackPreviewConfirmButton.disabled = true;
-    contextPackPreviewConfirmButton.textContent = 'Confirm injection (disabled)';
-    contextPackPreviewConfirmButton.title = preview.injectionPolicy?.reason ?? 'Not available in this phase.';
+    const canConfirm = canConfirmLoadedContextPackInjection();
+    contextPackPreviewConfirmButton.disabled = !canConfirm;
+    contextPackPreviewConfirmButton.textContent = canConfirm
+      ? 'Confirm injection'
+      : existingRecord
+        ? 'Injection already confirmed'
+        : 'Confirm injection (disabled)';
+    contextPackPreviewConfirmButton.title = canConfirm
+      ? 'Confirm the visible exact text and create a local injection record.'
+      : existingRecord
+        ? 'This loaded ContextPack has already been confirmed for the current chat.'
+        : 'Confirm requires an approved scope, a loaded JSON preview, and non-empty exactTextToInject.';
   }
 }
 
@@ -1792,9 +1814,167 @@ async function loadLoadedContextPackPreviewFromJson() {
   }
 }
 
-function isContextPackCandidateMessage(message) {
-  return getMessageContextPackId(message) !== null && isContextPackCandidateContent(message?.content);
+function getContextPackInjectionRecordKey(chatId, contextPackId) {
+  return `${chatId ?? 'unknown-chat'}::${contextPackId ?? 'unknown-context-pack'}`;
 }
+
+function getActiveLoadedContextPackInjectionRequest() {
+  const preview = activeLoadedContextPackPreview;
+  const scopeApproved = activeContextScopeSuggestion?.status === 'approved';
+  const exactTextToInject = typeof preview?.exactTextToInject === 'string' ? preview.exactTextToInject.trim() : '';
+  const contextPackId = typeof preview?.reference?.contextPackId === 'string' ? preview.reference.contextPackId.trim() : '';
+  const contextPackHash = typeof preview?.reference?.contextPackHash === 'string' ? preview.reference.contextPackHash.trim() : '';
+  const sourceTraceSliceHashes = Array.isArray(preview?.sourceTraceSliceHashes)
+    ? preview.sourceTraceSliceHashes.map((hash) => (typeof hash === 'string' ? hash.trim() : '')).filter(Boolean)
+    : [];
+  const sectionsVisible = Array.isArray(preview?.sectionsVisible)
+    ? preview.sectionsVisible
+        .filter((section) => section?.visible !== false)
+        .map((section, index) => ({
+          id: typeof section?.id === 'string' && section.id.trim() ? section.id.trim() : `loaded-section-${index + 1}`,
+          title: typeof section?.title === 'string' && section.title.trim() ? section.title.trim() : `Section ${index + 1}`,
+          summary: typeof section?.summary === 'string' ? section.summary.trim() : '',
+        }))
+    : [];
+
+  if (!scopeApproved || !preview || preview.source !== 'loaded-contextpack-json' || !contextPackId || !contextPackHash || !exactTextToInject) {
+    return null;
+  }
+
+  return {
+    requestId: `rck-context-pack-injection-request-${contextPackId}-${Date.now()}`,
+    createdAtUtc: nowIso(),
+    chatId: state.currentChatId,
+    projectId: state.currentProjectId,
+    source: 'loaded-contextpack-json',
+    contextPackReference: {
+      contextPackId,
+      contextPackHash,
+      title: typeof preview?.reference?.title === 'string' ? preview.reference.title.trim() : 'Loaded ContextPack preview',
+      kind: typeof preview?.reference?.kind === 'string' ? preview.reference.kind.trim() : 'loaded-json',
+    },
+    sourceTraceSliceHashes,
+    injectedSections: sectionsVisible.map((section) => section.id),
+    exactTextToInject,
+    provenanceSummary: {
+      ...(preview?.provenanceSummary ?? {}),
+      mode: 'loaded-json',
+      notes: Array.isArray(preview?.provenanceSummary?.notes)
+        ? preview.provenanceSummary.notes
+        : ['Loaded from JSON preview.', 'User approval is explicit and visible.', 'No LLM send yet in this phase.'],
+    },
+    warnings: Array.isArray(preview?.warnings) ? preview.warnings : [],
+    constraints: Array.isArray(preview?.constraints) ? preview.constraints : [],
+    approvedBy: 'local-user',
+    approvalMode: 'explicit-click',
+    status: 'pending',
+    requiresUserApproval: true,
+    allowAutomaticInjection: false,
+  };
+}
+
+function createLocalContextPackInjectionRecord(request) {
+  const exactTextToInject = typeof request?.exactTextToInject === 'string' ? request.exactTextToInject.trim() : '';
+  const contextPackReference = request?.contextPackReference ?? {};
+  return {
+    injectionId: `rck-context-pack-injection-${request?.contextPackReference?.contextPackId ?? 'unknown'}-${Date.now()}`,
+    createdAtUtc: nowIso(),
+    chatId: typeof request?.chatId === 'string' ? request.chatId : state.currentChatId,
+    projectId: typeof request?.projectId === 'string' ? request.projectId : state.currentProjectId,
+    source: 'loaded-contextpack-json',
+    contextPackReference: {
+      contextPackId: typeof contextPackReference.contextPackId === 'string' ? contextPackReference.contextPackId : '',
+      contextPackHash: typeof contextPackReference.contextPackHash === 'string' ? contextPackReference.contextPackHash : '',
+      title: typeof contextPackReference.title === 'string' ? contextPackReference.title : 'Loaded ContextPack preview',
+      kind: typeof contextPackReference.kind === 'string' ? contextPackReference.kind : 'loaded-json',
+    },
+    sourceTraceSliceHashes: Array.isArray(request?.sourceTraceSliceHashes) ? request.sourceTraceSliceHashes : [],
+    injectedSections: Array.isArray(request?.injectedSections) ? request.injectedSections : [],
+    exactTextInjected: exactTextToInject,
+    provenanceSummary: request?.provenanceSummary ?? {},
+    warnings: Array.isArray(request?.warnings) ? request.warnings : [],
+    constraints: Array.isArray(request?.constraints) ? request.constraints : [],
+    approvedBy: 'local-user',
+    approvalMode: 'explicit-click',
+    status: 'injected',
+    resultingAnchorId: null,
+    deliveryMode: 'visual-only',
+    llmRequestIncluded: false,
+    visibleInUi: true,
+  };
+}
+
+function getCurrentContextPackInjectionRecord() {
+  if (!activeLoadedContextPackPreview || !state.currentChatId) {
+    return null;
+  }
+
+  const request = getActiveLoadedContextPackInjectionRequest();
+  const contextPackId = request?.contextPackReference?.contextPackId ?? null;
+  if (!request || !contextPackId) {
+    return null;
+  }
+
+  return localContextPackInjectionRecords.get(getContextPackInjectionRecordKey(state.currentChatId, contextPackId)) ?? null;
+}
+
+function canConfirmLoadedContextPackInjection() {
+  const request = getActiveLoadedContextPackInjectionRequest();
+  if (!request) {
+    return false;
+  }
+
+  const key = getContextPackInjectionRecordKey(request.chatId, request.contextPackReference.contextPackId);
+  return !localContextPackInjectionRecords.has(key);
+}
+
+function renderContextPackInjectionRecord(record) {
+  if (contextPackInjectionRecordStatusEl) {
+    contextPackInjectionRecordStatusEl.textContent = record
+      ? 'Context injected into this chat session.'
+      : 'No injection confirmed yet.';
+  }
+
+  if (contextPackInjectionRecordIdEl) {
+    contextPackInjectionRecordIdEl.textContent = record?.injectionId ? `Injection ID: ${record.injectionId}` : '';
+  }
+
+  if (contextPackInjectionRecordCreatedAtEl) {
+    contextPackInjectionRecordCreatedAtEl.textContent = record?.createdAtUtc ? `Created at UTC: ${record.createdAtUtc}` : '';
+  }
+
+  if (contextPackInjectionRecordSourceEl) {
+    contextPackInjectionRecordSourceEl.textContent = record
+      ? `Source: ${record.source} · approvedBy: ${record.approvedBy} · approvalMode: ${record.approvalMode} · resultingAnchorId: ${record.resultingAnchorId ?? 'null'}`
+      : '';
+  }
+
+  if (contextPackInjectionRecordExactTextEl) {
+    contextPackInjectionRecordExactTextEl.textContent = record?.exactTextInjected ?? '';
+  }
+}
+
+
+function confirmCurrentLoadedContextPackInjection() {
+  const request = getActiveLoadedContextPackInjectionRequest();
+  if (!request) {
+    throw new Error('A loaded ContextPack JSON preview with visible exactTextToInject is required before confirming injection.');
+  }
+
+  const key = getContextPackInjectionRecordKey(request.chatId, request.contextPackReference.contextPackId);
+  if (localContextPackInjectionRecords.has(key)) {
+    throw new Error('This ContextPack has already been confirmed for the current chat.');
+  }
+
+  const record = createLocalContextPackInjectionRecord(request);
+  localContextPackInjectionRecords.set(key, record);
+  activeContextPackInjectionRecord = record;
+  activeContextPackInjectionError = null;
+  renderContextPackInjectionRecord(record);
+  renderContextPackPreviewPanel();
+  return record;
+}
+
 
 function createContextPackCandidateControls(chatId, contextPackId, status) {
   void chatId;
@@ -4824,7 +5004,17 @@ if (contextPackPreviewCloseButton) {
 
 if (contextPackPreviewConfirmButton) {
   contextPackPreviewConfirmButton.addEventListener('click', () => {
-    closeContextPackPreview();
+    try {
+      confirmCurrentLoadedContextPackInjection();
+      if (contextPackPreviewLoadMessageEl) {
+        contextPackPreviewLoadMessageEl.textContent = 'Context injected into this chat session. No LLM send has occurred yet in this phase.';
+      }
+    } catch (error) {
+      activeContextPackInjectionError = error instanceof Error ? error.message : 'ContextPack injection failed.';
+      if (contextPackPreviewLoadMessageEl) {
+        contextPackPreviewLoadMessageEl.textContent = activeContextPackInjectionError;
+      }
+    }
   });
 }
 

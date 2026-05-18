@@ -130,34 +130,47 @@ export function createContextPackPreview(input = {}) {
           2,
         ),
       ];
+  const hasExplicitPhase = typeof input.phase === 'number' && Number.isFinite(input.phase);
+  const hasExplicitPreviewMode = typeof input.previewMode === 'string' && input.previewMode.trim();
+  const hasExplicitPlaceholder = typeof input.placeholder === 'boolean';
+  const hasExplicitEstimatedTokenCost = typeof input.estimatedTokenCost === 'number';
+  const hasExplicitWarnings = Array.isArray(input.warnings);
+  const hasExplicitConstraints = Array.isArray(input.constraints);
+  const hasExplicitExactText = typeof input.exactTextToInject === 'string';
+  const hasExplicitUserApprovalStatus = typeof input.userApprovalStatus === 'string' && input.userApprovalStatus.trim();
+  const hasExplicitSourceDocuments = Array.isArray(input.sourceDocuments);
 
   return Object.freeze({
-    phase: 19,
-    previewMode: 'placeholder',
-    placeholder: true,
+    phase: hasExplicitPhase ? input.phase : 19,
+    previewMode: hasExplicitPreviewMode ? input.previewMode.trim() : 'placeholder',
+    placeholder: hasExplicitPlaceholder ? input.placeholder : true,
+    source: typeof input.source === 'string' && input.source.trim() ? input.source.trim() : 'placeholder',
     contextPackId: reference.contextPackId,
     contextPackHash: reference.contextPackHash,
     title: toTrimmedString(input.title, reference.title),
     sourceTraceSliceHashes: toStringList(input.sourceTraceSliceHashes, ['trace-slice-placeholder-a', 'trace-slice-placeholder-b']),
     sectionsVisible,
-    estimatedTokenCost: typeof input.estimatedTokenCost === 'number' ? input.estimatedTokenCost : null,
-    warnings: toStringList(input.warnings, [
-      'Placeholder / dev-only preview.',
-      'No RCK Core integration is active yet.',
-      'Confirm injection is disabled in this phase.',
-    ]),
-    constraints: toStringList(input.constraints, [
-      'Do not read .rck directly.',
-      'Do not execute RCK Core.',
-      'Do not generate a real ContextPack yet.',
-      'Do not persist injection records yet.',
-    ]),
+    estimatedTokenCost: hasExplicitEstimatedTokenCost ? input.estimatedTokenCost : null,
+    warnings: hasExplicitWarnings
+      ? toStringList(input.warnings, [])
+      : [
+          'Placeholder / dev-only preview.',
+          'No RCK Core integration is active yet.',
+          'Confirm injection is disabled in this phase.',
+        ],
+    constraints: hasExplicitConstraints
+      ? toStringList(input.constraints, [])
+      : [
+          'Do not read .rck directly.',
+          'Do not execute RCK Core.',
+          'Do not generate a real ContextPack yet.',
+          'Do not persist injection records yet.',
+        ],
     provenanceSummary: createContextPackProvenanceSummary(input.provenanceSummary ?? input),
-    exactTextToInject: toTrimmedString(
-      input.exactTextToInject,
-      'Not available in this phase. Placeholder preview only.',
-    ),
-    userApprovalStatus: toTrimmedString(input.userApprovalStatus, 'not-available'),
+    exactTextToInject: hasExplicitExactText
+      ? toTrimmedString(input.exactTextToInject, '')
+      : 'Not available in this phase. Placeholder preview only.',
+    userApprovalStatus: hasExplicitUserApprovalStatus ? input.userApprovalStatus.trim() : 'not-available',
     injectionPolicy: createContextPackInjectionPolicy(input.injectionPolicy ?? input),
     injectionRecordDraft: createContextPackInjectionRecordDraft({
       ...(input.injectionRecordDraft ?? {}),
@@ -165,11 +178,13 @@ export function createContextPackPreview(input = {}) {
       contextPackHash: reference.contextPackHash,
     }),
     reference,
-    sourceDocuments: [
-      CONTEXT_PACK_PREVIEW_SOURCE_DOCUMENT,
-      CONTEXT_PACK_PREVIEW_CONTRACT_DOCUMENT,
-      CONTEXT_PACK_PREVIEW_SCHEMA_DOCUMENT,
-    ],
+    sourceDocuments: hasExplicitSourceDocuments
+      ? [...input.sourceDocuments]
+      : [
+          CONTEXT_PACK_PREVIEW_SOURCE_DOCUMENT,
+          CONTEXT_PACK_PREVIEW_CONTRACT_DOCUMENT,
+          CONTEXT_PACK_PREVIEW_SCHEMA_DOCUMENT,
+        ],
   });
 }
 

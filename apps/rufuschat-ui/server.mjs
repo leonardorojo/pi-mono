@@ -15,6 +15,10 @@ import {
   isContextPackValidationError,
   parseContextPackJson,
 } from './contextpack-json-loader.mjs';
+import {
+  buildContextPackInjectionRequest,
+  confirmContextPackInjection,
+} from './contextpack-injection-provider.mjs';
 import { completeChatCompletion, createChatCompletionStream } from './chat-completion-provider.mjs';
 import {
   createChatCompletionErrorResponse,
@@ -517,6 +521,47 @@ const server = createServer(async (req, res) => {
           message,
         },
         issues,
+      });
+    }
+    return;
+  }
+
+  if (url.pathname === '/api/rck/context-pack/injections/confirm-placeholder') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      const body = await readRequestJson(req);
+      const loadedPreview = body.loadedPreview ?? body.preview ?? body.contextPackPreview ?? null;
+      const chatId = typeof body.chatId === 'string' ? body.chatId.trim() : '';
+      const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : '';
+      const exactTextToInject = typeof body.exactTextToInject === 'string' ? body.exactTextToInject : '';
+      const request = buildContextPackInjectionRequest({
+        loadedPreview,
+        chatId,
+        projectId,
+        exactTextToInject,
+      });
+      const response = confirmContextPackInjection({
+        request,
+      });
+
+      sendJson(res, 200, {
+        ok: true,
+        injectionRecord: response.injectionRecord,
+        request: response.request,
+        deliveryMode: response.deliveryMode,
+        shouldSendToLlm: response.shouldSendToLlm,
+        message: response.message,
+      });
+    } catch (error) {
+      sendJson(res, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : 'ContextPack injection confirmation failed',
+        issues: Array.isArray(error?.issues) ? error.issues : undefined,
+        code: error?.code ?? 'invalid_context_pack_injection',
       });
     }
     return;

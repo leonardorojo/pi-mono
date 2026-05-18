@@ -61,7 +61,7 @@ export function buildContextPackInjectionRequest(input = {}) {
     exactTextToInject,
   });
 
-  if (!canConfirmContextPackInjection(request)) {
+  if (!canConfirmContextPackInjection({ loadedPreview, exactTextToInject })) {
     throw makeInjectionError(
       'ContextPack injection request is not eligible for confirmation.',
       'ineligible_injection_request',
@@ -84,7 +84,7 @@ export function buildContextPackInjectionRecord(input = {}) {
 }
 
 export function confirmContextPackInjection(input = {}) {
-  const request = buildContextPackInjectionRequest(input);
+  const request = normalizeContextPackInjectionRequest(input.request ?? buildContextPackInjectionRequest(input));
   const injectionRecord = buildContextPackInjectionRecord({
     ...input,
     request,

@@ -12,6 +12,10 @@ import {
   normalizeChatCompletionRequest,
   normalizeChatCompletionResponse,
 } from './chat-completion-schema.mjs';
+import {
+  buildApprovedContextBlock,
+  normalizeApprovedContextForCompletion,
+} from './rck-contextpack-llm-context.mjs';
 
 const DEFAULT_SYSTEM_PROMPT = 'You are RufusChat, a helpful assistant inside a local-first project chat.';
 const PI_AGENT_DIR = join(homedir(), '.pi', 'agent');
@@ -41,9 +45,26 @@ function resolveSelection(request) {
   return model;
 }
 
-function createChatCompletionContext(request) {
+function createApprovedContextPrefix(request) {
+  const approvedContext = normalizeApprovedContextForCompletion(request.approvedRckContext);
+  if (!approvedContext) {
+    return null;
+  }
+
   return {
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    approvedContext,
+    block: buildApprovedContextBlock(approvedContext),
+  };
+}
+
+function createChatCompletionContext(request) {
+  const approvedContextPrefix = createApprovedContextPrefix(request);
+  const systemPrompt = approvedContextPrefix
+    ? `${DEFAULT_SYSTEM_PROMPT}\n\n${approvedContextPrefix.block}`
+    : DEFAULT_SYSTEM_PROMPT;
+
+  return {
+    systemPrompt,
     messages: toLlmMessages(request.messages),
   };
 }
@@ -55,6 +76,19 @@ function createChatCompletionOptions(request, apiKey, signal) {
     temperature: request.options.temperature,
     maxTokens: request.options.maxTokens,
     signal,
+  };
+}
+
+function createCompletionMetadata(model, request) {
+  const approvedContext = normalizeApprovedContextForCompletion(request.approvedRckContext);
+
+  return {
+    provider: `${model.provider}`,
+    model: `${model.provider}/${model.id}`,
+    createdAt: new Date().toISOString(),
+    rckContextIncluded: Boolean(approvedContext),
+    rckInjectionId: approvedContext?.injectionId ?? null,
+    sourceTraceSliceHashesCount: approvedContext?.sourceTraceSliceHashes.length ?? 0,
   };
 }
 
@@ -163,13 +197,14 @@ export async function createChatCompletionStream(requestInput, streamOptions = {
       statusCode: 503,
     });
   }
-
   const stream = streamSimple(model, createChatCompletionContext(request), createChatCompletionOptions(request, apiKey, streamOptions.signal));
+  const metadata = createCompletionMetadata(model, request);
 
   return {
     request,
     model,
     stream,
+    metadata,
   };
 }
 
@@ -195,10 +230,7 @@ export async function completeChatCompletion(requestInput) {
 
   const assistantMessage = await completeSimple(
     model,
-    {
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      messages: toLlmMessages(request.messages),
-    },
+    createChatCompletionContext(request),
     {
       apiKey,
       sessionId: getSessionId(request),
@@ -227,10 +259,6 @@ export async function completeChatCompletion(requestInput) {
       role: 'assistant',
       content,
     },
-    metadata: {
-      provider: model.provider,
-      model: `${model.provider}/${model.id}`,
-      createdAt: new Date().toISOString(),
-    },
+    metadata: createCompletionMetadata(model, request),
   });
 }

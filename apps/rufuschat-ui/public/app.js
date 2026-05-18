@@ -1918,6 +1918,112 @@ function getCurrentContextPackInjectionRecord() {
   return localContextPackInjectionRecords.get(getContextPackInjectionRecordKey(state.currentChatId, contextPackId)) ?? null;
 }
 
+function getContextPackInjectionRecordStatusText(record) {
+  if (!record) {
+    return 'No injection confirmed yet.';
+  }
+
+  if (record.status === 'consumed' || record.llmRequestIncluded === true || record.consumedAtUtc) {
+    return 'Approved RCK context included in last request.';
+  }
+
+  return 'Approved RCK context will be included in your next message.';
+}
+
+function getLatestEligibleContextPackInjectionRecord(chatId) {
+  const candidateChatId = typeof chatId === 'string' && chatId.trim() ? chatId.trim() : state.currentChatId;
+  if (!candidateChatId) {
+    return null;
+  }
+
+  const eligibleRecords = Array.from(localContextPackInjectionRecords.values()).filter((record) => {
+    if (!record || record.chatId !== candidateChatId) {
+      return false;
+    }
+
+    if (record.source !== 'loaded-contextpack-json') {
+      return false;
+    }
+
+    if (record.approvedBy !== 'local-user' || record.approvalMode !== 'explicit-click') {
+      return false;
+    }
+
+    if (record.status !== 'injected' || record.llmRequestIncluded === true || record.consumedAtUtc) {
+      return false;
+    }
+
+    return typeof record.exactTextInjected === 'string' && record.exactTextInjected.trim().length > 0;
+  });
+
+  if (eligibleRecords.length === 0) {
+    return null;
+  }
+
+  eligibleRecords.sort((left, right) => {
+    const leftTime = Date.parse(left.createdAtUtc ?? '') || 0;
+    const rightTime = Date.parse(right.createdAtUtc ?? '') || 0;
+    return rightTime - leftTime;
+  });
+
+  return eligibleRecords[0] ?? null;
+}
+
+function cloneApprovedContextRecord(record) {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    kind: 'rck-approved-context',
+    source: 'contextpack-injection-record',
+    injectionId: record.injectionId,
+    contextPackReference: {
+      ...(record.contextPackReference ?? {}),
+    },
+    sourceTraceSliceHashes: Array.isArray(record.sourceTraceSliceHashes) ? [...record.sourceTraceSliceHashes] : [],
+    exactTextInjected: typeof record.exactTextInjected === 'string' ? record.exactTextInjected : '',
+    warnings: Array.isArray(record.warnings) ? [...record.warnings] : [],
+    constraints: Array.isArray(record.constraints) ? [...record.constraints] : [],
+    provenanceSummary: {
+      ...(record.provenanceSummary ?? {}),
+    },
+    approvedBy: 'local-user',
+    approvalMode: 'explicit-click',
+  };
+}
+
+function markContextPackInjectionRecordConsumed(record) {
+  if (!record || !record.injectionId || !record.chatId || !record.contextPackReference?.contextPackId) {
+    return null;
+  }
+
+  const key = getContextPackInjectionRecordKey(record.chatId, record.contextPackReference.contextPackId);
+  const existingRecord = localContextPackInjectionRecords.get(key);
+  if (!existingRecord) {
+    return null;
+  }
+
+  const consumedRecord = {
+    ...existingRecord,
+    status: 'consumed',
+    llmRequestIncluded: true,
+    consumedAtUtc: nowIso(),
+  };
+
+  localContextPackInjectionRecords.set(key, consumedRecord);
+  if (activeContextPackInjectionRecord?.injectionId === consumedRecord.injectionId) {
+    activeContextPackInjectionRecord = consumedRecord;
+  }
+
+  renderContextPackInjectionRecord(consumedRecord);
+  return consumedRecord;
+}
+
+function getApprovedContextForChatCompletion(chatId) {
+  return cloneApprovedContextRecord(getLatestEligibleContextPackInjectionRecord(chatId));
+}
+
 function canConfirmLoadedContextPackInjection() {
   const request = getActiveLoadedContextPackInjectionRequest();
   if (!request) {
@@ -1930,9 +2036,7 @@ function canConfirmLoadedContextPackInjection() {
 
 function renderContextPackInjectionRecord(record) {
   if (contextPackInjectionRecordStatusEl) {
-    contextPackInjectionRecordStatusEl.textContent = record
-      ? 'Context injected into this chat session.'
-      : 'No injection confirmed yet.';
+    contextPackInjectionRecordStatusEl.textContent = getContextPackInjectionRecordStatusText(record);
   }
 
   if (contextPackInjectionRecordIdEl) {
@@ -3975,6 +4079,7 @@ function getChatCompletionRequestBody(chat, userMessage, options = {}) {
   const project = getProjectByChatId(chat.id);
   const messages = getChatCompletionMessages(chat, chatCompletionContextLimit, options);
   const projectId = typeof project?.id === 'string' ? project.id : chat.projectId ?? null;
+  const approvedRckContext = isPlainObject(options.approvedRckContext) ? options.approvedRckContext : null;
 
   if (userMessage && !messages.some((message) => message.role === 'user' && message.content === userMessage.content)) {
     messages.push({ role: 'user', content: userMessage.content ?? userMessage.text ?? '' });
@@ -3984,6 +4089,7 @@ function getChatCompletionRequestBody(chat, userMessage, options = {}) {
     projectId,
     chatId: chat.id,
     messages,
+    approvedRckContext,
   };
 }
 
@@ -4311,9 +4417,22 @@ async function runChatCompletion(targetChatId, userMessage, options = {}) {
   updateChatCompletionControls();
   setBusy(true, chatThinkingMessage);
 
+  const approvedRckContext = getApprovedContextForChatCompletion(targetChatId);
   const requestBody = getChatCompletionRequestBody(chat, userMessage, {
     excludeMessageIds: [placeholderMessage.id],
+    approvedRckContext,
   });
+
+  if (approvedRckContext) {
+    markContextPackInjectionRecordConsumed({
+      ...approvedRckContext,
+      chatId: targetChatId,
+      contextPackReference: approvedRckContext.contextPackReference,
+    });
+    if (contextPackPreviewLoadMessageEl) {
+      contextPackPreviewLoadMessageEl.textContent = 'Approved RCK context included in last request.';
+    }
+  }
 
   clearTimeout(productStateSaveTimer);
   productStateSaveTimer = null;
@@ -5007,7 +5126,7 @@ if (contextPackPreviewConfirmButton) {
     try {
       confirmCurrentLoadedContextPackInjection();
       if (contextPackPreviewLoadMessageEl) {
-        contextPackPreviewLoadMessageEl.textContent = 'Context injected into this chat session. No LLM send has occurred yet in this phase.';
+        contextPackPreviewLoadMessageEl.textContent = 'Approved RCK context will be included in your next message.';
       }
     } catch (error) {
       activeContextPackInjectionError = error instanceof Error ? error.message : 'ContextPack injection failed.';

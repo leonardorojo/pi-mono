@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { normalizeApprovedContextForCompletion } from './rck-contextpack-llm-context.mjs';
+
 const DEFAULT_ERROR_CODE = 'llm_unavailable';
 const DEFAULT_ERROR_MESSAGE = 'The RufusChat LLM is temporarily unavailable.';
 const DEFAULT_PROVIDER = 'github-copilot';
@@ -161,6 +163,10 @@ function normalizeOptions(input) {
   return options;
 }
 
+function normalizeApprovedContext(input) {
+  return normalizeApprovedContextForCompletion(input);
+}
+
 export function normalizeChatCompletionRequest(input) {
   const issues = [];
   const body = isPlainObject(input) ? input : {};
@@ -177,6 +183,7 @@ export function normalizeChatCompletionRequest(input) {
         .map((message, index) => normalizeMessage(message, index, issues))
         .filter(Boolean)
     : [];
+  const approvedRckContext = normalizeApprovedContext(body.approvedRckContext);
 
   if (!messages.some((message) => message.role === 'user')) {
     issues.push('messages must include at least one user message.');
@@ -188,6 +195,7 @@ export function normalizeChatCompletionRequest(input) {
     provider,
     modelId,
     messages,
+    approvedRckContext,
     options: {
       model: `${provider}/${modelId}`,
       temperature: options.temperature,
@@ -202,11 +210,20 @@ function normalizeMetadata(input) {
   const createdAt = typeof metadata.createdAt === 'string' && metadata.createdAt.trim() ? metadata.createdAt.trim() : new Date().toISOString();
   const provider = typeof metadata.provider === 'string' && metadata.provider.trim() ? metadata.provider.trim() : 'pi-ai';
   const model = typeof metadata.model === 'string' && metadata.model.trim() ? metadata.model.trim() : 'unknown';
+  const rckContextIncluded = metadata.rckContextIncluded === true;
+  const rckInjectionId = typeof metadata.rckInjectionId === 'string' && metadata.rckInjectionId.trim() ? metadata.rckInjectionId.trim() : null;
+  const sourceTraceSliceHashesCount =
+    typeof metadata.sourceTraceSliceHashesCount === 'number' && Number.isFinite(metadata.sourceTraceSliceHashesCount)
+      ? metadata.sourceTraceSliceHashesCount
+      : 0;
 
   return {
     provider,
     model,
     createdAt,
+    rckContextIncluded,
+    rckInjectionId,
+    sourceTraceSliceHashesCount,
   };
 }
 

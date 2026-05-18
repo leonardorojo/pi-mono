@@ -334,7 +334,7 @@ Do not implement:
 
 ## Brief documentation updates elsewhere
 
-This phase may add short cross-references in nearby docs, but it should not duplicate the full design:
+This phase introduces the first contract/stub modules: `rck-writeback-contract.mjs` and `rck-writeback-provider.mjs`.
 - `apps/rufuschat-ui/README.md`
 - `apps/rufuschat-ui/RCK_APPROVED_CONTEXT_COMPLETION.md`
 - `apps/rufuschat-ui/RCK_CONTEXT_SCOPE_SUGGESTION.md`

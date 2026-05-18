@@ -40,6 +40,7 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - Manual / dev-safe ContextPack JSON load preview: [`RCK_LOAD_CONTEXTPACK_JSON_PREVIEW.md`](./RCK_LOAD_CONTEXTPACK_JSON_PREVIEW.md)
 - The Attach RCK Context flow now starts with a placeholder scope suggestion, converts approved scope into a placeholder generation request, and can also load a real ContextPack JSON preview manually.
 - Phase 25 adds the approved RCK context completion path: a confirmed injection can be included once in the next `/api/chat/complete` request, then it is consumed.
+- Phase 26 defines the future write-back direction from a closed chat turn into RCK State / Delta traces; design doc: [`RCK_WRITEBACK_DESIGN.md`](./RCK_WRITEBACK_DESIGN.md)
 - Fase 13A is documentation / contract only
 - Fase 13B adds a placeholder `/inject` candidate UX in the browser
 - Fase 13C adds minimal per-chat injection history metadata

@@ -7,6 +7,7 @@
 - This phase does not modify the RCK DAG.
 - This phase does not register Anchor yet.
 - The approved context lives in memory only and does not survive a hard refresh.
+- The reverse write-back direction is documented in [`RCK_WRITEBACK_DESIGN.md`](./RCK_WRITEBACK_DESIGN.md).
 
 Expected completion metadata:
 - `rckContextIncluded`

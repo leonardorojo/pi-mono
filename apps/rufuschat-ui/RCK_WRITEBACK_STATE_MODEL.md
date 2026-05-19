@@ -2,6 +2,8 @@
 
 This phase stabilizes the in-memory state model for the dev-only RCK write-back preview.
 
+The canonical runtime boundary for the next adapter step is documented in [`RCK_WRITEBACK_EXECUTION_BOUNDARY.md`](./RCK_WRITEBACK_EXECUTION_BOUNDARY.md).
+
 ## Source of truth
 
 The current source of truth is `chatTurnWritebackResultsByChatId`.

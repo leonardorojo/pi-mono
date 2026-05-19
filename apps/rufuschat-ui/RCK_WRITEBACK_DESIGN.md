@@ -1,6 +1,8 @@
 # RCK write-back design for RufusChat
 
-This document defines the future direction for writing real RufusChat conversation traces back into RCK Core without implementing product write-back yet.
+This document defines the broader future direction for writing real RufusChat conversation traces back into RCK Core without implementing product write-back yet.
+
+The runtime execution boundary for the current phase is documented separately in [`RCK_WRITEBACK_EXECUTION_BOUNDARY.md`](./RCK_WRITEBACK_EXECUTION_BOUNDARY.md).
 
 It is a design-only contract. It does not change runtime behavior, product state schema, `.data`, `.rck`, embeddings, ranking, or chat flow.
 

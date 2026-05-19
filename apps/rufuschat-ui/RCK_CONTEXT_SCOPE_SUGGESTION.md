@@ -84,4 +84,4 @@ The suggestion placeholder exposes:
 3. Build a real ContextPack from that TraceSlice.
 4. Show a real preview of the generated chain.
 5. Enable confirm injection only after the real chain exists.
-6. Preserve the separate write-back direction for closed chat turns in [`RCK_WRITEBACK_DESIGN.md`](./RCK_WRITEBACK_DESIGN.md).
+6. Preserve the separate write-back direction and runtime boundary for closed chat turns in [`RCK_WRITEBACK_EXECUTION_BOUNDARY.md`](./RCK_WRITEBACK_EXECUTION_BOUNDARY.md).

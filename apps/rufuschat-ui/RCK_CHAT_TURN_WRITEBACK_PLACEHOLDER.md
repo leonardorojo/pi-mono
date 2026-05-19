@@ -2,6 +2,8 @@
 
 This phase wires the existing RCK write-back contract into the closed-turn RufusChat flow.
 
+The execution boundary for the future adapter/service is documented in [`RCK_WRITEBACK_EXECUTION_BOUNDARY.md`](./RCK_WRITEBACK_EXECUTION_BOUNDARY.md).
+
 It is placeholder-only:
 - no real RCK Core write
 - no `.rck` reads

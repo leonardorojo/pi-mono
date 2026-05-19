@@ -2,6 +2,8 @@
 
 This phase introduces the first formal adapter layer for RufusChat → RCK write-back.
 
+The runtime boundary for the adapter/service relationship is documented in [`RCK_WRITEBACK_EXECUTION_BOUNDARY.md`](./RCK_WRITEBACK_EXECUTION_BOUNDARY.md).
+
 It is contract-only and stubbed. It does not write to real RCK Core, does not read `.rck`, does not touch `.data`, does not mutate the RCK DAG, and does not register Anchors.
 
 ## Files introduced in this phase

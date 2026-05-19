@@ -326,6 +326,7 @@ const commandCatalog = [
 ];
 
 let confirmResolver = null;
+let createProjectDialogResolver = null;
 let activeChatCompletionRun = null;
 
 function makeId(prefix) {

@@ -12,6 +12,7 @@ The current source of truth is `chatTurnWritebackResultsByChatId`.
 - The preview panel reads from that map.
 - The next closed turn derives its parent chain from the latest stored result.
 - This map tracks closed turns inside the active Branch of a Chat; it is not responsible for Project/Trace birth or Chat/Branch birth.
+- The separate `userAnchorDraftsByChatId` runtime map stores local-only User Anchor Draft placeholders built from the latest closed turn.
 - Future `ChatTurnStatePayload` and `ChatTurnDeltaPayload` objects should be able to reference `traceId`, `branchId`, and `branchKind` without re-deriving birth state.
 
 ## Input and result flow

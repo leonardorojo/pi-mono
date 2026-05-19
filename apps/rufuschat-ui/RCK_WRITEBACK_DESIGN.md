@@ -50,6 +50,8 @@ Out of scope:
 - any new LLM call
 - any change to existing chat completion flow
 
+The placeholder User Anchor Draft flow introduced in Phase 16 is UI-only and remains separate from this design until a real anchor lifecycle is defined.
+
 ## Core design principle
 
 RufusChat is the conversation product shell. RCK Core remains the kernel.

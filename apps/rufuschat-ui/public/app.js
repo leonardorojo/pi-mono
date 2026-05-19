@@ -106,6 +106,22 @@ const chatTurnWritebackPreviewStateIdEl = document.getElementById('chat-turn-wri
 const chatTurnWritebackPreviewDeltaIdEl = document.getElementById('chat-turn-writeback-preview-delta-id');
 const chatTurnWritebackPreviewContextUsedEl = document.getElementById('chat-turn-writeback-preview-context-used');
 const chatTurnWritebackPreviewInjectionIdEl = document.getElementById('chat-turn-writeback-preview-injection-id');
+const userAnchorDraftPanel = document.getElementById('user-anchor-draft-panel');
+const userAnchorDraftTitleEl = document.getElementById('user-anchor-draft-title');
+const userAnchorDraftStatusEl = document.getElementById('user-anchor-draft-status');
+const userAnchorDraftSummaryEl = document.getElementById('user-anchor-draft-summary');
+const userAnchorDraftCreateButton = document.getElementById('user-anchor-draft-create-button');
+const userAnchorDraftIdEl = document.getElementById('user-anchor-draft-id');
+const userAnchorDraftProjectIdEl = document.getElementById('user-anchor-draft-project-id');
+const userAnchorDraftTraceIdEl = document.getElementById('user-anchor-draft-trace-id');
+const userAnchorDraftChatIdEl = document.getElementById('user-anchor-draft-chat-id');
+const userAnchorDraftBranchIdEl = document.getElementById('user-anchor-draft-branch-id');
+const userAnchorDraftBranchKindEl = document.getElementById('user-anchor-draft-branch-kind');
+const userAnchorDraftSourceTurnIdEl = document.getElementById('user-anchor-draft-source-turn-id');
+const userAnchorDraftAnchorTypeEl = document.getElementById('user-anchor-draft-anchor-type');
+const userAnchorDraftCreatedAtEl = document.getElementById('user-anchor-draft-created-at');
+const userAnchorDraftRckConnectedEl = document.getElementById('user-anchor-draft-rck-connected');
+const userAnchorDraftRckAnchorIdEl = document.getElementById('user-anchor-draft-rck-anchor-id');
 
 const productStateEndpoint = '/api/product-state';
 const contextScopeSuggestionEndpoint = '/api/rck/context-scope/suggest-placeholder';
@@ -145,6 +161,7 @@ let activeContextPackInjectionError = null;
 let activeChatTurnWritebackResult = null;
 let activeChatTurnWritebackError = null;
 const chatTurnWritebackResultsByChatId = new Map();
+const userAnchorDraftsByChatId = new Map();
 const localContextPackInjectionRecords = new Map();
 let isContextSidePanelOpen = false;
 const contextPackCandidateSummaryLines = [
@@ -1262,6 +1279,7 @@ function renderContextScopeSuggestionPanel() {
   renderContextPackGenerationRequestPanel();
   renderContextPackPreviewPanel();
   renderChatTurnWritebackPreviewPanel();
+  renderUserAnchorDraftPreviewPanel();
 }
 
 function createFallbackContextPackPreview() {
@@ -1826,6 +1844,186 @@ function buildChatTurnWritebackPlaceholderInput(chat, userMessage, assistantMess
       completionMetadata: completion,
     },
   };
+}
+
+function getCurrentUserAnchorDraft() {
+  if (!state.currentChatId) {
+    return null;
+  }
+
+  return userAnchorDraftsByChatId.get(state.currentChatId) ?? null;
+}
+
+function buildUserAnchorDraftPlaceholderInput(project, chat, writebackResult) {
+  const projectId = typeof project?.id === 'string' && project.id.trim() ? project.id.trim() : null;
+  const chatId = typeof chat?.id === 'string' && chat.id.trim() ? chat.id.trim() : null;
+  const traceId = typeof chat?.traceId === 'string' && chat.traceId.trim()
+    ? chat.traceId.trim()
+    : typeof project?.traceId === 'string' && project.traceId.trim()
+      ? project.traceId.trim()
+      : null;
+  const branchId = typeof chat?.branchId === 'string' && chat.branchId.trim() ? chat.branchId.trim() : null;
+  const branchKind = chat?.branchKind === 'main' || chat?.branchKind === 'branch' ? chat.branchKind : null;
+  const sourceTurnId = typeof writebackResult?.statePayload?.chat?.turnId === 'string' && writebackResult.statePayload.chat.turnId.trim()
+    ? writebackResult.statePayload.chat.turnId.trim()
+    : typeof writebackResult?.deltaPayload?.toTurnId === 'string' && writebackResult.deltaPayload.toTurnId.trim()
+      ? writebackResult.deltaPayload.toTurnId.trim()
+      : null;
+
+  if (!projectId || !chatId || !traceId || !branchId || !branchKind || !sourceTurnId) {
+    return null;
+  }
+
+  return {
+    kind: 'rufuschat.user_anchor_draft',
+    schemaVersion: 'rufuschat.user_anchor_draft.v0',
+    status: 'placeholder',
+    anchorDraftId: makeId('user-anchor-draft'),
+    projectId,
+    traceId,
+    chatId,
+    branchId,
+    branchKind,
+    sourceTurnId,
+    anchorType: 'user_decision',
+    title: 'Anchor draft from latest chat turn',
+    summary: 'Placeholder draft derived from the latest closed turn. No RCK anchor was written.',
+    createdAt: nowIso(),
+    source: {
+      kind: 'chat_turn',
+      turnId: sourceTurnId,
+    },
+    rck: {
+      connected: false,
+      anchorId: null,
+    },
+  };
+}
+
+function getCurrentUserAnchorDraftContext() {
+  const project = getCurrentProject();
+  const chat = getCurrentChat();
+  const writebackResult = getCurrentChatTurnWritebackResult();
+  const draft = buildUserAnchorDraftPlaceholderInput(project, chat, writebackResult);
+  const missing = [];
+
+  if (!project) {
+    missing.push('current project');
+  }
+
+  if (!chat) {
+    missing.push('current chat');
+  }
+
+  if (!draft?.traceId) {
+    missing.push('trace id');
+  }
+
+  if (!draft?.branchId) {
+    missing.push('branch id');
+  }
+
+  if (!draft?.branchKind) {
+    missing.push('branch kind');
+  }
+
+  if (!draft?.sourceTurnId) {
+    missing.push('closed turn');
+  }
+
+  return {
+    project,
+    chat,
+    writebackResult,
+    draft,
+    missing,
+    canCreate: missing.length === 0,
+  };
+}
+
+function registerUserAnchorDraftPlaceholder() {
+  const context = getCurrentUserAnchorDraftContext();
+  if (!context.canCreate || !context.draft || !context.chat) {
+    return null;
+  }
+
+  userAnchorDraftsByChatId.set(context.chat.id, context.draft);
+  renderUserAnchorDraftPreviewPanel();
+  return context.draft;
+}
+
+function renderUserAnchorDraftPreviewPanel() {
+  if (!userAnchorDraftPanel) {
+    return;
+  }
+
+  const project = getCurrentProject();
+  const chat = getCurrentChat();
+  const context = getCurrentUserAnchorDraftContext();
+  const currentDraft = getCurrentUserAnchorDraft();
+  const shouldShow = Boolean(isContextSidePanelOpen && project && chat);
+  userAnchorDraftPanel.hidden = !shouldShow;
+
+  if (!shouldShow) {
+    return;
+  }
+
+  const panelTitle = currentDraft ? 'User Anchor Draft' : 'Create Anchor Draft';
+  const panelStatus = currentDraft ? 'placeholder / not connected' : context.canCreate ? 'placeholder / not connected' : 'placeholder / disabled';
+  const disabledSummary = context.missing.length > 0
+    ? `User Anchor Draft is disabled until ${context.missing.join(', ')} are available.`
+    : 'No closed turn available for anchor draft.';
+  const summaryText = currentDraft
+    ? 'This is a placeholder draft. No RCK anchor was written.'
+    : context.canCreate
+      ? 'Press Create Anchor Draft to build a local-only draft from the latest closed turn.'
+      : disabledSummary;
+
+  if (userAnchorDraftTitleEl) {
+    userAnchorDraftTitleEl.textContent = panelTitle;
+  }
+
+  if (userAnchorDraftStatusEl) {
+    userAnchorDraftStatusEl.textContent = panelStatus;
+  }
+
+  if (userAnchorDraftSummaryEl) {
+    userAnchorDraftSummaryEl.textContent = summaryText;
+  }
+
+  if (userAnchorDraftCreateButton) {
+    userAnchorDraftCreateButton.disabled = !context.canCreate;
+    userAnchorDraftCreateButton.textContent = 'Create Anchor Draft';
+    userAnchorDraftCreateButton.title = context.canCreate
+      ? 'Create a local-only User Anchor Draft from the latest closed turn.'
+      : context.missing.length > 0
+        ? `Missing ${context.missing.join(', ')}.`
+        : 'No closed turn available for anchor draft.';
+  }
+
+  const draft = currentDraft;
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-id'), draft?.anchorDraftId);
+  setTextField(userAnchorDraftIdEl, draft?.anchorDraftId, '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-project-id'), draft?.projectId);
+  setTextField(userAnchorDraftProjectIdEl, draft?.projectId, '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-trace-id'), draft?.traceId);
+  setTextField(userAnchorDraftTraceIdEl, draft?.traceId, '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-chat-id'), draft?.chatId);
+  setTextField(userAnchorDraftChatIdEl, draft?.chatId, '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-branch-id'), draft?.branchId);
+  setTextField(userAnchorDraftBranchIdEl, draft?.branchId, '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-branch-kind'), draft?.branchKind);
+  setTextField(userAnchorDraftBranchKindEl, draft?.branchKind ?? '', '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-source-turn-id'), draft?.sourceTurnId);
+  setTextField(userAnchorDraftSourceTurnIdEl, draft?.sourceTurnId, '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-anchor-type'), draft?.anchorType);
+  setTextField(userAnchorDraftAnchorTypeEl, draft?.anchorType, '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-created-at'), draft?.createdAt);
+  setTextField(userAnchorDraftCreatedAtEl, draft?.createdAt, '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-rck-connected'), draft ? String(draft.rck?.connected ?? false) : '');
+  setTextField(userAnchorDraftRckConnectedEl, draft ? String(draft.rck?.connected ?? false) : '', '');
+  setFieldVisibility(document.getElementById('user-anchor-draft-field-rck-anchor-id'), draft?.rck?.anchorId);
+  setTextField(userAnchorDraftRckAnchorIdEl, draft?.rck?.anchorId ?? 'null', 'null');
 }
 
 function renderChatTurnWritebackPreviewPanel() {
@@ -2566,6 +2764,8 @@ async function syncProductStateFromPayload(payload) {
 
   const response = await putProductStatePayload(payload);
   const savedState = response?.state ?? payload;
+  userAnchorDraftsByChatId.clear();
+  chatTurnWritebackResultsByChatId.clear();
   replaceStateFromProductState(savedState);
   const selectionAdjusted = applySelectionFallback({ persist: false });
   productStateLocalDirty = false;
@@ -3035,6 +3235,8 @@ async function hydrateProductState() {
     }
 
     replaceStateFromProductState(data?.state);
+    userAnchorDraftsByChatId.clear();
+    chatTurnWritebackResultsByChatId.clear();
     const selectionAdjusted = applySelectionFallback({ persist: false });
     productStateLocalDirty = false;
     productStateLastSavedSnapshot = getProductStateSnapshot();
@@ -4168,6 +4370,7 @@ function render() {
   renderSidebar();
   renderContextPackPreviewPanel();
   renderChatTurnWritebackPreviewPanel();
+  renderUserAnchorDraftPreviewPanel();
   renderMessages();
   scrollChatToBottom();
   setBusy(false);
@@ -4770,6 +4973,7 @@ async function runChatCompletion(targetChatId, userMessage, options = {}) {
     activeChatTurnWritebackResult = writebackResult;
     activeChatTurnWritebackError = null;
     renderChatTurnWritebackPreviewPanel();
+    renderUserAnchorDraftPreviewPanel();
     return writebackResult;
   };
 
@@ -5474,6 +5678,12 @@ if (contextPackPreviewConfirmButton) {
         contextPackPreviewLoadMessageEl.textContent = activeContextPackInjectionError;
       }
     }
+  });
+}
+
+if (userAnchorDraftCreateButton) {
+  userAnchorDraftCreateButton.addEventListener('click', () => {
+    registerUserAnchorDraftPlaceholder();
   });
 }
 

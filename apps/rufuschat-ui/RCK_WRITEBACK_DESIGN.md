@@ -8,6 +8,8 @@ It is a design-only contract. It does not change runtime behavior, product state
 
 Project creation creates a Trace and Chat creation creates a Branch inside that Trace; this document starts after that birth layer and focuses on how closed turns grow the Trace.
 
+The contract-shape layer for the birth step itself is documented in [`RCK_TRACE_BRANCH_CONTRACT_SHAPES.md`](./RCK_TRACE_BRANCH_CONTRACT_SHAPES.md).
+
 ## Goal
 
 RufusChat should eventually be able to convert a completed chat conversation into an RCK trace that grows from chat turns:

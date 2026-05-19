@@ -197,6 +197,8 @@ La alineación correcta es:
 
 No se debe inventar una identidad separada si el propósito es solo preparar el nacimiento del Trace o de la Branch.
 
+Contract shapes for the next runtime step are documented in [`RCK_TRACE_BRANCH_CONTRACT_SHAPES.md`](./RCK_TRACE_BRANCH_CONTRACT_SHAPES.md).
+
 ## Relación con `linkedRckTrace`
 
 El chat ya tiene `linkedRckTrace` como placeholder estructurado.

@@ -4,6 +4,8 @@ This phase wires the existing RCK write-back contract into the closed-turn Rufus
 
 The execution boundary for the future adapter/service is documented in [`RCK_WRITEBACK_EXECUTION_BOUNDARY.md`](./RCK_WRITEBACK_EXECUTION_BOUNDARY.md).
 
+This flow runs inside an existing Branch; it does not create the Project/Trace or Chat/Branch birth artifacts.
+
 It is placeholder-only:
 - no real RCK Core write
 - no `.rck` reads

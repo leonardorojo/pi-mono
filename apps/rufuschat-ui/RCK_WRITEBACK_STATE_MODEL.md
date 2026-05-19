@@ -11,6 +11,7 @@ The current source of truth is `chatTurnWritebackResultsByChatId`.
 - It stores the most recent placeholder registration result for each chat.
 - The preview panel reads from that map.
 - The next closed turn derives its parent chain from the latest stored result.
+- This map tracks closed turns inside the active Branch of a Chat; it is not responsible for Project/Trace birth or Chat/Branch birth.
 
 ## Input and result flow
 

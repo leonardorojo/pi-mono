@@ -4,6 +4,8 @@ This document defines the runtime boundary between RufusChat and the future RCK 
 
 It is design-only. It does not change runtime behavior, persistence, or the stabilized placeholder write-back flow already present in `chatTurnWritebackResultsByChatId`.
 
+Project/Trace birth and Chat/Branch birth are documented separately in [`RCK_TRACE_INITIALIZATION_PLACEHOLDER.md`](./RCK_TRACE_INITIALIZATION_PLACEHOLDER.md); this doc only covers closed-turn write-back and does not create traces, branches, or anchors.
+
 ## One-sentence boundary
 
 RufusChat prepares a closed chat-turn request and hands it to an adapter/service; the adapter/service owns all future RCK Core interaction.

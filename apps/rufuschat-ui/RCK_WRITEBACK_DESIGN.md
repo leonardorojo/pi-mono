@@ -6,6 +6,8 @@ The runtime execution boundary for the current phase is documented separately in
 
 It is a design-only contract. It does not change runtime behavior, product state schema, `.data`, `.rck`, embeddings, ranking, or chat flow.
 
+Project creation creates a Trace and Chat creation creates a Branch inside that Trace; this document starts after that birth layer and focuses on how closed turns grow the Trace.
+
 ## Goal
 
 RufusChat should eventually be able to convert a completed chat conversation into an RCK trace that grows from chat turns:

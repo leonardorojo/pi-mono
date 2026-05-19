@@ -17,6 +17,8 @@ The intended rule is:
 - getters return latest harness config, not in-flight snapshots
 - listeners/hooks currently receive no facade; if they close over the raw harness and call settlement APIs such as `waitForIdle()` during the active run, they can deadlock. A future facade should expose `runWhenIdle()` instead.
 
+`AssistantMessageStream` already decouples provider transport streaming, such as SSE or websocket reads, from downstream event consumption. The harness can therefore await listeners, extension hooks, persistence, and save-point work without blocking the provider transport reader or reintroducing ad hoc event queues. Lifecycle code should prefer explicit awaited sequencing at harness boundaries over fire-and-forget hook/event settlement.
+
 A final lifecycle hardening pass should prove these guarantees with a broad listener/hook reentrancy test suite.
 
 ## Error handling
@@ -145,7 +147,7 @@ At a save point the harness:
 2. creates a fresh turn snapshot if the low-level loop may continue
 3. applies the fresh context/model/thinking-level/stream-options/session-id state before the next provider request
 
-This lets model, thinking level, tool, resource, stream option, and system prompt changes made during a turn affect the next turn in the same run, while never mutating an in-flight provider request. The loop callbacks are not recreated at save points.
+This lets model, thinking level, tool, resource, stream option, and system prompt changes made during a turn affect the next turn in the same run, while never mutating an in-flight provider request. Because provider transport reading is already decoupled by `AssistantMessageStream`, save-point work and hook settlement can be awaited directly to keep transcript/session ordering deterministic. The loop callbacks are not recreated at save points.
 
 The low-level loop converts harness `ThinkingLevel` to provider `reasoning` at the provider boundary:
 
@@ -169,7 +171,7 @@ Summary:
 - Hook registration provenance is sidecar metadata on the registration. Resource and tool provenance belongs on app-specific concrete value types.
 - Hook context should be a plain object of facades, not raw internals or late-bound getter mazes.
 
-Event payloads describe what is happening. Harness getters describe latest config for future snapshots.
+Event payloads describe what is happening. Harness getters describe latest config for future snapshots. Hook and listener settlement should be awaited in lifecycle order where possible; transport backpressure is handled below the harness by `AssistantMessageStream`, so the harness does not need a separate async event queue merely to keep SSE or websocket reads flowing.
 
 ## Planned session facade
 
@@ -264,6 +266,10 @@ Remaining:
 - Decide and implement tool update observability events.
 - Include active-tool-only updates in the runtime config observability plan.
 
+Notes:
+
+- Observability design: [observability.md](./observability.md)
+
 ### 2. Design per-`AgentHarness` model registry
 
 Status: Planned
@@ -336,7 +342,33 @@ Remaining:
 - Preserve current provider hook behavior, including stream option patch deletion semantics.
 - Add parity tests for reducer semantics: transform chaining, patch chaining, early block/cancel, cleanup, source metadata, and typed app-specific reducer coverage.
 
-### 5. Final lifecycle hardening suite
+Notes:
+
+- Hook design: [hooks.md](./hooks.md)
+
+### 5. Spike semi-durable harness/session recovery
+
+Status: Planned
+
+Done:
+
+- Wrote durability design: [durable-harness.md](./durable-harness.md)
+
+Remaining:
+
+- Decide whether session owns all durable harness state or whether any sidecars are needed for large blobs.
+- Define durable entries for queues, pending writes, operations, turns, provider requests, and tool calls.
+- Define resume requirements for app-provided tools, models, extensions, resources, hooks, and auth providers.
+- Define conservative recovery policy for unfinished agent turns, provider requests, tool calls, compaction, and tree navigation.
+- Prototype reducer-based recovery from session entries.
+- Decide whether interrupted operations append user-visible messages or only internal operation entries.
+
+Notes:
+
+- Provider streams are not resumable; recovery should restart from durable boundaries or mark operations interrupted.
+- Unfinished tool calls are unsafe to retry unless tools declare idempotent/retry-safe behavior.
+
+### 6. Final lifecycle hardening suite
 
 Status: Planned
 
@@ -359,7 +391,7 @@ Remaining:
 - Test no deadlocks when async listeners call harness APIs and await them.
 - Test phase cleanup through success, provider error, hook error, abort, compaction, and tree navigation.
 
-### 6. Later coding-agent migration plan
+### 7. Later coding-agent migration plan
 
 Status: Planned
 
@@ -379,7 +411,7 @@ Remaining:
 
 ## Completed implementation todo
 
-### 7. Remove `Agent` dependency from `AgentHarness`
+### 8. Remove `Agent` dependency from `AgentHarness`
 
 Status: Done
 
@@ -395,9 +427,9 @@ Remaining:
 
 Notes:
 
-- Broader listener/hook reentrancy coverage is tracked in item 5.
+- Broader listener/hook reentrancy coverage is tracked in item 6.
 
-### 8. Finish curated provider/stream configuration
+### 9. Finish curated provider/stream configuration
 
 Status: Done
 
@@ -415,7 +447,7 @@ Remaining:
 
 - None.
 
-### 9. Complete low-level `Result` cleanup
+### 10. Complete low-level `Result` cleanup
 
 Status: Done
 

@@ -36,6 +36,7 @@ import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
+import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
 import { buildBaseOptions } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
@@ -165,6 +166,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 
 			let textBlock: TextContent | null = null;
 			let thinkingBlock: ThinkingContent | null = null;
+			let hasFinishReason = false;
 			const toolCallBlocksByIndex = new Map<number, StreamingToolCallBlock>();
 			const toolCallBlocksById = new Map<string, StreamingToolCallBlock>();
 			const blocks = output.content as StreamingBlock[];
@@ -288,6 +290,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 					if (finishReasonResult.errorMessage) {
 						output.errorMessage = finishReasonResult.errorMessage;
 					}
+					hasFinishReason = true;
 				}
 
 				if (choice.delta) {
@@ -324,7 +327,11 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 					if (foundReasoningField) {
 						const delta = deltaFields[foundReasoningField];
 						if (typeof delta === "string" && delta.length > 0) {
-							const block = ensureThinkingBlock(foundReasoningField);
+							const thinkingSignature =
+								model.provider === "opencode-go" && foundReasoningField === "reasoning"
+									? "reasoning_content"
+									: foundReasoningField;
+							const block = ensureThinkingBlock(thinkingSignature);
 							block.thinking += delta;
 							stream.push({
 								type: "thinking_delta",
@@ -389,6 +396,9 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			}
 			if (output.stopReason === "error") {
 				throw new Error(output.errorMessage || "Provider returned an error stop reason");
+			}
+			if (!hasFinishReason) {
+				throw new Error("Stream ended without finish_reason");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -507,7 +517,7 @@ function buildParams(
 		prompt_cache_key:
 			(model.baseUrl.includes("api.openai.com") && cacheRetention !== "none") ||
 			(cacheRetention === "long" && compat.supportsLongCacheRetention)
-				? options?.sessionId
+				? clampOpenAIPromptCacheKey(options?.sessionId)
 				: undefined,
 		prompt_cache_retention: cacheRetention === "long" && compat.supportsLongCacheRetention ? "24h" : undefined,
 	};
@@ -839,7 +849,10 @@ export function convertMessages(
 					}
 
 					// Use the signature from the first thinking block if available (for llama.cpp server + gpt-oss)
-					const signature = nonEmptyThinkingBlocks[0].thinkingSignature;
+					let signature = nonEmptyThinkingBlocks[0].thinkingSignature;
+					if (model.provider === "opencode-go" && signature === "reasoning") {
+						signature = "reasoning_content";
+					}
 					if (signature && signature.length > 0) {
 						(assistantMsg as any)[signature] = nonEmptyThinkingBlocks.map((block) => block.thinking).join("\n");
 					}

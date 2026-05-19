@@ -314,8 +314,10 @@ export const streamSimpleBedrock: StreamFunction<"bedrock-converse-stream", Simp
 			} satisfies BedrockOptions);
 		}
 
+		// Undefined means the caller did not request an output cap; let the helper use the model cap.
+		// Do not coerce to 0 here, or the thinking budget would become the entire maxTokens value.
 		const adjusted = adjustMaxTokensForThinking(
-			base.maxTokens || 0,
+			base.maxTokens,
 			model.maxTokens,
 			options.reasoning,
 			options.thinkingBudgets,
@@ -618,24 +620,31 @@ function convertMessages(
 		const m = transformedMessages[i];
 
 		switch (m.role) {
-			case "user":
+			case "user": {
+				const content: ContentBlock[] = [];
+				if (typeof m.content === "string") {
+					content.push({ text: sanitizeSurrogates(m.content) });
+				} else {
+					for (const c of m.content) {
+						switch (c.type) {
+							case "text":
+								content.push({ text: sanitizeSurrogates(c.text) });
+								break;
+							case "image":
+								content.push({ image: createImageBlock(c.mimeType, c.data) });
+								break;
+							default:
+								continue;
+						}
+					}
+				}
+				if (content.length === 0) continue;
 				result.push({
 					role: ConversationRole.USER,
-					content:
-						typeof m.content === "string"
-							? [{ text: sanitizeSurrogates(m.content) }]
-							: m.content.map((c) => {
-									switch (c.type) {
-										case "text":
-											return { text: sanitizeSurrogates(c.text) };
-										case "image":
-											return { image: createImageBlock(c.mimeType, c.data) };
-										default:
-											throw new Error("Unknown user content type");
-									}
-								}),
+					content,
 				});
 				break;
+			}
 			case "assistant": {
 				// Skip assistant messages with empty content (e.g., from aborted requests)
 				// Bedrock rejects messages with empty content arrays
@@ -686,7 +695,7 @@ function convertMessages(
 							}
 							break;
 						default:
-							throw new Error("Unknown assistant content type");
+							continue;
 					}
 				}
 				// Skip if all content blocks were filtered out
@@ -745,7 +754,7 @@ function convertMessages(
 				break;
 			}
 			default:
-				throw new Error("Unknown message role");
+				continue;
 		}
 	}
 

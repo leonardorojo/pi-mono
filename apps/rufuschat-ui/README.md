@@ -43,6 +43,7 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - Phase 26 defines the future write-back direction from a closed chat turn into RCK State / Delta traces; design doc: [`RCK_WRITEBACK_DESIGN.md`](./RCK_WRITEBACK_DESIGN.md)
 - Phase 27 adds the first adapter contract/stub for chat-turn write-back payloads; contract doc: [`RCK_WRITEBACK_ADAPTER_CONTRACT.md`](./RCK_WRITEBACK_ADAPTER_CONTRACT.md)
 - Phase 28 wires the stub into the closed-turn chat flow and renders a dev-only write-back preview; flow doc: [`RCK_CHAT_TURN_WRITEBACK_PLACEHOLDER.md`](./RCK_CHAT_TURN_WRITEBACK_PLACEHOLDER.md)
+- Phase 29 stabilizes the in-memory write-back state model; state model doc: [`RCK_WRITEBACK_STATE_MODEL.md`](./RCK_WRITEBACK_STATE_MODEL.md)
 - Fase 13B adds a placeholder `/inject` candidate UX in the browser
 - Fase 13C adds minimal per-chat injection history metadata
 - `/inject` runtime behavior remains safe / fake and does not read real sources

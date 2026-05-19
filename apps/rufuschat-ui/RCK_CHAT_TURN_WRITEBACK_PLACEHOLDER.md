@@ -14,6 +14,8 @@ It is placeholder-only:
 - no embeddings
 - no ranking
 
+The source of truth for the preview is `chatTurnWritebackResultsByChatId`; the turn ID chain is derived from the most recent result in memory.
+
 ## Hook point
 
 The placeholder runs after a chat completion finishes and the assistant response is closed.
@@ -37,6 +39,8 @@ It does not run when:
 - the assistant response is empty
 - the completion fails
 
+In this phase, completion means the request finished successfully and the assistant text is non-empty.
+
 ## approvedRckContext behavior
 
 When the next completion uses an approved RCK context injection, the state payload reflects it in:
@@ -58,6 +62,8 @@ The dev-only panel shows:
 - delta ID: null
 - `approvedRckContext.used`
 - injection ID when present
+
+`approvedRckContext.used` is one-shot: it is true only on the turn that consumes the approved context and false again on the next message.
 
 The full payload is not shown by default.
 

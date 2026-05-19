@@ -145,7 +145,6 @@ let activeContextPackInjectionError = null;
 let activeChatTurnWritebackResult = null;
 let activeChatTurnWritebackError = null;
 const chatTurnWritebackResultsByChatId = new Map();
-const chatTurnWritebackTurnIdsByChatId = new Map();
 const localContextPackInjectionRecords = new Map();
 let isContextSidePanelOpen = false;
 const contextPackCandidateSummaryLines = [
@@ -1772,7 +1771,8 @@ function getCurrentChatTurnWritebackResult() {
 
 function buildChatTurnWritebackPlaceholderInput(chat, userMessage, assistantMessage, completionMetadata, approvedRckContext, turnId) {
   const chatId = typeof chat?.id === 'string' && chat.id.trim() ? chat.id.trim() : 'local-chat';
-  const parentTurnId = chatTurnWritebackTurnIdsByChatId.get(chatId) ?? null;
+  const previousResult = chatTurnWritebackResultsByChatId.get(chatId) ?? null;
+  const parentTurnId = previousResult?.statePayload?.chat?.turnId ?? previousResult?.deltaPayload?.toTurnId ?? null;
   const messageUser = isPlainObject(userMessage) ? userMessage : {};
   const messageAssistant = isPlainObject(assistantMessage) ? assistantMessage : {};
   const completion = isPlainObject(completionMetadata) ? completionMetadata : {};
@@ -4609,7 +4609,6 @@ async function runChatCompletion(targetChatId, userMessage, options = {}) {
     );
     const writebackResult = registerChatTurnPlaceholder(writebackInput);
     chatTurnWritebackResultsByChatId.set(writebackInput.chatTurn.chatId, writebackResult);
-    chatTurnWritebackTurnIdsByChatId.set(writebackInput.chatTurn.chatId, writebackInput.chatTurn.turnId);
     activeChatTurnWritebackResult = writebackResult;
     activeChatTurnWritebackError = null;
     renderChatTurnWritebackPreviewPanel();

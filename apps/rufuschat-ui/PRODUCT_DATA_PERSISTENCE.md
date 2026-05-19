@@ -117,6 +117,11 @@ type Project = {
   chats: Chat[];
   createdAt: string;
   updatedAt: string;
+  traceId?: string | null;
+  traceInitializationStatus?: 'not_initialized' | 'placeholder' | 'ready_for_adapter' | 'adapter_unavailable' | 'adapter_error' | 'registered';
+  initialTraceAnchorId?: string | null;
+  traceInitializationSource?: 'ui-project-create' | 'seed' | 'reset' | 'fallback' | 'import' | null;
+  traceBirthKind?: 'project' | 'seed' | 'reset' | 'fallback' | 'import' | null;
 };
 ```
 
@@ -136,6 +141,12 @@ type Chat = {
   semanticSummaryPreview: string | null;
   linkedRckTraceStatus: string;
   linkedRckTrace: LinkedRckTrace;
+  branchId?: string | null;
+  branchKind?: 'main' | 'branch' | null;
+  parentBranchId?: string | null;
+  branchInitializationStatus?: 'not_initialized' | 'placeholder' | 'ready_for_adapter' | 'adapter_unavailable' | 'adapter_error' | 'registered';
+  branchReferenceAnchorId?: string | null;
+  branchInitializationSource?: 'ui-project-create' | 'ui-chat-create' | 'seed' | 'reset' | 'fallback' | 'import' | null;
 };
 ```
 

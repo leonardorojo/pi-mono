@@ -2364,6 +2364,12 @@ function createChat(title, messages = [], overrides = {}) {
     ),
     createdAt: timestamp,
     updatedAt: overrides.updatedAt ?? timestamp,
+    branchId: overrides.branchId ?? null,
+    branchKind: overrides.branchKind ?? null,
+    parentBranchId: overrides.parentBranchId ?? null,
+    branchInitializationStatus: overrides.branchInitializationStatus ?? 'not_initialized',
+    branchReferenceAnchorId: overrides.branchReferenceAnchorId ?? null,
+    branchInitializationSource: overrides.branchInitializationSource ?? null,
     memoryStatus: overrides.memoryStatus ?? memoryPlaceholder.memoryStatus,
     semanticSummaryStatus: overrides.semanticSummaryStatus ?? memoryPlaceholder.semanticSummaryStatus,
     semanticSummaryPreview: overrides.semanticSummaryPreview ?? memoryPlaceholder.semanticSummaryPreview,
@@ -2385,6 +2391,11 @@ function createProject(name, chats = [], overrides = {}) {
     id: projectId,
     name: typeof name === 'string' ? name.trim() : name,
     repositoryPath,
+    traceId: overrides.traceId ?? null,
+    traceInitializationStatus: overrides.traceInitializationStatus ?? 'not_initialized',
+    initialTraceAnchorId: overrides.initialTraceAnchorId ?? null,
+    traceInitializationSource: overrides.traceInitializationSource ?? null,
+    traceBirthKind: overrides.traceBirthKind ?? null,
     chats: chats.map((chat) =>
       createChat(chat.title ?? 'New chat', chat.messages ?? [], {
         ...chat,
@@ -2398,20 +2409,31 @@ function createProject(name, chats = [], overrides = {}) {
 }
 
 function createInitialProjects() {
+  const piAgent = createProject('PI Agent', [
+    createChat('Branch · RufusChat Fase 10', [createMessage('assistant', localIntroMessage)]),
+    createChat('RufusChat Fase 10', [createMessage('assistant', localIntroMessage)]),
+    createChat('RufusChat Fase 9', [createMessage('assistant', localIntroMessage)]),
+    createChat('Adjust · RufusChat UX', [createMessage('assistant', localIntroMessage)]),
+    createChat('RufusChat Fase 8', [createMessage('assistant', localIntroMessage)]),
+  ]);
+  applyTraceBirthPlaceholderToProject(piAgent, { source: 'seed', traceBirthKind: 'seed' });
+  piAgent.chats.forEach((chat, chatIndex) => {
+    applyBranchBirthPlaceholderToChat(chat, {
+      source: 'seed',
+      branchKind: chatIndex === 0 ? 'main' : 'branch',
+      parentBranchId: null,
+    });
+  });
+
   return [
-    createProject('PI Agent', [
-      createChat('Branch · RufusChat Fase 10', [createMessage('assistant', localIntroMessage)]),
-      createChat('RufusChat Fase 10', [createMessage('assistant', localIntroMessage)]),
-      createChat('RufusChat Fase 9', [createMessage('assistant', localIntroMessage)]),
-      createChat('Adjust · RufusChat UX', [createMessage('assistant', localIntroMessage)]),
-      createChat('RufusChat Fase 8', [createMessage('assistant', localIntroMessage)]),
-    ]),
-    createProject('CivilPlan', [createChat('CivilPlan', [createMessage('assistant', localIntroMessage)])]),
-    createProject('Wise', [createChat('Wise', [createMessage('assistant', localIntroMessage)])]),
-    createProject('CC Analysis', [createChat('CC Analysis', [createMessage('assistant', localIntroMessage)])]),
-    createProject('Hermes WSL2', [createChat('Hermes WSL2', [createMessage('assistant', localIntroMessage)])]),
+    piAgent,
+    createProjectWithInitialChat('CivilPlan', '', { source: 'seed', traceBirthKind: 'seed', branchSource: 'seed', branchKind: 'main' }),
+    createProjectWithInitialChat('Wise', '', { source: 'seed', traceBirthKind: 'seed', branchSource: 'seed', branchKind: 'main' }),
+    createProjectWithInitialChat('CC Analysis', '', { source: 'seed', traceBirthKind: 'seed', branchSource: 'seed', branchKind: 'main' }),
+    createProjectWithInitialChat('Hermes WSL2', '', { source: 'seed', traceBirthKind: 'seed', branchSource: 'seed', branchKind: 'main' }),
   ];
 }
+
 
 let state = {
   version: '0',
@@ -2755,27 +2777,36 @@ function uiChatFromProductChat(chat, projectIdFallback) {
     kind: normalizeChatKind(chat?.kind),
     createdAt: typeof chat?.createdAt === 'string' ? chat.createdAt : now,
     updatedAt: typeof chat?.updatedAt === 'string' ? chat.updatedAt : now,
+    branchId: typeof chat?.branchId === 'string' ? chat.branchId : null,
+    branchKind: chat?.branchKind === 'main' || chat?.branchKind === 'branch' ? chat.branchKind : null,
+    parentBranchId: typeof chat?.parentBranchId === 'string' ? chat.parentBranchId : null,
+    branchInitializationStatus: typeof chat?.branchInitializationStatus === 'string' ? chat.branchInitializationStatus : 'not_initialized',
+    branchReferenceAnchorId: typeof chat?.branchReferenceAnchorId === 'string' ? chat.branchReferenceAnchorId : null,
+    branchInitializationSource: typeof chat?.branchInitializationSource === 'string' ? chat.branchInitializationSource : null,
     memoryStatus: typeof chat?.memoryStatus === 'string' ? chat.memoryStatus : memoryPlaceholder.memoryStatus,
     semanticSummaryStatus: typeof chat?.semanticSummaryStatus === 'string' ? chat.semanticSummaryStatus : memoryPlaceholder.semanticSummaryStatus,
     semanticSummaryPreview: typeof chat?.semanticSummaryPreview === 'string' ? chat.semanticSummaryPreview : null,
-    linkedRckTraceStatus: typeof chat?.linkedRckTraceStatus === 'string' ? chat.linkedRckTraceStatus : linkedRckTrace.status,
+    linkedRckTraceStatus: typeof chat?.linkedRckTraceStatus === 'string' ? chat.linkedRckTraceStatus : memoryPlaceholder.linkedRckTraceStatus,
     linkedRckTraceId: sanitizeNullableString(chat?.linkedRckTraceId),
     linkedRckTrace,
-    injections: sanitizeChatInjectionHistory(chat?.injections),
-    checkpoints: sanitizeChatCheckpointHistory(chat?.checkpoints),
+    injections: sanitizeChatInjectionHistory(Array.isArray(chat?.injections) ? chat.injections : []),
+    checkpoints: sanitizeChatCheckpointHistory(Array.isArray(chat?.checkpoints) ? chat.checkpoints : []),
   });
 }
 
 function uiProjectFromProductProject(project) {
-  const now = nowIso();
-  const projectId = typeof project?.id === 'string' ? project.id : makeId('project');
-  const repositoryPath = normalizeRepositoryPath(project?.repositoryPath ?? project?.repoPath ?? '');
+  const projectId = typeof project?.id === 'string' ? project.id : undefined;
 
   return createProject(project?.name ?? 'New project', Array.isArray(project?.chats) ? project.chats.map((chat) => uiChatFromProductChat(chat, projectId)) : [], {
     id: projectId,
-    repositoryPath,
+    repositoryPath: normalizeRepositoryPath(project?.repositoryPath ?? project?.repoPath ?? ''),
     createdAt: typeof project?.createdAt === 'string' ? project.createdAt : now,
     updatedAt: typeof project?.updatedAt === 'string' ? project.updatedAt : now,
+    traceId: typeof project?.traceId === 'string' ? project.traceId : null,
+    traceInitializationStatus: typeof project?.traceInitializationStatus === 'string' ? project.traceInitializationStatus : 'not_initialized',
+    initialTraceAnchorId: typeof project?.initialTraceAnchorId === 'string' ? project.initialTraceAnchorId : null,
+    traceInitializationSource: typeof project?.traceInitializationSource === 'string' ? project.traceInitializationSource : null,
+    traceBirthKind: typeof project?.traceBirthKind === 'string' ? project.traceBirthKind : null,
   });
 }
 
@@ -2804,11 +2835,22 @@ function buildProductStatePayload() {
       id: project.id,
       name: project.name,
       repositoryPath: normalizeRepositoryPath(project.repositoryPath ?? project.repoPath ?? ''),
+      traceId: typeof project.traceId === 'string' ? project.traceId : null,
+      traceInitializationStatus: typeof project.traceInitializationStatus === 'string' ? project.traceInitializationStatus : 'not_initialized',
+      initialTraceAnchorId: typeof project.initialTraceAnchorId === 'string' ? project.initialTraceAnchorId : null,
+      traceInitializationSource: typeof project.traceInitializationSource === 'string' ? project.traceInitializationSource : null,
+      traceBirthKind: typeof project.traceBirthKind === 'string' ? project.traceBirthKind : null,
       chats: project.chats.map((chat) => ({
         id: chat.id,
         projectId: chat.projectId ?? project.id,
         title: chat.title,
         kind: normalizeChatKind(chat.kind),
+        branchId: typeof chat.branchId === 'string' ? chat.branchId : null,
+        branchKind: chat.branchKind === 'main' || chat.branchKind === 'branch' ? chat.branchKind : null,
+        parentBranchId: typeof chat.parentBranchId === 'string' ? chat.parentBranchId : null,
+        branchInitializationStatus: typeof chat.branchInitializationStatus === 'string' ? chat.branchInitializationStatus : 'not_initialized',
+        branchReferenceAnchorId: typeof chat.branchReferenceAnchorId === 'string' ? chat.branchReferenceAnchorId : null,
+        branchInitializationSource: typeof chat.branchInitializationSource === 'string' ? chat.branchInitializationSource : null,
         messages: chat.messages.map((message) => ({
           id: message.id ?? makeId('message'),
           role: message.role,
@@ -2926,7 +2968,7 @@ async function saveProductStateNow() {
 
 function applySelectionFallback({ persist = true } = {}) {
   if (state.projects.length === 0) {
-    const project = createDefaultProject();
+    const project = createDefaultProject({ source: 'fallback', traceBirthKind: 'fallback', branchSource: 'fallback' });
     state.projects.push(project);
     state.currentProjectId = project.id;
     state.currentChatId = project.chats[0]?.id ?? null;
@@ -2950,6 +2992,11 @@ function applySelectionFallback({ persist = true } = {}) {
   let changed = false;
   if (!chat) {
     chat = createEmptyChat('New chat', project.id);
+    applyBranchBirthPlaceholderToChat(chat, {
+      source: 'fallback',
+      branchKind: project.chats.length === 0 ? 'main' : 'branch',
+      parentBranchId: null,
+    });
     project.chats.push(chat);
     touchProject(project);
     changed = true;
@@ -3082,12 +3129,17 @@ function createDefaultChat() {
   return createEmptyChat('New chat');
 }
 
-function createDefaultProject() {
-  return createProject('RufusChat', [createDefaultChat()]);
+function createDefaultProject(options = {}) {
+  return createProjectWithInitialChat('RufusChat', '', {
+    source: options.source ?? 'seed',
+    traceBirthKind: options.traceBirthKind ?? options.source ?? 'seed',
+    branchSource: options.branchSource ?? options.source ?? 'seed',
+    branchKind: 'main',
+  });
 }
 
 function createResetProductStatePayload() {
-  const project = createDefaultProject();
+  const project = createDefaultProject({ source: 'reset', traceBirthKind: 'reset', branchSource: 'reset' });
   const timestamp = nowIso();
 
   return {
@@ -3475,8 +3527,15 @@ function openChatContextMenu(projectId, chatId, anchorEl) {
   );
 }
 
-function createChatInProject(project, title = 'New chat', messages = [createMessage('assistant', newChatAssistantMessage)]) {
+function createChatInProject(project, title = 'New chat', messages = [createMessage('assistant', newChatAssistantMessage)], options = {}) {
   const chat = createChat(title, messages, { projectId: project.id });
+  applyBranchBirthPlaceholderToChat(chat, {
+    source: options.source ?? 'ui-chat-create',
+    branchKind: options.branchKind ?? 'branch',
+    parentBranchId: options.parentBranchId ?? null,
+    branchId: options.branchId,
+    branchReferenceAnchorId: options.branchReferenceAnchorId,
+  });
   project.chats.push(chat);
   touchProject(project);
   return chat;
@@ -3510,15 +3569,104 @@ function getUniqueChatTitle(project, baseTitle = 'New chat') {
   return `${baseTitle} ${suffix}`;
 }
 
-function createProjectWithInitialChat(name, repositoryPath = '') {
-  return createProject(name, [createEmptyChat('New chat')], { repositoryPath });
+function createProjectWithInitialChat(name, repositoryPath = '', birth = {}) {
+  const project = createProject(name, [createEmptyChat('New chat')], { repositoryPath });
+  applyTraceBirthPlaceholderToProject(project, {
+    source: birth.source ?? 'ui-project-create',
+    traceBirthKind: birth.traceBirthKind ?? 'project',
+    traceId: birth.traceId,
+    initialTraceAnchorId: birth.initialTraceAnchorId,
+  });
+
+  const firstChat = project.chats[0];
+  if (firstChat) {
+    applyBranchBirthPlaceholderToChat(firstChat, {
+      source: birth.branchSource ?? birth.source ?? 'ui-project-create',
+      branchKind: birth.branchKind ?? 'main',
+      branchId: birth.branchId,
+      branchReferenceAnchorId: birth.branchReferenceAnchorId,
+      parentBranchId: null,
+    });
+  }
+
+  return project;
 }
 
-function selectProjectAndChat(projectId, chatId = null) {
-  setCurrentSelection(projectId, chatId ?? undefined);
+function buildTraceBirthPlaceholder({
+  projectId = null,
+  projectName = null,
+  source = 'ui-project-create',
+  traceBirthKind = 'project',
+  traceId = makeId('trace'),
+  initialTraceAnchorId = makeId('trace-anchor'),
+} = {}) {
+  void projectId;
+  void projectName;
+
+  return {
+    traceId,
+    traceInitializationStatus: 'placeholder',
+    initialTraceAnchorId,
+    traceInitializationSource: source,
+    traceBirthKind,
+  };
 }
 
-let createProjectDialogResolver = null;
+function applyTraceBirthPlaceholderToProject(project, options = {}) {
+  if (!project) {
+    return null;
+  }
+
+  Object.assign(
+    project,
+    buildTraceBirthPlaceholder({
+      projectId: project.id,
+      projectName: project.name,
+      ...options,
+    }),
+  );
+
+  return project;
+}
+
+function buildBranchBirthPlaceholder({
+  projectId = null,
+  chatId = null,
+  branchKind = 'branch',
+  parentBranchId = null,
+  source = 'ui-chat-create',
+  branchId = makeId('branch'),
+  branchReferenceAnchorId = makeId('branch-anchor'),
+} = {}) {
+  void projectId;
+  void chatId;
+
+  return {
+    branchId,
+    branchKind,
+    parentBranchId,
+    branchInitializationStatus: 'placeholder',
+    branchReferenceAnchorId,
+    branchInitializationSource: source,
+  };
+}
+
+function applyBranchBirthPlaceholderToChat(chat, options = {}) {
+  if (!chat) {
+    return null;
+  }
+
+  Object.assign(
+    chat,
+    buildBranchBirthPlaceholder({
+      projectId: chat.projectId,
+      chatId: chat.id,
+      ...options,
+    }),
+  );
+
+  return chat;
+}
 
 function openCreateProjectDialog() {
   if (!createProjectModal || !createProjectForm || !createProjectTitleInput || !createProjectRepositoryPathInput) {
@@ -3596,7 +3744,12 @@ async function createNewProject() {
     return;
   }
 
-  const project = createProjectWithInitialChat(details.projectName, details.repositoryPath);
+  const project = createProjectWithInitialChat(details.projectName, details.repositoryPath, {
+    source: 'ui-project-create',
+    traceBirthKind: 'project',
+    branchSource: 'ui-project-create',
+    branchKind: 'main',
+  });
   state.projects.push(project);
   markProductStateChanged();
   selectProjectAndChat(project.id, project.chats[0]?.id ?? null);
@@ -3626,7 +3779,11 @@ function createNewChatForProject(projectId) {
     return;
   }
 
-  const chat = createChatInProject(project, getUniqueChatTitle(project));
+  const chat = createChatInProject(project, getUniqueChatTitle(project), [createMessage('assistant', newChatAssistantMessage)], {
+    source: 'ui-chat-create',
+    branchKind: 'branch',
+    parentBranchId: null,
+  });
   selectProjectAndChat(project.id, chat.id);
 }
 

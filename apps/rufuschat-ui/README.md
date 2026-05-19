@@ -41,7 +41,7 @@ It is intentionally local-first in the browser shell. Phase 17 adds a backend LL
 - The Attach RCK Context flow now starts with a placeholder scope suggestion, converts approved scope into a placeholder generation request, and can also load a real ContextPack JSON preview manually.
 - Phase 25 adds the approved RCK context completion path: a confirmed injection can be included once in the next `/api/chat/complete` request, then it is consumed.
 - Phase 15A defines the execution boundary between RufusChat and the future RCK write-back adapter/service; boundary doc: [`RCK_WRITEBACK_EXECUTION_BOUNDARY.md`](./RCK_WRITEBACK_EXECUTION_BOUNDARY.md)
-- Phase 15B defines the trace initialization placeholder boundary for Project/Trace birth and Chat/Branch birth; doc: [`RCK_TRACE_INITIALIZATION_PLACEHOLDER.md`](./RCK_TRACE_INITIALIZATION_PLACEHOLDER.md)
+- Phase 15D defines the placeholder runtime for Project/Trace birth and Chat/Branch birth in the product state; doc: [`RCK_TRACE_INITIALIZATION_PLACEHOLDER.md`](./RCK_TRACE_INITIALIZATION_PLACEHOLDER.md)
 - Phase 15C2 defines the contract shapes for future Trace/Branch initialization runtime; doc: [`RCK_TRACE_BRANCH_CONTRACT_SHAPES.md`](./RCK_TRACE_BRANCH_CONTRACT_SHAPES.md)
 - Phase 26 defines the broader future write-back direction from a closed chat turn into RCK State / Delta traces; design doc: [`RCK_WRITEBACK_DESIGN.md`](./RCK_WRITEBACK_DESIGN.md)
 - Phase 27 adds the first adapter contract/stub for chat-turn write-back payloads; contract doc: [`RCK_WRITEBACK_ADAPTER_CONTRACT.md`](./RCK_WRITEBACK_ADAPTER_CONTRACT.md)

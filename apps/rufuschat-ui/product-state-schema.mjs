@@ -6,6 +6,10 @@ const allowedInjectionStatuses = new Set(['candidate', 'injected', 'cancelled', 
 const allowedInjectionSourceKinds = new Set(['placeholder', 'manual', 'rck', 'future']);
 const allowedCheckpointStatuses = new Set(['created', 'superseded', 'archived']);
 const allowedCheckpointSourceKinds = new Set(['product', 'manual', 'future-rck']);
+const allowedBirthLifecycleStatuses = new Set(['not_initialized', 'placeholder', 'ready_for_adapter', 'adapter_unavailable', 'adapter_error', 'registered']);
+const allowedBirthSourceTags = new Set(['ui-project-create', 'ui-chat-create', 'seed', 'reset', 'fallback', 'import']);
+const allowedTraceBirthKinds = new Set(['project', 'seed', 'reset', 'fallback', 'import']);
+const allowedBranchKinds = new Set(['main', 'branch']);
 
 export class ProductStateError extends Error {
   constructor(message, { code = 'PRODUCT_STATE_ERROR', issues = [], cause = undefined } = {}) {
@@ -48,6 +52,57 @@ function defaultLinkedRckTrace() {
     futureProvider: 'rck-core-kernel',
     mode: 'placeholder',
   };
+}
+
+function normalizeBirthLifecycleStatus(value, pathLabel, issues) {
+  if (typeof value === 'string' && allowedBirthLifecycleStatuses.has(value)) {
+    return value;
+  }
+
+  if (value !== undefined) {
+    issues.push(`${pathLabel} must be one of: not_initialized, placeholder, ready_for_adapter, adapter_unavailable, adapter_error, registered.`);
+  }
+
+  return 'not_initialized';
+}
+
+function normalizeNullableBirthSource(value, pathLabel, issues) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'string' && allowedBirthSourceTags.has(value)) {
+    return value;
+  }
+
+  issues.push(`${pathLabel} must be one of: ui-project-create, ui-chat-create, seed, reset, fallback, import, or null.`);
+  return null;
+}
+
+function normalizeNullableStringField(value, pathLabel, issues) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  issues.push(`${pathLabel} must be a string or null.`);
+  return null;
+}
+
+function normalizeNullableAllowedString(value, allowed, pathLabel, issues) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'string' && allowed.has(value)) {
+    return value;
+  }
+
+  issues.push(`${pathLabel} must be one of: ${[...allowed].join(', ')}, or null.`);
+  return null;
 }
 
 function normalizeLinkedRckTrace(input, pathLabel, now, issues) {
@@ -318,6 +373,12 @@ function normalizeChat(input, projectIndex, chatIndex, now, issues, projectIdFal
       messages: [],
       createdAt: now,
       updatedAt: now,
+      branchId: null,
+      branchKind: null,
+      parentBranchId: null,
+      branchInitializationStatus: 'not_initialized',
+      branchReferenceAnchorId: null,
+      branchInitializationSource: null,
       memoryStatus: 'not-linked',
       semanticSummaryStatus: 'not-generated',
       semanticSummaryPreview: null,
@@ -363,6 +424,12 @@ function normalizeChat(input, projectIndex, chatIndex, now, issues, projectIdFal
 
   chat.createdAt = normalizeTimestamp(chat.createdAt, now);
   chat.updatedAt = normalizeTimestamp(chat.updatedAt, now);
+  chat.branchId = normalizeNullableStringField(chat.branchId, `${pathLabel}.branchId`, issues);
+  chat.branchKind = normalizeNullableAllowedString(chat.branchKind, allowedBranchKinds, `${pathLabel}.branchKind`, issues);
+  chat.parentBranchId = normalizeNullableStringField(chat.parentBranchId, `${pathLabel}.parentBranchId`, issues);
+  chat.branchInitializationStatus = normalizeBirthLifecycleStatus(chat.branchInitializationStatus, `${pathLabel}.branchInitializationStatus`, issues);
+  chat.branchReferenceAnchorId = normalizeNullableStringField(chat.branchReferenceAnchorId, `${pathLabel}.branchReferenceAnchorId`, issues);
+  chat.branchInitializationSource = normalizeNullableBirthSource(chat.branchInitializationSource, `${pathLabel}.branchInitializationSource`, issues);
 
   chat.memoryStatus = typeof chat.memoryStatus === 'string' ? chat.memoryStatus : 'not-linked';
   chat.semanticSummaryStatus = typeof chat.semanticSummaryStatus === 'string' ? chat.semanticSummaryStatus : 'not-generated';
@@ -416,6 +483,11 @@ function normalizeProject(input, projectIndex, now, issues) {
       chats: [],
       createdAt: now,
       updatedAt: now,
+      traceId: null,
+      traceInitializationStatus: 'not_initialized',
+      initialTraceAnchorId: null,
+      traceInitializationSource: null,
+      traceBirthKind: null,
     };
   }
 
@@ -455,6 +527,11 @@ function normalizeProject(input, projectIndex, now, issues) {
   project.updatedAt = normalizeTimestamp(project.updatedAt, now);
   project.repositoryPath = normalizeRepositoryPath(rawRepositoryPath);
   project.repoPath = project.repositoryPath;
+  project.traceId = normalizeNullableStringField(project.traceId, `${pathLabel}.traceId`, issues);
+  project.traceInitializationStatus = normalizeBirthLifecycleStatus(project.traceInitializationStatus, `${pathLabel}.traceInitializationStatus`, issues);
+  project.initialTraceAnchorId = normalizeNullableStringField(project.initialTraceAnchorId, `${pathLabel}.initialTraceAnchorId`, issues);
+  project.traceInitializationSource = normalizeNullableBirthSource(project.traceInitializationSource, `${pathLabel}.traceInitializationSource`, issues);
+  project.traceBirthKind = normalizeNullableAllowedString(project.traceBirthKind, allowedTraceBirthKinds, `${pathLabel}.traceBirthKind`, issues);
   project.chats = project.chats.map((chat, chatIndex) => normalizeChat(chat, projectIndex, chatIndex, now, issues, project.id));
   return project;
 }
@@ -510,6 +587,10 @@ export function normalizeProductState(input, { now = nowIsoString() } = {}) {
 export function createProductStateSeed(now = nowIsoString()) {
   const projectId = 'project-root';
   const chatId = 'chat-root';
+  const traceId = 'trace-root';
+  const traceAnchorId = 'trace-anchor-root';
+  const branchId = 'branch-root';
+  const branchAnchorId = 'branch-anchor-root';
 
   return {
     version: '0',
@@ -519,6 +600,11 @@ export function createProductStateSeed(now = nowIsoString()) {
         name: 'RufusChat',
         repositoryPath: '',
         repoPath: '',
+        traceId,
+        traceInitializationStatus: 'placeholder',
+        initialTraceAnchorId: traceAnchorId,
+        traceInitializationSource: 'seed',
+        traceBirthKind: 'seed',
         chats: [
           {
             id: chatId,
@@ -528,6 +614,12 @@ export function createProductStateSeed(now = nowIsoString()) {
             messages: [],
             createdAt: now,
             updatedAt: now,
+            branchId,
+            branchKind: 'main',
+            parentBranchId: null,
+            branchInitializationStatus: 'placeholder',
+            branchReferenceAnchorId: branchAnchorId,
+            branchInitializationSource: 'seed',
             memoryStatus: 'not-linked',
             semanticSummaryStatus: 'not-generated',
             semanticSummaryPreview: null,

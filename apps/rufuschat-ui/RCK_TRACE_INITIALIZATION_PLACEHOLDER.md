@@ -8,7 +8,7 @@ Chat → Branch inside that Trace
 Chat turn → State + Delta inside the current Branch
 ```
 
-Es documentación y contrato conceptual. No conecta RCK Core real, no escribe `.rck`, no escribe `.data`, no muta el DAG RCK real y no introduce botones nuevos.
+Phase 15D now carries a minimal runtime placeholder for the Trace/Branch birth fields in the UI and persistence layer. It still does not connect RCK Core real, does not write `.rck`, does not write `.data` RCK, does not mutate the DAG RCK real, and does not introduce buttons nuevos.
 
 ## Modelo correcto
 

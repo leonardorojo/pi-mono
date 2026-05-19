@@ -5,8 +5,9 @@ This document closes the contract-shape layer for the future runtime initializat
 - Project → Trace
 - Chat → Branch
 
-It is documentation only.
-It does not implement runtime behavior, does not change persistence code, does not create anchors, and does not connect to real RCK Core.
+Phase 15D now implements the placeholder runtime for these shapes in RufusChat UI. The document remains the source contract, but the runtime now persists the placeholder birth fields described below.
+
+It does not connect to real RCK Core, does not create real anchors, and does not mutate any RCK DAG.
 
 ## Conceptual model
 
@@ -119,7 +120,7 @@ type BranchInitializationDraft = {
   chatId: string;
   branchKind: 'main' | 'branch';
   parentBranchId: string | null;
-  source: 'ui-chat-create' | 'seed' | 'reset' | 'fallback' | 'import';
+  source: 'ui-project-create' | 'ui-chat-create' | 'seed' | 'reset' | 'fallback' | 'import';
   branchInitializationStatus: 'not_initialized' | 'placeholder' | 'ready_for_adapter' | 'adapter_unavailable' | 'adapter_error' | 'registered';
   branchStartStatePayload: BranchStartStatePayload;
   branchReferenceAnchorDraft: BranchReferenceAnchorDraft;
@@ -138,7 +139,7 @@ type BranchStartStatePayload = {
   branchId: string | null;
   branchKind: 'main' | 'branch';
   parentBranchId: string | null;
-  source: 'ui-chat-create' | 'seed' | 'reset' | 'fallback' | 'import';
+  source: 'ui-project-create' | 'ui-chat-create' | 'seed' | 'reset' | 'fallback' | 'import';
   createdAt: string;
 };
 ```
@@ -153,7 +154,7 @@ type BranchReferenceAnchorDraft = {
   traceId: string | null;
   branchId: string | null;
   anchorId: string | null;
-  source: 'ui-chat-create' | 'seed' | 'reset' | 'fallback' | 'import';
+  source: 'ui-project-create' | 'ui-chat-create' | 'seed' | 'reset' | 'fallback' | 'import';
 };
 ```
 

@@ -5,6 +5,7 @@ It is intentionally still a POC, not a finished product.
 
 Current shape:
 
+- `rfs help` shows the available rfs commands
 - `rfs init` initializes a local Rufus workspace in the current repo
 - `rfs pi` opens Pi interactively without an initial prompt and passes through to the Pi TUI
 - `rfs ask` asks the LLM headlessly through Pi's auth/provider/model stack
@@ -19,6 +20,7 @@ Rufus USA Pi cuando conviene.
 
 Implemented commands:
 
+- `rfs help`
 - `rfs --version`
 - `rfs init`
 - `rfs pi [message]`
@@ -48,6 +50,17 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- --version
 ```
 
 This should print the current `rfs` version string.
+
+## Test `help`
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- help
+dotnet run --project tools/rfs/src/Rufus.Cli -- --help
+dotnet run --project tools/rfs/src/Rufus.Cli -- -h
+```
+
+`rfs help` shows the available rfs commands.
+The `--help` and `-h` aliases should show the same command surface.
 
 ## Test `init`
 

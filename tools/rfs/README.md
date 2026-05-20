@@ -3,21 +3,7 @@
 `rfs` is a small C#/.NET proof of concept for a Rufus CLI inside `pi-mono`.
 It is intentionally still a POC, not a finished product.
 
-Current shape:
-
-- `rfs help` shows the available rfs commands
-- `rfs init` initializes a local Rufus workspace in the current repo and seeds a local RCK DAG with a genesis State and Anchor
-- `rfs status` shows the local `.rfs` / RCK workspace state and Git context in read-only mode
-- `rfs pi` opens Pi interactively without an initial prompt and passes through to the Pi TUI
-- `rfs ask` asks the LLM headlessly through Pi's auth/provider/model stack
-- `rfs agent` runs a read-only headless agent with tools and streamed events
-
-`rfs` is still a POC. `rfs init` is only the workspace bootstrap layer for local metadata, not the full RCK surface.
-
-Rufus no ES Pi.
-Rufus USA Pi cuando conviene.
-
-## What exists today
+## Current shape
 
 Implemented commands:
 
@@ -27,15 +13,49 @@ Implemented commands:
 - `rfs status`
 - `rfs pi [message]`
 - `rfs ask <prompt>`
+- `rfs ask --record <prompt>`
 - `rfs agent <task>`
+- `rfs agent --record <task>`
 
-The implementation lives under `tools/rfs/`:
+High-level behavior:
 
-- `tools/rfs/Rufus.Cli.sln`
-- `tools/rfs/src/Rufus.Cli/Program.cs`
-- `tools/rfs/bridge/rfs-ask.mjs`
-- `tools/rfs/bridge/rfs-agent.mjs`
-- `tools/rfs/src/Rufus.Cli/Rufus.Cli.csproj`
+- `rfs init` initializes the local Rufus workspace and seeds the local RCK DAG with a genesis State and Anchor
+- `rfs ask` is headless prompt execution through Pi's auth/provider/model stack
+- `rfs ask --record` records the ask interaction into local RCK as State + Delta
+- `rfs agent` is the headless streaming agent path
+- `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
+- `rfs status` is read-only and reports workspace, RCK, and Git context
+
+`rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
+
+Rufus no ES Pi.
+Rufus USA Pi cuando conviene.
+
+## RCK workspace
+
+`.rfs/` is the local Rufus workspace.
+`.rfs/rck/` contains the local cognitive DAG workspace.
+
+Workspace layout:
+
+```text
+.rfs/
+  config.json
+  rck/
+    HEAD
+    states/
+    deltas/
+    anchors/
+```
+
+Meaning:
+
+- `.rfs/` is workspace-local Rufus state and is ignored by Git
+- `.rfs/config.json` stores local workspace configuration
+- `.rfs/rck/HEAD` points to the current State id
+- `.rfs/rck/states/` stores State JSON files
+- `.rfs/rck/deltas/` stores Delta JSON files
+- `.rfs/rck/anchors/` stores Anchor JSON files
 
 ## Build
 
@@ -68,10 +88,11 @@ The `--help` and `-h` aliases should show the same command surface.
 
 ```bash
 dotnet run --project tools/rfs/src/Rufus.Cli -- init
+dotnet run --project tools/rfs/src/Rufus.Cli -- init
 ```
 
-`rfs init` initializes a local Rufus workspace in the current repository.
-It looks upward from the current directory for the repo root by finding `.git`, then creates `.rfs/` there.
+`rfs init` initializes `.rfs/` in the current repository.
+It looks upward from the current directory for the repo root by finding `.git`, then creates the workspace there.
 
 What it creates:
 
@@ -80,14 +101,8 @@ What it creates:
 - `.rfs/rck/states/`
 - `.rfs/rck/deltas/`
 - `.rfs/rck/anchors/`
-
-What it does not do yet:
-
-- create a README inside `.rfs/`
-- create sessions
-- create traces
-- create cache
-- implement RCK storage beyond the genesis files
+- a genesis State
+- a genesis Anchor
 
 Behavior:
 
@@ -95,48 +110,6 @@ Behavior:
 - if `.rfs/` already exists, it does not fail
 - if `.rfs/config.json` already exists, it does not overwrite it
 - safe to run multiple times
-
-`.rfs/` is workspace-local Rufus state.
-It should be ignored by git and is not the same thing as RCK.
-
-Suggested validation:
-
-```bash
-dotnet run --project tools/rfs/src/Rufus.Cli -- init
-dotnet run --project tools/rfs/src/Rufus.Cli -- init
-cat .rfs/config.json
-```
-
-## Test `status`
-
-```bash
-dotnet run --project tools/rfs/src/Rufus.Cli -- status
-```
-
-`rfs status` is read-only.
-It reports whether `.rfs/` and `.rfs/rck/` exist, the current `HEAD`, the counts of JSON files in `states/`, `deltas/`, and `anchors/`, plus the current Git branch, commit, and dirty flag.
-
-It does not create, modify, or delete any files.
-
-## Test `pi`
-
-```bash
-dotnet run --project tools/rfs/src/Rufus.Cli -- pi
-```
-
-`rfs pi` is an interactive passthrough to Pi.
-Pi owns the terminal once it starts, so this mode should be validated in a foreground terminal or PTY.
-
-If you pass a message, it is forwarded to Pi:
-
-```bash
-dotnet run --project tools/rfs/src/Rufus.Cli -- pi "hello from rfs"
-```
-
-Validation note:
-
-- do not try to prove this mode by background-capturing stdout/stderr
-- the expected behavior is interactive terminal ownership, not captured text output
 
 ## Test `ask`
 
@@ -154,7 +127,28 @@ It uses the Node helper at `tools/rfs/bridge/rfs-ask.mjs` to talk to Pi's AI lay
 - Pi's configured provider/model
 - Pi's streaming AI layer
 
-That means `rfs` is not inventing its own agent stack here; it is leaning on Pi's configured runtime.
+## Test `ask --record`
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- ask --record "Respond in one short sentence: what is RCK?"
+```
+
+`rfs ask --record` executes the headless ask flow and records the interaction into local RCK.
+
+Recording shape:
+
+- previous State + Delta -> next State
+- updates `.rfs/rck/HEAD`
+- captures the Git context in the State payload as material context
+- does not record anything unless `--record` is present
+
+Minimum payload shape includes:
+
+- mode
+- prompt
+- answer / answerSummary
+- git context
+- artifacts []
 
 ## Test `agent`
 
@@ -185,54 +179,66 @@ Implementation note:
 
 - `toolExecution` is currently sequential to keep the POC output legible
 
-A raw/debug event mode may return later as JSONL, but it is not exposed in this POC.
+## Test `agent --record`
 
-Security and confinement:
-
-- read-only
-- repo-root confined
-- no file edits
-- no access outside the checkout
-
-## Difference between `pi`, `ask`, and `agent`
-
-```text
-rfs init
-  initializes .rfs/ workspace local
-
-rfs pi
-  opens Pi interactively
-
-rfs ask
-  asks the LLM headlessly through Pi's auth/provider stack
-
-rfs agent
-  runs a headless read-only agent with tools and streaming
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- agent --record "inspect tools/rfs"
 ```
 
-- `pi` is for interactive use.
-- `ask` is for one-shot text answers.
-- `agent` is for repository inspection and evidence gathering.
+`rfs agent --record` executes the headless streaming agent and records the interaction into local RCK.
+
+Recording behavior:
+
+- records a full interaction as State + Delta
+- captures basic tools from the streamed events
+- updates `.rfs/rck/HEAD`
+- does not record anything unless `--record` is present
+
+## Anchor `git-commit:<hash>`
+
+When a recorded interaction detects that the current Git commit differs from the commit stored in the previous State, `rfs` creates an Anchor:
+
+- `git-commit:<short-hash>`
+
+Important boundary:
+
+- `rfs` does not assume it created the commit
+- it only detects that Git HEAD changed between recorded States
+- the Git commit is stored in the State payload as material context
+
+## Test `status`
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- status
+```
+
+`rfs status` is read-only.
+It reports:
+
+- initialized
+- root
+- HEAD
+- states count
+- deltas count
+- anchors count
+- Git branch
+- Git commit
+- dirty
+
+It does not create, modify, or delete any files.
 
 ## Current limitations
 
-This is still a minimal POC.
+Still not present:
 
-Not present yet:
-
-- `.rfs/` workspace beyond `config.json`
-- persisted sessions
-- multi-turn history
-- traces
+- `rfs pi` recording
+- `rfs log`
+- sessions
 - `TraceSlice`
-- `rfs record`
-- cache
-- RCK integration
-- formal Hermes/Codex integration
-- packaging as a `dotnet tool`
-- no writes / no editing from `rfs agent`
-- no JSONL event format yet
-- no explicit model selection from `rfs agent` yet
+- cognitive branch/merge workflows
+- complex artifact hashing
+- DAG navigation commands
+- automatic recording without `--record`
 - production-grade command routing or lifecycle management
 
 `ask` is only as good as the Pi configuration underneath it.
@@ -287,8 +293,8 @@ It should stay small and focused on base DAG concepts:
 - CLI formatting
 - dependencies on Pi, Node, agents, or `Rufus.Cli`
 
-If higher-level behavior is needed, it should live in a separate layer, preferably a future `tools/rfs/src/Rufus.RCK.Workspace/` project.
-That layer can own `.rfs/` layout, workspace persistence, Git context capture, interactivity mapping, and future commit-aware anchors such as `git-commit:<hash>`.
+If higher-level behavior is needed, it should live in a separate layer, preferably `tools/rfs/src/Rufus.RCK.Workspace/`.
+That layer owns `.rfs/` layout, workspace persistence, Git context capture, interactivity mapping, and future commit-aware anchors such as `git-commit:<hash>`.
 
 Dependency rule:
 

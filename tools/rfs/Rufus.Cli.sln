@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rufus.Cli", "src\Rufus.Cli\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rufus.RCK.Core", "src\Rufus.RCK.Core\Rufus.RCK.Core.csproj", "{D3CD09AD-4326-47A9-999C-D985678E6D33}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rufus.RCK.Workspace", "src\Rufus.RCK.Workspace\Rufus.RCK.Workspace.csproj", "{A70F2752-3E7A-406A-83FC-9498B1EAC0CB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +28,14 @@ Global
 		{D3CD09AD-4326-47A9-999C-D985678E6D33}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D3CD09AD-4326-47A9-999C-D985678E6D33}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D3CD09AD-4326-47A9-999C-D985678E6D33}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A70F2752-3E7A-406A-83FC-9498B1EAC0CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A70F2752-3E7A-406A-83FC-9498B1EAC0CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A70F2752-3E7A-406A-83FC-9498B1EAC0CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A70F2752-3E7A-406A-83FC-9498B1EAC0CB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{2DFFF60B-FF40-4D47-B39A-8A34E6B2CAC1} = {9FD4FF85-E129-41F7-AD40-83FC2023307C}
 		{D3CD09AD-4326-47A9-999C-D985678E6D33} = {9FD4FF85-E129-41F7-AD40-83FC2023307C}
+		{A70F2752-3E7A-406A-83FC-9498B1EAC0CB} = {9FD4FF85-E129-41F7-AD40-83FC2023307C}
 	EndGlobalSection
 EndGlobal

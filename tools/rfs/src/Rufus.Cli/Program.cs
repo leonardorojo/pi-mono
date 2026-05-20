@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Rufus.RCK.Core.Model;
+using Rufus.RCK.Workspace;
 
 if (args.Length == 0 || IsHelpCommand(args[0]))
 {
@@ -18,7 +18,13 @@ if (args[0] == "--version")
 
 if (args[0] == "init")
 {
-    return InitializeWorkspace();
+    var initResult = RckWorkspaceInitializer.Initialize();
+    foreach (var line in initResult.FormatConsoleLines())
+    {
+        Console.WriteLine(line);
+    }
+
+    return initResult.Success ? 0 : 1;
 }
 
 if (args[0] == "pi")
@@ -518,235 +524,6 @@ static bool IsHelpCommand(string command)
 {
     return command is "help" or "--help" or "-h";
 }
-
-static int InitializeWorkspace()
-{
-    var repoRoot = FindRepoRoot();
-    if (repoRoot is null)
-    {
-        Console.Error.WriteLine("rfs init: repository root not found.");
-        return 1;
-    }
-
-    var workspaceDirectory = Path.Combine(repoRoot, ".rfs");
-    var rckDirectory = Path.Combine(workspaceDirectory, "rck");
-    var statesDirectory = Path.Combine(rckDirectory, "states");
-    var deltasDirectory = Path.Combine(rckDirectory, "deltas");
-    var anchorsDirectory = Path.Combine(rckDirectory, "anchors");
-
-    Directory.CreateDirectory(workspaceDirectory);
-    Directory.CreateDirectory(rckDirectory);
-    Directory.CreateDirectory(statesDirectory);
-    Directory.CreateDirectory(deltasDirectory);
-    Directory.CreateDirectory(anchorsDirectory);
-
-    var configPath = Path.Combine(workspaceDirectory, "config.json");
-    if (!File.Exists(configPath))
-    {
-        const string configContent = "{\n  \"schemaVersion\": 1,\n  \"type\": \"rufus.workspace\",\n  \"createdBy\": \"rfs init\"\n}\n";
-        File.WriteAllText(configPath, configContent, new UTF8Encoding(false));
-        Console.WriteLine($"Initialized {configPath}");
-    }
-    else
-    {
-        Console.WriteLine($"{configPath} already exists");
-    }
-
-    var gitInfo = CaptureGitInfo(repoRoot);
-    var workspaceName = Path.GetFileName(Path.TrimEndingDirectorySeparator(repoRoot));
-    var statePayload = BuildInitialStatePayload(repoRoot, workspaceName, gitInfo);
-    var state = RckState.Create(
-        statePayload,
-        meta: new RckStateMeta(DateTimeOffset.UtcNow, "rfs init", "genesis", "initial rfs workspace state"));
-
-    var statePath = Path.Combine(statesDirectory, $"{state.Id}.json");
-    if (!File.Exists(statePath))
-    {
-        File.WriteAllText(statePath, SerializeStateEnvelope(state), new UTF8Encoding(false));
-        Console.WriteLine($"Initialized {statePath}");
-        Console.WriteLine($"  state id: {state.Id}");
-    }
-    else
-    {
-        Console.WriteLine($"{statePath} already exists");
-    }
-
-    var anchor = RckAnchor.Create(
-        state.Id,
-        meta: new RckAnchorMeta(DateTimeOffset.UtcNow, "rfs init", "genesis", "initial rfs workspace anchor"));
-
-    var anchorPath = Path.Combine(anchorsDirectory, $"{anchor.Id}.json");
-    if (!File.Exists(anchorPath))
-    {
-        File.WriteAllText(anchorPath, SerializeAnchorEnvelope(anchor), new UTF8Encoding(false));
-        Console.WriteLine($"Initialized {anchorPath}");
-        Console.WriteLine($"  anchor id: {anchor.Id}");
-    }
-    else
-    {
-        Console.WriteLine($"{anchorPath} already exists");
-    }
-
-    return 0;
-}
-
-static (string? Branch, string? Commit, bool Dirty) CaptureGitInfo(string repoRoot)
-{
-    var branch = RunGit(repoRoot, "rev-parse", "--abbrev-ref", "HEAD");
-    if (string.Equals(branch, "HEAD", StringComparison.Ordinal))
-    {
-        branch = null;
-    }
-
-    var commit = RunGit(repoRoot, "rev-parse", "HEAD");
-    var dirtyStatus = RunGit(repoRoot, "status", "--porcelain") ?? string.Empty;
-    var dirty = !string.IsNullOrWhiteSpace(dirtyStatus);
-
-    return (branch, commit, dirty);
-}
-
-static string BuildInitialStatePayload(string repoRoot, string workspaceName, (string? Branch, string? Commit, bool Dirty) gitInfo)
-{
-    var payload = new
-    {
-        type = "rufus.initial-state",
-        schemaVersion = 1,
-        workspace = new
-        {
-            type = "rufus.workspace",
-            root = repoRoot,
-            name = workspaceName,
-        },
-        git = new
-        {
-            branch = gitInfo.Branch,
-            commit = gitInfo.Commit,
-            dirty = gitInfo.Dirty,
-        },
-        rfs = new
-        {
-            initializedBy = "rfs init",
-        },
-    };
-
-    return JsonSerializer.Serialize(payload);
-}
-
-static string SerializeStateEnvelope(RckState state)
-{
-    var envelope = new
-    {
-        schemaVersion = 1,
-        type = "rufus.rck.state",
-        id = state.Id.ToString(),
-        payloadCanonicalJson = state.PayloadCanonicalJson,
-        refs = state.Refs.Select(SerializeRckRef).ToArray(),
-        meta = new
-        {
-            createdAtUtc = state.Meta.CreatedAtUtc,
-            state.Meta.CreatedBy,
-            state.Meta.Label,
-            state.Meta.Reason,
-        },
-    };
-
-    return JsonSerializer.Serialize(envelope, new JsonSerializerOptions { WriteIndented = true });
-}
-
-static string SerializeAnchorEnvelope(RckAnchor anchor)
-{
-    var envelope = new
-    {
-        schemaVersion = 1,
-        type = "rufus.rck.anchor",
-        id = anchor.Id.ToString(),
-        stateId = anchor.StateId.ToString(),
-        parentAnchorIds = anchor.ParentAnchorIds.Select(parent => parent.ToString()).ToArray(),
-        meta = new
-        {
-            createdAtUtc = anchor.Meta.CreatedAtUtc,
-            anchor.Meta.CreatedBy,
-            anchor.Meta.Label,
-            anchor.Meta.Reason,
-        },
-    };
-
-    return JsonSerializer.Serialize(envelope, new JsonSerializerOptions { WriteIndented = true });
-}
-
-static object SerializeRckRef(RckRef rckRef)
-{
-    return new
-    {
-        rckRef.Id,
-        rckRef.Kind,
-        uri = rckRef.Uri.ToString(),
-        hash = rckRef.Hash?.Value,
-        mediaType = rckRef.MediaType,
-        meta = rckRef.Meta is null
-            ? null
-            : new
-            {
-                createdAtUtc = rckRef.Meta.CreatedAtUtc,
-                rckRef.Meta.CreatedBy,
-                rckRef.Meta.Label,
-                rckRef.Meta.Reason,
-            },
-    };
-}
-
-static string? RunGit(string workingDirectory, params string[] arguments)
-{
-    var psi = new ProcessStartInfo
-    {
-        FileName = "git",
-        UseShellExecute = false,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        WorkingDirectory = workingDirectory,
-    };
-
-    foreach (var argument in arguments)
-    {
-        psi.ArgumentList.Add(argument);
-    }
-
-    using var process = Process.Start(psi);
-    if (process is null)
-    {
-        return null;
-    }
-
-    var output = process.StandardOutput.ReadToEnd();
-    _ = process.StandardError.ReadToEnd();
-    process.WaitForExit();
-
-    if (process.ExitCode != 0)
-    {
-        return null;
-    }
-
-    return output.Trim();
-}
-
-static string? FindRepoRoot()
-{
-    var current = new DirectoryInfo(Directory.GetCurrentDirectory());
-
-    while (current is not null)
-    {
-        var gitEntry = Path.Combine(current.FullName, ".git");
-        if (Directory.Exists(gitEntry) || File.Exists(gitEntry))
-        {
-            return current.FullName;
-        }
-
-        current = current.Parent;
-    }
-
-    return null;
-}
-
 static string? FindRepoFile(string relativePath)
 {
     var currentDirectory = Directory.GetCurrentDirectory();

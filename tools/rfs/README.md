@@ -7,6 +7,7 @@ Current shape:
 
 - `rfs help` shows the available rfs commands
 - `rfs init` initializes a local Rufus workspace in the current repo and seeds a local RCK DAG with a genesis State and Anchor
+- `rfs status` shows the local `.rfs` / RCK workspace state and Git context in read-only mode
 - `rfs pi` opens Pi interactively without an initial prompt and passes through to the Pi TUI
 - `rfs ask` asks the LLM headlessly through Pi's auth/provider/model stack
 - `rfs agent` runs a read-only headless agent with tools and streamed events
@@ -23,6 +24,7 @@ Implemented commands:
 - `rfs help`
 - `rfs --version`
 - `rfs init`
+- `rfs status`
 - `rfs pi [message]`
 - `rfs ask <prompt>`
 - `rfs agent <task>`
@@ -74,6 +76,7 @@ It looks upward from the current directory for the repo root by finding `.git`, 
 What it creates:
 
 - `.rfs/config.json`
+- `.rfs/rck/HEAD`
 - `.rfs/rck/states/`
 - `.rfs/rck/deltas/`
 - `.rfs/rck/anchors/`
@@ -103,6 +106,17 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- init
 dotnet run --project tools/rfs/src/Rufus.Cli -- init
 cat .rfs/config.json
 ```
+
+## Test `status`
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- status
+```
+
+`rfs status` is read-only.
+It reports whether `.rfs/` and `.rfs/rck/` exist, the current `HEAD`, the counts of JSON files in `states/`, `deltas/`, and `anchors/`, plus the current Git branch, commit, and dirty flag.
+
+It does not create, modify, or delete any files.
 
 ## Test `pi`
 

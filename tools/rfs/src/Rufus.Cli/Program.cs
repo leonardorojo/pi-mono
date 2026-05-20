@@ -16,6 +16,25 @@ if (args[0] == "--version")
     return 0;
 }
 
+if (args[0] == "status")
+{
+    try
+    {
+        var status = RckWorkspaceStatusReader.Read();
+        foreach (var line in status.FormatConsoleLines())
+        {
+            Console.WriteLine(line);
+        }
+
+        return 0;
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
 if (args[0] == "init")
 {
     var initResult = RckWorkspaceInitializer.Initialize();
@@ -597,6 +616,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs --version");
     Console.WriteLine("  rfs help");
     Console.WriteLine("  rfs init   = bootstrap .rfs + RCK genesis state/anchor");
+    Console.WriteLine("  rfs status = show local rfs/RCK workspace status");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");

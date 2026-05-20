@@ -1,25 +1,30 @@
 # Rufus CLI (`rfs`) POC
 
-`rfs` is a minimal C#/.NET proof of concept for a Rufus CLI inside `pi-mono`.
+`rfs` is a small C#/.NET proof of concept for a Rufus CLI inside `pi-mono`.
+It is intentionally still a POC, not a finished product.
 
-At this stage, `rfs` is not a full agent and does not implement Rufus governance yet. It only proves that a C# CLI can act as an entry point to Pi.
+Current shape:
 
-## Current scope
+- `rfs pi` opens Pi interactively and passes through to the Pi TUI
+- `rfs ask` asks the LLM headlessly through Pi's auth/provider/model stack
 
-Implemented:
+Rufus no ES Pi.
+Rufus USA Pi cuando conviene.
+
+## What exists today
+
+Implemented commands:
 
 - `rfs --version`
-- `rfs pi "message"`
+- `rfs pi <message>`
+- `rfs ask <prompt>`
 
-Not implemented yet:
+The implementation lives under `tools/rfs/`:
 
-- `.rufus/` workspace
-- configuration files
-- engine adapters
-- RCK integration
-- Codex/Hermes integration
-- packaging as a `dotnet tool`
-- non-interactive execution mode
+- `tools/rfs/Rufus.Cli.sln`
+- `tools/rfs/src/Rufus.Cli/Program.cs`
+- `tools/rfs/bridge/rfs-ask.mjs`
+- `tools/rfs/src/Rufus.Cli/Rufus.Cli.csproj`
 
 ## Build
 
@@ -29,91 +34,82 @@ From the repository root:
 dotnet build tools/rfs/Rufus.Cli.sln
 ```
 
-## Version
+## Test `--version`
 
 ```bash
 dotnet run --project tools/rfs/src/Rufus.Cli -- --version
 ```
 
-Expected output:
+This should print the current `rfs` version string.
 
-```text
-rfs 0.0.1-poc
-```
-
-## Run Pi through rfs
+## Test `pi`
 
 ```bash
 dotnet run --project tools/rfs/src/Rufus.Cli -- pi "hello from rfs"
 ```
 
-This launches Pi as an external process and passes the initial message to it.
+`rfs pi` is an interactive passthrough to Pi.
+Pi owns the terminal once it starts, so this mode should be validated in a foreground terminal or PTY.
 
-## Ask the LLM through Pi auth/provider
+Validation note:
+
+- do not try to prove this mode by background-capturing stdout/stderr
+- the expected behavior is interactive terminal ownership, not captured text output
+
+## Test `ask`
 
 ```bash
-dotnet run --project tools/rfs/src/Rufus.Cli -- ask "hello from rfs ask"
+dotnet run --project tools/rfs/src/Rufus.Cli -- ask "Respond in one short sentence: what is Rufus CLI?"
 ```
 
-This calls a minimal Node helper that reuses Pi's configured provider, model, and auth to talk to the LLM without opening the Pi TUI.
+`rfs ask` is headless.
+It uses the Node helper at `tools/rfs/bridge/rfs-ask.mjs` to talk to Pi's AI layer without opening the Pi TUI.
 
-This is still a POC. It does not add Rufus sessions, history, RCK, or a Rufus workspace yet.
+`ask` reuses Pi's existing auth/provider/model setup:
 
-## Interactive passthrough behavior
+- `~/.pi/agent/settings.json`
+- `~/.pi/agent/auth.json`
+- Pi's configured provider/model
+- Pi's streaming AI layer
 
-`rfs pi` is currently an interactive passthrough command.
+That means `rfs` is not inventing its own agent stack here; it is leaning on Pi's configured runtime.
 
-Conceptually:
+## Difference between `pi` and `ask`
 
 ```text
-shell -> dotnet run -> Rufus.Cli -> pi
+rfs pi
+  opens Pi interactively
+
+rfs ask
+  asks the LLM headlessly through Pi's auth/provider stack
 ```
 
-instead of:
+`pi` is for interactive use.
+`ask` is for one-shot text answers.
 
-```text
-shell -> pi
-```
+## Current limitations
 
-Once Pi starts, Pi owns the terminal UI.
+This is still a minimal POC.
 
-This means:
+Not present yet:
 
-- stdin/stdout/stderr are not captured by `rfs`
-- Pi runs in the foreground
-- the user can continue interacting with Pi normally
-- when Pi exits, control returns to `rfs` and then to the shell
-- `rfs` returns Pi's exit code
+- `.rufus/` workspace
+- persisted sessions
+- multi-turn history
+- RCK integration
+- formal Hermes/Codex integration
+- packaging as a `dotnet tool`
+- a dedicated Rufus agent runtime
+- production-grade command routing or lifecycle management
 
-## Validation note
+`ask` is only as good as the Pi configuration underneath it.
+If Pi is not configured or authenticated, `ask` will fail the same way Pi would.
 
-Because Pi is a TUI/interactive application, `rfs pi` should be validated in a foreground terminal/PTY.
-
-Do not validate this mode by capturing stdout/stderr in background, because that changes the terminal behavior and may make Pi appear stuck.
-
-## Current limitation
-
-There is no separate non-interactive execution mode yet.
-
-A future command could distinguish between:
-
-```bash
-rfs pi "message"
-```
-
-for interactive passthrough, and something like:
-
-```bash
-rfs pi exec "message"
-```
-
-for capturable/automation-friendly execution.
-
-This is intentionally not implemented in this POC.
-
-## Design principle
+## Conceptual boundary
 
 ```text
 Rufus does not have to be Pi.
 Rufus can use Pi when useful.
 ```
+
+That is the current design center for this POC.

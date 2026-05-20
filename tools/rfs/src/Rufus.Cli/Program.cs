@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 
 if (args.Length == 0)
 {
@@ -67,7 +66,6 @@ if (args[0] == "agent")
     }
 
     var task = string.Join(" ", agentArgs).Trim();
-    var preferredPath = InferPreferredPath(task);
 
     if (string.IsNullOrWhiteSpace(task))
     {
@@ -137,49 +135,22 @@ if (args[0] == "agent")
         return process.ExitCode;
     }
 
-    var capturedLines = new List<(bool IsError, string Text)>();
-    var captureGate = new object();
-    var currentActionLabel = string.Empty;
-    var currentActionVisible = false;
-    var answerLines = new List<string>();
-
-    process.OutputDataReceived += (_, eventArgs) =>
+    void WriteOutLine(string text)
     {
-        if (eventArgs.Data is null)
-        {
-            return;
-        }
+        Console.Out.WriteLine(text);
+        Console.Out.Flush();
+    }
 
-        lock (captureGate)
-        {
-            capturedLines.Add((false, eventArgs.Data));
-        }
-    };
-
-    process.ErrorDataReceived += (_, eventArgs) =>
+    void WriteOut(string text)
     {
-        if (eventArgs.Data is null)
-        {
-            return;
-        }
+        Console.Out.Write(text);
+        Console.Out.Flush();
+    }
 
-        lock (captureGate)
-        {
-            capturedLines.Add((true, eventArgs.Data));
-        }
-    };
-
-    process.BeginOutputReadLine();
-    process.BeginErrorReadLine();
-    await process.WaitForExitAsync();
-    process.WaitForExit();
-
-    void AppendAnswer(string text)
+    void WriteErrorLine(string text)
     {
-        if (!string.IsNullOrWhiteSpace(text))
-        {
-            answerLines.Add(text);
-        }
+        Console.Error.WriteLine(text);
+        Console.Error.Flush();
     }
 
     string? ExtractToolPath(string details)
@@ -207,22 +178,6 @@ if (args[0] == "agent")
         return null;
     }
 
-    bool ShouldRenderAction(string details)
-    {
-        if (string.IsNullOrWhiteSpace(preferredPath))
-        {
-            return true;
-        }
-
-        var toolPath = ExtractToolPath(details);
-        if (string.IsNullOrWhiteSpace(toolPath))
-        {
-            return true;
-        }
-
-        return toolPath == preferredPath || toolPath.StartsWith($"{preferredPath}/", StringComparison.Ordinal);
-    }
-
     string FormatToolLabel(string details)
     {
         if (string.IsNullOrWhiteSpace(details))
@@ -247,102 +202,208 @@ if (args[0] == "agent")
         return details;
     }
 
-    void PrintActionStart(string details)
+    string FormatStartLabel(string toolName, string details)
     {
-        currentActionLabel = FormatToolLabel(details);
-        currentActionVisible = ShouldRenderAction(details);
-
-        if (currentActionVisible)
-        {
-            Console.WriteLine($"→ {currentActionLabel}");
-        }
+        var labelInput = string.IsNullOrWhiteSpace(details) ? toolName : $"{toolName} {details}";
+        return FormatToolLabel(labelInput);
     }
 
-    void PrintActionEnd(string details)
+    void PrintHeader()
     {
-        if (!currentActionVisible)
+        WriteOutLine("Rufus Agent");
+        WriteOutLine("───────────");
+        WriteOutLine("Task");
+        WriteOutLine(task);
+        WriteOutLine("Mode: headless, read-only");
+        WriteOutLine("Scope: repository root");
+        WriteOutLine(string.Empty);
+        WriteOutLine("Actions");
+        WriteOutLine("───────────");
+    }
+
+    void PrintAnswerHeader()
+    {
+        WriteOutLine(string.Empty);
+        WriteOutLine("Answer");
+        WriteOutLine("────────────────────────────────────────────");
+    }
+
+    var labelsById = new Dictionary<string, string>(StringComparer.Ordinal);
+    var answerHeaderPrinted = false;
+    var assistantPrinted = false;
+    var assistantLineOpen = false;
+    var streamGate = new object();
+
+    PrintHeader();
+
+    void HandleAssistantLine(string payload)
+    {
+        if (!answerHeaderPrinted)
         {
-            currentActionLabel = string.Empty;
+            PrintAnswerHeader();
+            answerHeaderPrinted = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(payload))
+        {
             return;
         }
 
-        var label = string.IsNullOrWhiteSpace(currentActionLabel) ? FormatToolLabel(details) : currentActionLabel;
-        Console.WriteLine($"✓ {label}");
+        assistantPrinted = true;
+        if (!assistantLineOpen)
+        {
+            WriteOut("[assistant] ");
+            assistantLineOpen = true;
+        }
 
-        var summary = string.IsNullOrWhiteSpace(details) ? string.Empty : details;
+        WriteOut(payload);
+    }
+
+    void HandleToolStart(string payload)
+    {
+        var parts = payload.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            WriteOutLine($"→ {payload}");
+            return;
+        }
+
+        var toolCallId = parts[0].StartsWith("id=", StringComparison.Ordinal) ? parts[0]["id=".Length..] : string.Empty;
+        var toolName = parts[1].StartsWith("name=", StringComparison.Ordinal) ? parts[1]["name=".Length..] : parts[0];
+        var details = parts.Length > 2 ? parts[2] : string.Empty;
+        var label = FormatStartLabel(toolName, details);
+
+        lock (streamGate)
+        {
+            if (!string.IsNullOrWhiteSpace(toolCallId))
+            {
+                labelsById[toolCallId] = label;
+            }
+        }
+
+        WriteOutLine($"→ {label}");
+    }
+
+    void HandleToolEnd(string payload)
+    {
+        var parts = payload.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            WriteOutLine($"✓ {payload}");
+            return;
+        }
+
+        var toolCallId = parts[0].StartsWith("id=", StringComparison.Ordinal) ? parts[0]["id=".Length..] : string.Empty;
+        var toolName = parts[1].StartsWith("name=", StringComparison.Ordinal) ? parts[1]["name=".Length..] : parts[0];
+        var summary = parts.Length > 2 ? parts[2] : string.Empty;
+        var label = string.Empty;
+
+        lock (streamGate)
+        {
+            if (!string.IsNullOrWhiteSpace(toolCallId) && labelsById.TryGetValue(toolCallId, out var storedLabel))
+            {
+                label = storedLabel;
+                labelsById.Remove(toolCallId);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            label = FormatStartLabel(toolName, summary);
+        }
+
+        WriteOutLine($"✓ {label}");
         if (!string.IsNullOrWhiteSpace(summary) && summary != label)
         {
-            Console.WriteLine($"  {summary}");
+            WriteOutLine($"  {summary}");
         }
-
-        currentActionLabel = string.Empty;
-        currentActionVisible = false;
     }
 
-    Console.WriteLine("Rufus Agent");
-    Console.WriteLine("───────────");
-    Console.WriteLine("Task");
-    Console.WriteLine(task);
-    Console.WriteLine("Mode: headless, read-only");
-    Console.WriteLine("Scope: repository root");
-    Console.WriteLine();
-    Console.WriteLine("Actions");
-    Console.WriteLine("───────────");
-
-    foreach (var (isError, text) in capturedLines)
+    async Task PumpOutputAsync()
     {
-        var trimmedText = text.Trim();
-
-        if (trimmedText.StartsWith("[agent:start]", StringComparison.Ordinal))
+        while (true)
         {
-            continue;
-        }
+            var line = await process.StandardOutput.ReadLineAsync();
+            if (line is null)
+            {
+                break;
+            }
 
-        if (trimmedText.StartsWith("[tool:start]", StringComparison.Ordinal))
-        {
-            PrintActionStart(trimmedText["[tool:start]".Length..].Trim());
-            continue;
-        }
+            if (line.StartsWith("[agent:start]", StringComparison.Ordinal))
+            {
+                continue;
+            }
 
-        if (trimmedText.StartsWith("[tool:end]", StringComparison.Ordinal))
-        {
-            PrintActionEnd(trimmedText["[tool:end]".Length..].Trim());
-            continue;
-        }
+            if (line.StartsWith("[tool:start] ", StringComparison.Ordinal))
+            {
+                HandleToolStart(line["[tool:start] ".Length..]);
+                continue;
+            }
 
-        if (trimmedText.StartsWith("[assistant]", StringComparison.Ordinal))
-        {
-            AppendAnswer(trimmedText["[assistant]".Length..].TrimStart());
-            continue;
-        }
+            if (line.StartsWith("[tool:end] ", StringComparison.Ordinal))
+            {
+                HandleToolEnd(line["[tool:end] ".Length..]);
+                continue;
+            }
 
-        if (trimmedText.StartsWith("[agent:end]", StringComparison.Ordinal))
-        {
-            continue;
-        }
+            if (line.StartsWith("[assistant] ", StringComparison.Ordinal))
+            {
+                HandleAssistantLine(line["[assistant] ".Length..]);
+                continue;
+            }
 
-        if (isError)
-        {
-            AppendAnswer(trimmedText);
-            continue;
-        }
+            if (line.StartsWith("[agent:end]", StringComparison.Ordinal))
+            {
+                if (!answerHeaderPrinted)
+                {
+                    PrintAnswerHeader();
+                    answerHeaderPrinted = true;
+                }
 
-        AppendAnswer(trimmedText);
+                if (assistantLineOpen)
+                {
+                    WriteOutLine(string.Empty);
+                    assistantLineOpen = false;
+                }
+
+                if (!assistantPrinted)
+                {
+                    WriteOutLine("(no assistant output)");
+                }
+
+                continue;
+            }
+
+            HandleAssistantLine(line);
+        }
     }
 
-    Console.WriteLine();
-    Console.WriteLine("Answer");
-    Console.WriteLine("────────────────────────────────────────────");
-
-    if (answerLines.Count == 0)
+    async Task PumpErrorAsync()
     {
-        Console.WriteLine("(no assistant output)");
-    }
-    else
-    {
-        foreach (var line in answerLines)
+        while (true)
         {
-            Console.WriteLine(line);
+            var line = await process.StandardError.ReadLineAsync();
+            if (line is null)
+            {
+                break;
+            }
+
+            WriteErrorLine(line);
+        }
+    }
+
+    var stdoutTask = PumpOutputAsync();
+    var stderrTask = PumpErrorAsync();
+
+    await process.WaitForExitAsync();
+    await Task.WhenAll(stdoutTask, stderrTask);
+
+    if (!answerHeaderPrinted)
+    {
+        PrintAnswerHeader();
+        if (!assistantPrinted)
+        {
+            WriteOutLine("(no assistant output)");
         }
     }
 
@@ -418,10 +479,4 @@ static string? FindRepoFile(string relativePath)
     }
 
     return null;
-}
-
-static string InferPreferredPath(string task)
-{
-    var match = Regex.Match(task, "\\b(?:inspect|list|read|open|show)\\s+([A-Za-z0-9_.\\/-]+)\\b", RegexOptions.IgnoreCase);
-    return match.Success ? match.Groups[1].Value : string.Empty;
 }

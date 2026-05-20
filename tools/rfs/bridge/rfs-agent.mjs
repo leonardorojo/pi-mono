@@ -278,9 +278,9 @@ async function main() {
     },
     getApiKey: resolveApiKey,
     sessionId: 'rfs-agent',
+    toolExecution: 'sequential',
   });
 
-  let assistantLineOpen = false;
   let assistantTextPrinted = false;
 
   agent.subscribe((event) => {
@@ -290,53 +290,39 @@ async function main() {
     }
 
     if (event.type === 'tool_execution_start') {
-      console.log(`[tool:start] ${event.toolName} ${formatToolArgs(event.toolName, event.args, preferredPath)}`);
+      console.log(`[tool:start] id=${event.toolCallId} name=${event.toolName} ${formatToolArgs(event.toolName, event.args, preferredPath)}`);
       return;
     }
 
     if (event.type === 'tool_execution_end') {
-      console.log(`[tool:end] ${formatToolResult(event.toolName, event.result, event.isError)}`);
-      return;
-    }
-
-    if (event.type === 'message_start' && event.message.role === 'assistant') {
-      assistantLineOpen = false;
-      assistantTextPrinted = false;
+      console.log(`[tool:end] id=${event.toolCallId} name=${event.toolName} ${formatToolResult(event.toolName, event.result, event.isError)}`);
       return;
     }
 
     if (event.type === 'message_update' && event.message.role === 'assistant') {
-      if (event.assistantMessageEvent.type === 'text_delta') {
-        if (!assistantLineOpen) {
-          process.stdout.write('[assistant] ');
-          assistantLineOpen = true;
-        }
-        process.stdout.write(event.assistantMessageEvent.delta);
+      if (event.assistantMessageEvent.type === 'text_delta' && event.assistantMessageEvent.delta) {
         assistantTextPrinted = true;
+        console.log(`[assistant] ${event.assistantMessageEvent.delta}`);
       }
       return;
     }
 
     if (event.type === 'message_end' && event.message.role === 'assistant') {
-      if (!assistantTextPrinted) {
-        const text = extractTextContent(event.message);
-        if (text) {
-          console.log(`[assistant] ${text}`);
-        }
-      } else if (assistantLineOpen) {
-        process.stdout.write('\n');
+      if (assistantTextPrinted) {
+        return;
       }
 
-      assistantLineOpen = false;
-      assistantTextPrinted = false;
+      const text = extractTextContent(event.message);
+      if (!text) {
+        return;
+      }
+
+      console.log(`[assistant] ${text}`);
+      assistantTextPrinted = true;
       return;
     }
 
     if (event.type === 'agent_end') {
-      if (assistantLineOpen) {
-        process.stdout.write('\n');
-        assistantLineOpen = false;
-      }
       console.log('[agent:end]');
     }
   });

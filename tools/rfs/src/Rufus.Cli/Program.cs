@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text;
+using System.Text.RegularExpressions;
 
 if (args.Length == 0)
 {
@@ -141,12 +143,6 @@ if (args[0] == "agent")
         Console.Out.Flush();
     }
 
-    void WriteOut(string text)
-    {
-        Console.Out.Write(text);
-        Console.Out.Flush();
-    }
-
     void WriteErrorLine(string text)
     {
         Console.Error.WriteLine(text);
@@ -210,6 +206,7 @@ if (args[0] == "agent")
 
     void PrintHeader()
     {
+        WriteOutLine(string.Empty);
         WriteOutLine("Rufus Agent");
         WriteOutLine("───────────");
         WriteOutLine("Task");
@@ -228,35 +225,89 @@ if (args[0] == "agent")
         WriteOutLine("────────────────────────────────────────────");
     }
 
+    string FormatAssistantPayload(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return string.Empty;
+        }
+
+        var normalized = payload.Replace("\r\n", "\n").Replace("\r", "\n");
+        var outputLines = new List<string>();
+
+        foreach (var rawLine in normalized.Split('\n'))
+        {
+            var line = rawLine.TrimEnd();
+            var trimmed = line.Trim();
+
+            if (trimmed.Length == 0)
+            {
+                if (outputLines.Count > 0 && outputLines[^1].Length > 0)
+                {
+                    outputLines.Add(string.Empty);
+                }
+
+                continue;
+            }
+
+            line = Regex.Replace(line, @"^\s*#+\s+(?=#{2,4}\s)", string.Empty);
+
+            if (Regex.IsMatch(trimmed, @"^#{1,6}\s*$"))
+            {
+                continue;
+            }
+
+            var formattedLine = Regex.Replace(line, @"(?<=[^\s#])(#{2,4}\s)", "\n$1");
+            formattedLine = Regex.Replace(formattedLine, @"(?<=\S)(-\s)", "\n$1");
+            formattedLine = Regex.Replace(formattedLine, @"(?<=\S)(\d+\.\s)", "\n$1");
+
+            foreach (var piece in formattedLine.Split('\n', StringSplitOptions.None))
+            {
+                var candidate = piece.TrimEnd();
+                if (candidate.Length == 0)
+                {
+                    if (outputLines.Count > 0 && outputLines[^1].Length > 0)
+                    {
+                        outputLines.Add(string.Empty);
+                    }
+
+                    continue;
+                }
+
+                outputLines.Add(candidate);
+            }
+        }
+
+        while (outputLines.Count > 0 && outputLines[^1].Length == 0)
+        {
+            outputLines.RemoveAt(outputLines.Count - 1);
+        }
+
+        return string.Join("\n", outputLines);
+    }
+
     var labelsById = new Dictionary<string, string>(StringComparer.Ordinal);
     var answerHeaderPrinted = false;
     var assistantPrinted = false;
-    var assistantLineOpen = false;
+    var assistantBuffer = new StringBuilder();
     var streamGate = new object();
 
     PrintHeader();
 
     void HandleAssistantLine(string payload)
     {
-        if (!answerHeaderPrinted)
+        if (payload.Length == 0)
         {
-            PrintAnswerHeader();
-            answerHeaderPrinted = true;
-        }
+            if (assistantBuffer.Length > 0)
+            {
+                assistantBuffer.AppendLine();
+            }
 
-        if (string.IsNullOrWhiteSpace(payload))
-        {
             return;
         }
 
         assistantPrinted = true;
-        if (!assistantLineOpen)
-        {
-            WriteOut("[assistant] ");
-            assistantLineOpen = true;
-        }
-
-        WriteOut(payload);
+        assistantBuffer.Append(payload);
     }
 
     void HandleToolStart(string payload)
@@ -360,13 +411,22 @@ if (args[0] == "agent")
                     answerHeaderPrinted = true;
                 }
 
-                if (assistantLineOpen)
+                if (assistantPrinted)
                 {
-                    WriteOutLine(string.Empty);
-                    assistantLineOpen = false;
+                    var formattedAnswer = FormatAssistantPayload(assistantBuffer.ToString());
+                    if (formattedAnswer.Length == 0)
+                    {
+                        WriteOutLine("(no assistant output)");
+                    }
+                    else
+                    {
+                        foreach (var answerLine in formattedAnswer.Split('\n', StringSplitOptions.None))
+                        {
+                            WriteOutLine(answerLine);
+                        }
+                    }
                 }
-
-                if (!assistantPrinted)
+                else
                 {
                     WriteOutLine("(no assistant output)");
                 }

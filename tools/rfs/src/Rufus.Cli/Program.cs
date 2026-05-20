@@ -14,6 +14,11 @@ if (args[0] == "--version")
     return 0;
 }
 
+if (args[0] == "init")
+{
+    return InitializeWorkspace();
+}
+
 if (args[0] == "pi")
 {
     var message = string.Join(" ", args.Skip(1));
@@ -496,6 +501,7 @@ static void PrintHelp()
     Console.WriteLine("Usage:");
     Console.WriteLine("  rfs --version");
     Console.WriteLine("  rfs help");
+    Console.WriteLine("  rfs init");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask <prompt>");
     Console.WriteLine("  rfs agent <task>");
@@ -509,6 +515,51 @@ static void PrintHelp()
 static bool IsHelpCommand(string command)
 {
     return command is "help" or "--help" or "-h";
+}
+
+static int InitializeWorkspace()
+{
+    var repoRoot = FindRepoRoot();
+    if (repoRoot is null)
+    {
+        Console.Error.WriteLine("rfs init: repository root not found.");
+        return 1;
+    }
+
+    var workspaceDirectory = Path.Combine(repoRoot, ".rfs");
+    Directory.CreateDirectory(workspaceDirectory);
+
+    var configPath = Path.Combine(workspaceDirectory, "config.json");
+    if (!File.Exists(configPath))
+    {
+        const string configContent = "{\n  \"schemaVersion\": 1,\n  \"type\": \"rufus.workspace\",\n  \"createdBy\": \"rfs init\"\n}\n";
+        File.WriteAllText(configPath, configContent, new UTF8Encoding(false));
+        Console.WriteLine($"Initialized {configPath}");
+    }
+    else
+    {
+        Console.WriteLine($"{configPath} already exists");
+    }
+
+    return 0;
+}
+
+static string? FindRepoRoot()
+{
+    var current = new DirectoryInfo(Directory.GetCurrentDirectory());
+
+    while (current is not null)
+    {
+        var gitEntry = Path.Combine(current.FullName, ".git");
+        if (Directory.Exists(gitEntry) || File.Exists(gitEntry))
+        {
+            return current.FullName;
+        }
+
+        current = current.Parent;
+    }
+
+    return null;
 }
 
 static string? FindRepoFile(string relativePath)

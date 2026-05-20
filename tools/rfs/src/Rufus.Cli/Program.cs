@@ -7,6 +7,7 @@ if (args.Length == 0)
     Console.WriteLine("  rfs --version");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask \"message\"");
+    Console.WriteLine("  rfs agent \"task\"");
     return 0;
 }
 
@@ -46,6 +47,55 @@ if (args[0] == "pi")
     if (process is null)
     {
         Console.Error.WriteLine("Failed to start pi.");
+        return 1;
+    }
+
+    await process.WaitForExitAsync();
+    return process.ExitCode;
+}
+
+if (args[0] == "agent")
+{
+    var task = string.Join(" ", args.Skip(1));
+
+    if (string.IsNullOrWhiteSpace(task))
+    {
+        Console.Error.WriteLine("Missing task.");
+        return 1;
+    }
+
+    const string helperRelativePath = "tools/rfs/bridge/rfs-agent.mjs";
+    var helperPath = FindRepoFile(helperRelativePath);
+    if (helperPath is null)
+    {
+        Console.Error.WriteLine($"rfs agent helper not found: {helperRelativePath}");
+        return 1;
+    }
+
+    var psi = new ProcessStartInfo
+    {
+        FileName = "node",
+        UseShellExecute = false
+    };
+
+    psi.ArgumentList.Add(helperPath);
+    psi.ArgumentList.Add(task);
+
+    Process? process;
+
+    try
+    {
+        process = Process.Start(psi);
+    }
+    catch (Exception)
+    {
+        Console.Error.WriteLine("Failed to start rfs agent helper.");
+        return 1;
+    }
+
+    if (process is null)
+    {
+        Console.Error.WriteLine("Failed to start rfs agent helper.");
         return 1;
     }
 

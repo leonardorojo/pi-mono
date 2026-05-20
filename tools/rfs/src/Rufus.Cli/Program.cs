@@ -9,7 +9,7 @@ if (args.Length == 0)
     Console.WriteLine("  rfs --version");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask \"message\"");
-    Console.WriteLine("  rfs agent [--raw] \"task\"");
+    Console.WriteLine("  rfs agent \"task\"");
     return 0;
 }
 
@@ -59,12 +59,10 @@ if (args[0] == "pi")
 if (args[0] == "agent")
 {
     var agentArgs = args.Skip(1).ToArray();
-    var rawOutput = false;
-
     if (agentArgs.Length > 0 && agentArgs[0] == "--raw")
     {
-        rawOutput = true;
-        agentArgs = agentArgs.Skip(1).ToArray();
+        Console.Error.WriteLine("rfs agent --raw is no longer supported. Use rfs agent \"<task>\".");
+        return 1;
     }
 
     var task = string.Join(" ", agentArgs).Trim();
@@ -110,31 +108,6 @@ if (args[0] == "agent")
     {
         Console.Error.WriteLine("Failed to start rfs agent helper.");
         return 1;
-    }
-
-    if (rawOutput)
-    {
-        process.OutputDataReceived += (_, eventArgs) =>
-        {
-            if (eventArgs.Data is not null)
-            {
-                Console.Out.WriteLine(eventArgs.Data);
-            }
-        };
-
-        process.ErrorDataReceived += (_, eventArgs) =>
-        {
-            if (eventArgs.Data is not null)
-            {
-                Console.Error.WriteLine(eventArgs.Data);
-            }
-        };
-
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        await process.WaitForExitAsync();
-        process.WaitForExit();
-        return process.ExitCode;
     }
 
     void WriteOutLine(string text)

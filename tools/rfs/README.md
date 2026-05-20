@@ -20,7 +20,6 @@ Implemented commands:
 - `rfs pi [message]`
 - `rfs ask <prompt>`
 - `rfs agent <task>`
-- `rfs agent --raw <task>`
 
 The implementation lives under `tools/rfs/`:
 
@@ -103,7 +102,6 @@ Behavior:
 - `rfs agent` renders a human-friendly summary by default
 - the human render shows a cabecera with `Rufus Agent`, `Task`, `Mode`, `Scope`, `Actions`, and `Answer`
 - `Answer` is lightly formatted for human readability
-- `rfs agent --raw` forwards the helper output unchanged
 
 Current tools:
 
@@ -114,13 +112,7 @@ Implementation note:
 
 - `toolExecution` is currently sequential to keep the POC output legible
 
-Streaming markers you should see in `--raw` mode:
-
-- `[agent:start]`
-- `[tool:start]`
-- `[tool:end]`
-- `[assistant]`
-- `[agent:end]`
+A raw/debug event mode may return later as JSONL, but it is not exposed in this POC.
 
 Security and confinement:
 

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -453,13 +453,17 @@ if (args[0] == "agent")
 
 if (args[0] == "ask")
 {
-    var prompt = string.Join(" ", args.Skip(1));
+    var askArgs = args.Skip(1).ToArray();
+    var recordInteraction = askArgs.Any(arg => string.Equals(arg, "--record", StringComparison.Ordinal));
+    var prompt = string.Join(" ", askArgs.Where(arg => !string.Equals(arg, "--record", StringComparison.Ordinal)));
 
     if (string.IsNullOrWhiteSpace(prompt))
     {
         Console.Error.WriteLine("Missing prompt.");
         return 1;
     }
+
+    var task = prompt;
 
     const string helperRelativePath = "tools/rfs/bridge/rfs-ask.mjs";
     var helperPath = FindRepoFile(helperRelativePath);
@@ -472,7 +476,9 @@ if (args[0] == "ask")
     var psi = new ProcessStartInfo
     {
         FileName = "node",
-        UseShellExecute = false
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true
     };
 
     psi.ArgumentList.Add(helperPath);
@@ -496,10 +502,61 @@ if (args[0] == "ask")
         return 1;
     }
 
+    Console.WriteLine();
+    Console.WriteLine("Rufus Ask");
+    Console.WriteLine("─────────");
+    Console.WriteLine(task);
+    Console.WriteLine();
+    Console.WriteLine("Answer");
+    Console.WriteLine("────────────────────────────────────────────");
+
+    var stdoutTask = process.StandardOutput.ReadToEndAsync();
+    var stderrTask = process.StandardError.ReadToEndAsync();
+
     await process.WaitForExitAsync();
+    var stdoutText = await stdoutTask;
+    var stderrText = await stderrTask;
+
+    if (!string.IsNullOrWhiteSpace(stderrText))
+    {
+        Console.Error.Write(stderrText);
+    }
+
+    var finalAssistantAnswer = stdoutText.TrimEnd();
+    if (string.IsNullOrWhiteSpace(finalAssistantAnswer))
+    {
+        Console.WriteLine("(no assistant output)");
+    }
+    else
+    {
+        Console.Write(stdoutText);
+        if (!stdoutText.EndsWith(Environment.NewLine, StringComparison.Ordinal))
+        {
+            Console.WriteLine();
+        }
+    }
+
+    if (recordInteraction && process.ExitCode == 0)
+    {
+        var recordResult = RckInteractionRecorder.RecordAsk(prompt, finalAssistantAnswer);
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        foreach (var line in recordResult.FormatConsoleLines())
+        {
+            Console.WriteLine(line);
+        }
+    }
+
     return process.ExitCode;
 }
-
 Console.Error.WriteLine($"Unknown command: {args[0]}");
 return 1;
 
@@ -511,7 +568,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs help");
     Console.WriteLine("  rfs init   = bootstrap .rfs + RCK genesis state/anchor");
     Console.WriteLine("  rfs pi [message]");
-    Console.WriteLine("  rfs ask <prompt>");
+    Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs agent <task>");
     Console.WriteLine();
     Console.WriteLine("Modos:");

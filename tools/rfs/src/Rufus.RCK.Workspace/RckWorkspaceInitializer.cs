@@ -26,6 +26,7 @@ public static class RckWorkspaceInitializer
         var workspaceName = Path.GetFileName(Path.TrimEndingDirectorySeparator(repoRoot));
         var state = BuildGenesisState(repoRoot, workspaceName, gitContext);
         var stateCreated = EnsureGenesisState(paths, state);
+        var headCreated = EnsureHead(paths, state.Id);
 
         var anchor = BuildGenesisAnchor(state);
         var anchorCreated = EnsureGenesisAnchor(paths, anchor);
@@ -35,6 +36,7 @@ public static class RckWorkspaceInitializer
             paths,
             configCreated,
             rckDirectoriesCreated,
+            headCreated,
             stateCreated,
             anchorCreated,
             state.Id,
@@ -89,6 +91,17 @@ public static class RckWorkspaceInitializer
         }
 
         return created;
+    }
+
+    private static bool EnsureHead(RckWorkspacePaths paths, RckStateId genesisStateId)
+    {
+        if (File.Exists(paths.HeadPath))
+        {
+            return false;
+        }
+
+        File.WriteAllText(paths.HeadPath, genesisStateId + Environment.NewLine, Utf8NoBom);
+        return true;
     }
 
     private static bool EnsureGenesisState(RckWorkspacePaths paths, RckState state)

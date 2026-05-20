@@ -16,6 +16,8 @@ public sealed record RckWorkspaceInitResult
 
     public bool RckDirectoriesCreated { get; }
 
+    public bool HeadCreated { get; }
+
     public bool StateCreated { get; }
 
     public bool AnchorCreated { get; }
@@ -31,6 +33,7 @@ public sealed record RckWorkspaceInitResult
         RckWorkspacePaths? paths,
         bool configCreated,
         bool rckDirectoriesCreated,
+        bool headCreated,
         bool stateCreated,
         bool anchorCreated,
         RckStateId? stateId,
@@ -42,6 +45,7 @@ public sealed record RckWorkspaceInitResult
         Paths = paths;
         ConfigCreated = configCreated;
         RckDirectoriesCreated = rckDirectoriesCreated;
+        HeadCreated = headCreated;
         StateCreated = stateCreated;
         AnchorCreated = anchorCreated;
         StateId = stateId;
@@ -57,6 +61,7 @@ public sealed record RckWorkspaceInitResult
             paths: null,
             configCreated: false,
             rckDirectoriesCreated: false,
+            headCreated: false,
             stateCreated: false,
             anchorCreated: false,
             stateId: null,
@@ -68,6 +73,7 @@ public sealed record RckWorkspaceInitResult
         RckWorkspacePaths paths,
         bool configCreated,
         bool rckDirectoriesCreated,
+        bool headCreated,
         bool stateCreated,
         bool anchorCreated,
         RckStateId stateId,
@@ -80,6 +86,7 @@ public sealed record RckWorkspaceInitResult
             paths: paths,
             configCreated: configCreated,
             rckDirectoriesCreated: rckDirectoriesCreated,
+            headCreated: headCreated,
             stateCreated: stateCreated,
             anchorCreated: anchorCreated,
             stateId: stateId,
@@ -105,6 +112,9 @@ public sealed record RckWorkspaceInitResult
         yield return RckDirectoriesCreated
             ? $"rck directories: created {Paths!.RckDirectory}"
             : $"rck directories: skipped {Paths!.RckDirectory}";
+        yield return HeadCreated
+            ? $"head: created {Paths!.HeadPath} -> {StateId}"
+            : $"head: skipped {Paths!.HeadPath} -> {StateId}";
         yield return StateCreated
             ? $"genesis state: created {Paths!.StatesDirectory}{Path.DirectorySeparatorChar}{StateId}.json"
             : $"genesis state: skipped {Paths!.StatesDirectory}{Path.DirectorySeparatorChar}{StateId}.json";

@@ -8,6 +8,8 @@ public sealed record RckWorkspacePaths(string RepoRoot)
 
     public string RckDirectory => Path.Combine(WorkspaceDirectory, "rck");
 
+    public string HeadPath => Path.Combine(RckDirectory, "HEAD");
+
     public string StatesDirectory => Path.Combine(RckDirectory, "states");
 
     public string DeltasDirectory => Path.Combine(RckDirectory, "deltas");

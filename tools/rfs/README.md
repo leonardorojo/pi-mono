@@ -101,6 +101,8 @@ Behavior:
 - no Pi TUI
 - streamed events during execution
 - `rfs agent` renders a human-friendly summary by default
+- the human render shows a cabecera with `Rufus Agent`, `Task`, `Mode`, `Scope`, `Actions`, and `Answer`
+- `Answer` is lightly formatted for human readability
 - `rfs agent --raw` forwards the helper output unchanged
 
 Current tools:
@@ -108,7 +110,11 @@ Current tools:
 - `list_directory`
 - `read_file`
 
-Streaming markers you should see:
+Implementation note:
+
+- `toolExecution` is currently sequential to keep the POC output legible
+
+Streaming markers you should see in `--raw` mode:
 
 - `[agent:start]`
 - `[tool:start]`

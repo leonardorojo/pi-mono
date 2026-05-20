@@ -5,7 +5,7 @@ It is intentionally still a POC, not a finished product.
 
 Current shape:
 
-- `rfs pi` opens Pi interactively and passes through to the Pi TUI
+- `rfs pi` opens Pi interactively without an initial prompt and passes through to the Pi TUI
 - `rfs ask` asks the LLM headlessly through Pi's auth/provider/model stack
 
 Rufus no ES Pi.
@@ -16,7 +16,7 @@ Rufus USA Pi cuando conviene.
 Implemented commands:
 
 - `rfs --version`
-- `rfs pi <message>`
+- `rfs pi [message]`
 - `rfs ask <prompt>`
 
 The implementation lives under `tools/rfs/`:
@@ -45,11 +45,17 @@ This should print the current `rfs` version string.
 ## Test `pi`
 
 ```bash
-dotnet run --project tools/rfs/src/Rufus.Cli -- pi "hello from rfs"
+dotnet run --project tools/rfs/src/Rufus.Cli -- pi
 ```
 
 `rfs pi` is an interactive passthrough to Pi.
 Pi owns the terminal once it starts, so this mode should be validated in a foreground terminal or PTY.
+
+If you pass a message, it is forwarded to Pi:
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- pi "hello from rfs"
+```
 
 Validation note:
 

@@ -5,7 +5,7 @@ if (args.Length == 0)
     Console.WriteLine("rfs - Rufus CLI proof of concept");
     Console.WriteLine("Usage:");
     Console.WriteLine("  rfs --version");
-    Console.WriteLine("  rfs pi \"message\"");
+    Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask \"message\"");
     return 0;
 }
@@ -20,19 +20,16 @@ if (args[0] == "pi")
 {
     var message = string.Join(" ", args.Skip(1));
 
-    if (string.IsNullOrWhiteSpace(message))
-    {
-        Console.Error.WriteLine("Missing message.");
-        return 1;
-    }
-
     var psi = new ProcessStartInfo
     {
         FileName = "pi",
         UseShellExecute = false
     };
 
-    psi.ArgumentList.Add(message);
+    if (!string.IsNullOrWhiteSpace(message))
+    {
+        psi.ArgumentList.Add(message);
+    }
 
     Process? process;
 

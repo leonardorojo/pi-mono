@@ -28,8 +28,6 @@ if (args[0] == "pi")
     var psi = new ProcessStartInfo
     {
         FileName = "pi",
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
         UseShellExecute = false
     };
 
@@ -53,14 +51,7 @@ if (args[0] == "pi")
         return 1;
     }
 
-    var stdoutTask = process.StandardOutput.ReadToEndAsync();
-    var stderrTask = process.StandardError.ReadToEndAsync();
-
     await process.WaitForExitAsync();
-
-    await Console.Out.WriteAsync(await stdoutTask);
-    await Console.Error.WriteAsync(await stderrTask);
-
     return process.ExitCode;
 }
 

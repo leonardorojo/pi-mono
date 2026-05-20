@@ -7,6 +7,7 @@ Current shape:
 
 - `rfs pi` opens Pi interactively without an initial prompt and passes through to the Pi TUI
 - `rfs ask` asks the LLM headlessly through Pi's auth/provider/model stack
+- `rfs agent` runs a read-only headless agent with tools and streamed events
 
 Rufus no ES Pi.
 Rufus USA Pi cuando conviene.
@@ -18,12 +19,14 @@ Implemented commands:
 - `rfs --version`
 - `rfs pi [message]`
 - `rfs ask <prompt>`
+- `rfs agent <task>`
 
 The implementation lives under `tools/rfs/`:
 
 - `tools/rfs/Rufus.Cli.sln`
 - `tools/rfs/src/Rufus.Cli/Program.cs`
 - `tools/rfs/bridge/rfs-ask.mjs`
+- `tools/rfs/bridge/rfs-agent.mjs`
 - `tools/rfs/src/Rufus.Cli/Rufus.Cli.csproj`
 
 ## Build
@@ -80,7 +83,44 @@ It uses the Node helper at `tools/rfs/bridge/rfs-ask.mjs` to talk to Pi's AI lay
 
 That means `rfs` is not inventing its own agent stack here; it is leaning on Pi's configured runtime.
 
-## Difference between `pi` and `ask`
+## Test `agent`
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- agent "inspect tools/rfs"
+```
+
+`rfs agent <task>` is the headless agent POC.
+It uses the Node helper at `tools/rfs/bridge/rfs-agent.mjs`.
+
+Behavior:
+
+- read-only tools only
+- confined to the repository root
+- no writes
+- no Pi TUI
+- streamed events during execution
+
+Current tools:
+
+- `list_directory`
+- `read_file`
+
+Streaming markers you should see:
+
+- `[agent:start]`
+- `[tool:start]`
+- `[tool:end]`
+- `[assistant]`
+- `[agent:end]`
+
+Security and confinement:
+
+- read-only
+- repo-root confined
+- no file edits
+- no access outside the checkout
+
+## Difference between `pi`, `ask`, and `agent`
 
 ```text
 rfs pi
@@ -88,10 +128,14 @@ rfs pi
 
 rfs ask
   asks the LLM headlessly through Pi's auth/provider stack
+
+rfs agent
+  runs a headless read-only agent with tools and streaming
 ```
 
-`pi` is for interactive use.
-`ask` is for one-shot text answers.
+- `pi` is for interactive use.
+- `ask` is for one-shot text answers.
+- `agent` is for repository inspection and evidence gathering.
 
 ## Current limitations
 
@@ -105,11 +149,16 @@ Not present yet:
 - RCK integration
 - formal Hermes/Codex integration
 - packaging as a `dotnet tool`
-- a dedicated Rufus agent runtime
+- no writes / no editing from `rfs agent`
+- no JSONL event format yet
+- no explicit model selection from `rfs agent` yet
 - production-grade command routing or lifecycle management
 
 `ask` is only as good as the Pi configuration underneath it.
 If Pi is not configured or authenticated, `ask` will fail the same way Pi would.
+
+`agent` is also only as good as the Pi configuration underneath it.
+If Pi is not configured or authenticated, `agent` will fail the same way Pi would.
 
 ## Conceptual boundary
 

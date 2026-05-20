@@ -13,6 +13,13 @@ public static class RckInteractionRecorder
     public static RckInteractionRecordResult RecordAsk(string prompt, string answer, string? startingDirectory = null)
         => Record(RckInteractionRecord.CreateAsk(prompt, answer), startingDirectory);
 
+    public static RckInteractionRecordResult RecordAgent(
+        string prompt,
+        string answer,
+        IEnumerable<RckInteractionTool>? tools = null,
+        string? startingDirectory = null)
+        => Record(RckInteractionRecord.CreateAgent(prompt, answer, tools), startingDirectory);
+
     public static RckInteractionRecordResult Record(RckInteractionRecord record, string? startingDirectory = null)
     {
         var repoRoot = FindRepoRoot(startingDirectory ?? Directory.GetCurrentDirectory());
@@ -46,15 +53,26 @@ public static class RckInteractionRecorder
             nextStatePayloadJson,
             meta: new RckStateMeta(DateTimeOffset.UtcNow, "rfs ask --record", record.Mode, "recorded LLM interaction"));
 
+        var interactionPayload = new Dictionary<string, object?>
+        {
+            ["mode"] = record.Mode,
+            ["prompt"] = record.Prompt,
+            ["answer"] = record.Answer,
+        };
+
+        if (record.Tools.Count > 0)
+        {
+            interactionPayload["tools"] = record.Tools.Select(tool => new
+            {
+                name = tool.Name,
+                status = tool.Status,
+            }).ToArray();
+        }
+
         var interactionOp = new PatchOp(
             PatchOpKind.Replace,
             "/interaction",
-            JsonSerializer.Serialize(new
-            {
-                mode = record.Mode,
-                prompt = record.Prompt,
-                answer = record.Answer,
-            }));
+            JsonSerializer.Serialize(interactionPayload));
 
         var delta = RckDelta.Create(
             previousState.Id,

@@ -73,7 +73,8 @@ if (args[0] == "agent")
         return 1;
     }
 
-    var task = string.Join(" ", agentArgs).Trim();
+    var recordInteraction = agentArgs.Any(arg => string.Equals(arg, "--record", StringComparison.Ordinal));
+    var task = string.Join(" ", agentArgs.Where(arg => !string.Equals(arg, "--record", StringComparison.Ordinal))).Trim();
 
     if (string.IsNullOrWhiteSpace(task))
     {
@@ -117,6 +118,9 @@ if (args[0] == "agent")
         Console.Error.WriteLine("Failed to start rfs agent helper.");
         return 1;
     }
+
+    var finalAssistantAnswer = string.Empty;
+    var recordedTools = new List<RckInteractionTool>();
 
     void WriteOutLine(string text)
     {
@@ -344,6 +348,11 @@ if (args[0] == "agent")
             label = FormatStartLabel(toolName, summary);
         }
 
+        if (recordInteraction && !string.IsNullOrWhiteSpace(toolName))
+        {
+            recordedTools.Add(RckInteractionTool.Completed(toolName));
+        }
+
         WriteOutLine($"✓ {label}");
         if (!string.IsNullOrWhiteSpace(summary) && summary != label)
         {
@@ -392,24 +401,20 @@ if (args[0] == "agent")
                     answerHeaderPrinted = true;
                 }
 
-                if (assistantPrinted)
+                var formattedAnswer = assistantPrinted ? FormatAssistantPayload(assistantBuffer.ToString()) : string.Empty;
+                finalAssistantAnswer = string.IsNullOrWhiteSpace(formattedAnswer)
+                    ? assistantBuffer.ToString().Trim()
+                    : formattedAnswer;
+                if (finalAssistantAnswer.Length == 0)
                 {
-                    var formattedAnswer = FormatAssistantPayload(assistantBuffer.ToString());
-                    if (formattedAnswer.Length == 0)
-                    {
-                        WriteOutLine("(no assistant output)");
-                    }
-                    else
-                    {
-                        foreach (var answerLine in formattedAnswer.Split('\n', StringSplitOptions.None))
-                        {
-                            WriteOutLine(answerLine);
-                        }
-                    }
+                    WriteOutLine("(no assistant output)");
                 }
                 else
                 {
-                    WriteOutLine("(no assistant output)");
+                    foreach (var answerLine in finalAssistantAnswer.Split('\n', StringSplitOptions.None))
+                    {
+                        WriteOutLine(answerLine);
+                    }
                 }
 
                 continue;
@@ -445,6 +450,31 @@ if (args[0] == "agent")
         if (!assistantPrinted)
         {
             WriteOutLine("(no assistant output)");
+        }
+    }
+
+    if (recordInteraction && process.ExitCode == 0)
+    {
+        if (string.IsNullOrWhiteSpace(finalAssistantAnswer))
+        {
+            Console.Error.WriteLine("rfs agent --record did not capture a final assistant answer.");
+            return 1;
+        }
+
+        var recordResult = RckInteractionRecorder.RecordAgent(task, finalAssistantAnswer, recordedTools);
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        foreach (var line in recordResult.FormatConsoleLines())
+        {
+            Console.WriteLine(line);
         }
     }
 
@@ -569,7 +599,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs init   = bootstrap .rfs + RCK genesis state/anchor");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
-    Console.WriteLine("  rfs agent <task>");
+    Console.WriteLine("  rfs agent [--record] <task>");
     Console.WriteLine();
     Console.WriteLine("Modos:");
     Console.WriteLine("  pi     = passthrough interactivo a Pi TUI");

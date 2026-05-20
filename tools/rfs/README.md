@@ -49,6 +49,16 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- pi "hello from rfs"
 
 This launches Pi as an external process and passes the initial message to it.
 
+## Ask the LLM through Pi auth/provider
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- ask "hello from rfs ask"
+```
+
+This calls a minimal Node helper that reuses Pi's configured provider, model, and auth to talk to the LLM without opening the Pi TUI.
+
+This is still a POC. It does not add Rufus sessions, history, RCK, or a Rufus workspace yet.
+
 ## Interactive passthrough behavior
 
 `rfs pi` is currently an interactive passthrough command.

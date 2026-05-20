@@ -209,6 +209,24 @@ If Pi is not configured or authenticated, `ask` will fail the same way Pi would.
 `agent` is also only as good as the Pi configuration underneath it.
 If Pi is not configured or authenticated, `agent` will fail the same way Pi would.
 
+## Branch hygiene
+
+- `main` stays clean and aligned with upstream.
+- `feature/rufus-cli-design` is the rfs integration branch.
+- Short-lived feature branches should be merged back into `feature/rufus-cli-design` and deleted.
+- Historical branches such as `rufuschat/dev-history` may be kept as preserved history.
+- Local backup branches may be deleted once their commits are confirmed to be contained in a preserved branch.
+
+Safe checks:
+
+```bash
+git merge-base --is-ancestor backup/main-before-rufuschat-isolation rufuschat/dev-history && echo "backup contained"
+git branch -d backup/main-before-rufuschat-isolation
+```
+
+If `git branch -d` fails but you have already verified that the branch is contained in a preserved branch, you may use `git branch -D`.
+`git branch -D` should be used only after that verification.
+
 ## Conceptual boundary
 
 ```text

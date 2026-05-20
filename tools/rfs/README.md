@@ -6,7 +6,7 @@ It is intentionally still a POC, not a finished product.
 Current shape:
 
 - `rfs help` shows the available rfs commands
-- `rfs init` initializes a local Rufus workspace in the current repo
+- `rfs init` initializes a local Rufus workspace in the current repo and seeds a local RCK DAG with a genesis State and Anchor
 - `rfs pi` opens Pi interactively without an initial prompt and passes through to the Pi TUI
 - `rfs ask` asks the LLM headlessly through Pi's auth/provider/model stack
 - `rfs agent` runs a read-only headless agent with tools and streamed events
@@ -74,6 +74,9 @@ It looks upward from the current directory for the repo root by finding `.git`, 
 What it creates:
 
 - `.rfs/config.json`
+- `.rfs/rck/states/`
+- `.rfs/rck/deltas/`
+- `.rfs/rck/anchors/`
 
 What it does not do yet:
 
@@ -81,7 +84,7 @@ What it does not do yet:
 - create sessions
 - create traces
 - create cache
-- implement RCK
+- implement RCK storage beyond the genesis files
 
 Behavior:
 
@@ -207,6 +210,8 @@ Not present yet:
 - persisted sessions
 - multi-turn history
 - traces
+- `TraceSlice`
+- `rfs record`
 - cache
 - RCK integration
 - formal Hermes/Codex integration

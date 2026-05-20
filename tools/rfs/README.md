@@ -20,6 +20,7 @@ Implemented commands:
 - `rfs pi [message]`
 - `rfs ask <prompt>`
 - `rfs agent <task>`
+- `rfs agent --raw <task>`
 
 The implementation lives under `tools/rfs/`:
 
@@ -99,6 +100,8 @@ Behavior:
 - no writes
 - no Pi TUI
 - streamed events during execution
+- `rfs agent` renders a human-friendly summary by default
+- `rfs agent --raw` forwards the helper output unchanged
 
 Current tools:
 

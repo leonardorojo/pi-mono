@@ -28,6 +28,7 @@ public static class RckInteractionRecorder
             return RckInteractionRecordResult.Failure("[rck] record: repository root not found.");
         }
 
+        var createdBy = GetCreatedBy(record.Mode);
         var paths = new RckWorkspacePaths(repoRoot);
         if (!File.Exists(paths.HeadPath))
         {
@@ -51,7 +52,7 @@ public static class RckInteractionRecorder
         var nextStatePayloadJson = BuildInteractionStatePayload(record, currentGit);
         var nextState = RckState.Create(
             nextStatePayloadJson,
-            meta: new RckStateMeta(DateTimeOffset.UtcNow, "rfs ask --record", record.Mode, "recorded LLM interaction"));
+            meta: new RckStateMeta(DateTimeOffset.UtcNow, createdBy, record.Mode, "recorded LLM interaction"));
 
         var interactionPayload = new Dictionary<string, object?>
         {
@@ -78,7 +79,7 @@ public static class RckInteractionRecorder
             previousState.Id,
             nextState.Id,
             ops: new[] { interactionOp },
-            meta: new RckDeltaMeta(DateTimeOffset.UtcNow, "rfs ask --record", record.Mode, "recorded LLM interaction delta"));
+            meta: new RckDeltaMeta(DateTimeOffset.UtcNow, createdBy, record.Mode, "recorded LLM interaction delta"));
 
         var stateCreated = EnsureState(paths, nextState);
         var deltaCreated = EnsureDelta(paths, delta);
@@ -97,7 +98,7 @@ public static class RckInteractionRecorder
             anchorLabel = $"git-commit:{GetShortCommit(currentCommit)}";
             var anchor = RckAnchor.Create(
                 nextState.Id,
-                meta: new RckAnchorMeta(DateTimeOffset.UtcNow, "rfs ask --record", anchorLabel, "detected new git commit during recorded interaction"));
+                meta: new RckAnchorMeta(DateTimeOffset.UtcNow, createdBy, anchorLabel, "detected new git commit during recorded interaction"));
 
             anchorCreated = EnsureAnchor(paths, anchor);
             anchorId = anchor.Id;
@@ -344,6 +345,13 @@ public static class RckInteractionRecorder
 
     private static string GetShortCommit(string commit)
         => commit.Length <= 7 ? commit : commit[..7];
+
+    private static string GetCreatedBy(string mode)
+        => mode switch
+        {
+            "agent" => "rfs agent --record",
+            _ => "rfs ask --record",
+        };
 
     private static string? FindRepoRoot(string startingDirectory)
     {

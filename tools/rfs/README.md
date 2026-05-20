@@ -245,6 +245,57 @@ git branch -d backup/main-before-rufuschat-isolation
 If `git branch -d` fails but you have already verified that the branch is contained in a preserved branch, you may use `git branch -D`.
 `git branch -D` should be used only after that verification.
 
+## RCK layering rule
+
+`Rufus.RCK.Core` is the cognitive Git plumbing.
+It should stay small and focused on base DAG concepts:
+
+- State
+- Delta
+- Anchor
+- Ref / EvidenceRef
+- Hash / canonical JSON
+- basic storage interfaces
+- DAG validation and navigation
+
+`Rufus.RCK.Core` must not contain product- or workspace-level concerns:
+
+- `rfs init` logic
+- Git detection
+- LLM interactions
+- agent event parsing
+- tool-call parsing
+- artifact discovery
+- sessions
+- `TraceSlice`
+- recording workflows
+- `.rfs/` layout decisions
+- CLI formatting
+- dependencies on Pi, Node, agents, or `Rufus.Cli`
+
+If higher-level behavior is needed, it should live in a separate layer, preferably a future `tools/rfs/src/Rufus.RCK.Workspace/` project.
+That layer can own `.rfs/` layout, workspace persistence, Git context capture, interactivity mapping, and future commit-aware anchors such as `git-commit:<hash>`.
+
+Dependency rule:
+
+```text
+Rufus.Cli
+  -> Rufus.RCK.Workspace
+      -> Rufus.RCK.Core
+
+Rufus.Cli
+  -> Rufus.RCK.Core
+```
+
+Prohibited dependencies:
+
+- `Rufus.RCK.Core -> Rufus.Cli`
+- `Rufus.RCK.Core -> Rufus.RCK.Workspace`
+- `Rufus.RCK.Core -> Pi`
+- `Rufus.RCK.Core -> Node`
+- `Rufus.RCK.Core -> .rfs layout`
+- `Rufus.RCK.Core -> agent runtime`
+
 ## Conceptual boundary
 
 ```text

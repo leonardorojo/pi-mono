@@ -2,14 +2,9 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 
-if (args.Length == 0)
+if (args.Length == 0 || IsHelpCommand(args[0]))
 {
-    Console.WriteLine("rfs - Rufus CLI proof of concept");
-    Console.WriteLine("Usage:");
-    Console.WriteLine("  rfs --version");
-    Console.WriteLine("  rfs pi [message]");
-    Console.WriteLine("  rfs ask \"message\"");
-    Console.WriteLine("  rfs agent \"task\"");
+    PrintHelp();
     return 0;
 }
 
@@ -494,6 +489,27 @@ if (args[0] == "ask")
 
 Console.Error.WriteLine($"Unknown command: {args[0]}");
 return 1;
+
+static void PrintHelp()
+{
+    Console.WriteLine("rfs - Rufus CLI proof of concept");
+    Console.WriteLine("Usage:");
+    Console.WriteLine("  rfs --version");
+    Console.WriteLine("  rfs help");
+    Console.WriteLine("  rfs pi [message]");
+    Console.WriteLine("  rfs ask <prompt>");
+    Console.WriteLine("  rfs agent <task>");
+    Console.WriteLine();
+    Console.WriteLine("Modos:");
+    Console.WriteLine("  pi     = passthrough interactivo a Pi TUI");
+    Console.WriteLine("  ask    = prompt único headless sin tools");
+    Console.WriteLine("  agent  = agente headless con tools read-only + streaming");
+}
+
+static bool IsHelpCommand(string command)
+{
+    return command is "help" or "--help" or "-h";
+}
 
 static string? FindRepoFile(string relativePath)
 {

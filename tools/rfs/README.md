@@ -5,9 +5,12 @@ It is intentionally still a POC, not a finished product.
 
 Current shape:
 
+- `rfs init` initializes a local Rufus workspace in the current repo
 - `rfs pi` opens Pi interactively without an initial prompt and passes through to the Pi TUI
 - `rfs ask` asks the LLM headlessly through Pi's auth/provider/model stack
 - `rfs agent` runs a read-only headless agent with tools and streamed events
+
+`rfs` is still a POC. `rfs init` is only the workspace bootstrap layer for local metadata, not the full RCK surface.
 
 Rufus no ES Pi.
 Rufus USA Pi cuando conviene.
@@ -17,6 +20,7 @@ Rufus USA Pi cuando conviene.
 Implemented commands:
 
 - `rfs --version`
+- `rfs init`
 - `rfs pi [message]`
 - `rfs ask <prompt>`
 - `rfs agent <task>`
@@ -44,6 +48,45 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- --version
 ```
 
 This should print the current `rfs` version string.
+
+## Test `init`
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- init
+```
+
+`rfs init` initializes a local Rufus workspace in the current repository.
+It looks upward from the current directory for the repo root by finding `.git`, then creates `.rfs/` there.
+
+What it creates:
+
+- `.rfs/config.json`
+
+What it does not do yet:
+
+- create a README inside `.rfs/`
+- create sessions
+- create traces
+- create cache
+- implement RCK
+
+Behavior:
+
+- idempotent
+- if `.rfs/` already exists, it does not fail
+- if `.rfs/config.json` already exists, it does not overwrite it
+- safe to run multiple times
+
+`.rfs/` is workspace-local Rufus state.
+It should be ignored by git and is not the same thing as RCK.
+
+Suggested validation:
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- init
+dotnet run --project tools/rfs/src/Rufus.Cli -- init
+cat .rfs/config.json
+```
 
 ## Test `pi`
 
@@ -124,6 +167,9 @@ Security and confinement:
 ## Difference between `pi`, `ask`, and `agent`
 
 ```text
+rfs init
+  initializes .rfs/ workspace local
+
 rfs pi
   opens Pi interactively
 
@@ -144,9 +190,11 @@ This is still a minimal POC.
 
 Not present yet:
 
-- `.rufus/` workspace
+- `.rfs/` workspace beyond `config.json`
 - persisted sessions
 - multi-turn history
+- traces
+- cache
 - RCK integration
 - formal Hermes/Codex integration
 - packaging as a `dotnet tool`

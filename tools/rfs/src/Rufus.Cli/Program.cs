@@ -125,9 +125,11 @@ if (args[0] == "agent")
         FileName = "node",
         UseShellExecute = false,
         RedirectStandardOutput = true,
-        RedirectStandardError = true
+        RedirectStandardError = true,
+        WorkingDirectory = Directory.GetCurrentDirectory()
     };
 
+    psi.Environment["RFS_REPO_ROOT"] = Directory.GetCurrentDirectory();
     psi.ArgumentList.Add(helperPath);
     psi.ArgumentList.Add(task);
 

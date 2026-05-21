@@ -1,6 +1,5 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { Type } from 'typebox';
@@ -8,8 +7,7 @@ import { Agent } from '@earendil-works/pi-agent-core';
 import { getEnvApiKey, getModel } from '@earendil-works/pi-ai';
 import { getOAuthApiKey, getOAuthProvider } from '@earendil-works/pi-ai/oauth';
 
-const helperDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(helperDir, '..', '..', '..');
+const repoRoot = resolveRepoRoot();
 
 const DEFAULT_SYSTEM_PROMPT = `You are Rufus CLI's headless agent for repository inspection.
 Use only the provided read-only tools.
@@ -31,6 +29,15 @@ function readJsonFile(filePath) {
 
 function coerceString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function resolveRepoRoot() {
+  const envRoot = coerceString(process.env.RFS_REPO_ROOT);
+  if (envRoot) {
+    return path.resolve(envRoot);
+  }
+
+  return process.cwd();
 }
 
 function inferPreferredPath(task) {

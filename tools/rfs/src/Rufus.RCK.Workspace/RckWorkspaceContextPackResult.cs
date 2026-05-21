@@ -193,488 +193,388 @@ public sealed record RckWorkspaceContextPackResult
             deltasByToStateId: deltasByToStateId,
             deltasByFromStateId: deltasByFromStateId);
 
-        public IEnumerable<string> FormatMarkdownLines()
+        public string ToJson()
     {
         if (!Success)
         {
-            if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                yield return ErrorMessage;
-            }
-
-            yield break;
+                ["success"] = false,
+                ["errorMessage"] = ErrorMessage,
+            }, IndentedJsonOptions);
         }
 
-        yield return "# RCK DAG Context Pack v1";
-        yield return string.Empty;
-
-        yield return "## Quick index";
-        foreach (var line in BuildQuickIndexLines())
-        {
-            yield return line;
-        }
-        yield return string.Empty;
-
-        yield return "## Purpose";
-        yield return string.Empty;
-        yield return "This document contains a complete RCK DAG export for a repository workspace.";
-        yield return "It is intended to be pasted into an LLM so the LLM can reconstruct and reason about the cognitive trace.";
-        yield return string.Empty;
-
-        yield return "## Interpretation rules for the LLM";
-        foreach (var line in BuildInterpretationRules())
-        {
-            yield return line;
-        }
-        yield return string.Empty;
-
-        yield return "## JSON Schema";
-        yield return "```json";
-        foreach (var line in SerializeIndentedJson(BuildContextPackSchema()))
-        {
-            yield return line;
-        }
-        yield return "```";
-        yield return string.Empty;
-
-        yield return "## DAG metadata";
-        yield return "```json";
-        foreach (var line in SerializeIndentedJson(BuildDagMetadata()))
-        {
-            yield return line;
-        }
-        yield return "```";
-        yield return string.Empty;
-
-        yield return "## Active chain";
-        yield return "Order: `HEAD → genesis` (walked backward from the current head state).";
-        yield return "```json";
-        foreach (var line in SerializeIndentedJson(ActiveChain.Select(entry => new
-                 {
-                     stateId = entry.StateId,
-                     incomingDeltaId = entry.IncomingDeltaId,
-                     anchors = entry.Anchors,
-                     mode = entry.Mode,
-                     prompt = entry.Prompt,
-                     promptIsExcerpt = entry.PromptIsExcerpt,
-                     answerSummary = entry.AnswerSummary,
-                     gitContext = new
-                     {
-                         branch = entry.GitBranch,
-                         commit = entry.GitCommit,
-                         dirty = entry.GitDirty,
-                     },
-                     artifacts = entry.Artifacts,
-                 }).ToArray()))
-        {
-            yield return line;
-        }
-        yield return "```";
-        yield return string.Empty;
-
-        yield return "## Derived relationships";
-        yield return "```json";
-        foreach (var line in SerializeIndentedJson(new
-                 {
-                     headStateId = HeadStateId,
-                     activeStateIds = ActiveStateIds,
-                     activeDeltaIds = ActiveDeltaIds,
-                     orphanStateIds = OrphanStateIds,
-                     orphanDeltaIds = OrphanDeltaIds,
-                     anchorsByStateId = AnchorsByStateId,
-                     deltasByToStateId = DeltasByToStateId,
-                     deltasByFromStateId = DeltasByFromStateId,
-                 }))
-        {
-            yield return line;
-        }
-        yield return "```";
-        yield return string.Empty;
-
-        yield return "## Full objects";
-        yield return string.Empty;
-
-        yield return "### States";
-        foreach (var state in States)
-        {
-            yield return $"#### State `{state.Id}`";
-            yield return "```json";
-            foreach (var line in SerializeIndentedJson(new
-                     {
-                         id = state.Id,
-                         payloadCanonicalJson = state.PayloadCanonicalJson,
-                         payloadDecoded = state.PayloadDecoded,
-                         refs = state.Refs,
-                         meta = state.Meta,
-                     }))
-            {
-                yield return line;
-            }
-            yield return "```";
-            yield return string.Empty;
-        }
-
-        yield return "### Deltas";
-        foreach (var delta in Deltas)
-        {
-            yield return $"#### Delta `{delta.Id}`";
-            yield return "```json";
-            foreach (var line in SerializeIndentedJson(new
-                     {
-                         id = delta.Id,
-                         fromStateId = delta.FromStateId,
-                         toStateId = delta.ToStateId,
-                         ops = delta.Ops,
-                         refs = delta.Refs,
-                         evidenceRefs = delta.EvidenceRefs,
-                         meta = delta.Meta,
-                     }))
-            {
-                yield return line;
-            }
-            yield return "```";
-            yield return string.Empty;
-        }
-
-        yield return "### Anchors";
-        foreach (var anchor in Anchors)
-        {
-            yield return $"#### Anchor `{anchor.Id}`";
-            yield return "```json";
-            foreach (var line in SerializeIndentedJson(new
-                     {
-                         id = anchor.Id,
-                         stateId = anchor.StateId,
-                         parentAnchorIds = anchor.ParentAnchorIds,
-                         meta = anchor.Meta,
-                     }))
-            {
-                yield return line;
-            }
-            yield return "```";
-            yield return string.Empty;
-        }
-
-        yield return "## Notes / limitations";
-        foreach (var line in new[]
-                 {
-                     "- This is a full DAG export, not a repository content export.",
-                     "- It may be large.",
-                     "- It does not include file contents.",
-                     "- It does not include git diffs.",
-                     "- It does not include artifact hashes yet.",
-                     "- `RckRef` / `EvidenceRef` may be empty in the current implementation.",
-                     "- The LLM should use this as trace context, not as source code evidence.",
-                 })
-        {
-            yield return line;
-        }
+        return System.Text.Json.JsonSerializer.Serialize(BuildContextPackDocument(), IndentedJsonOptions);
     }
 
-    private IEnumerable<string> BuildQuickIndexLines()
+    private object BuildContextPackDocument()
     {
-        yield return $"- Workspace: `{WorkspaceName ?? "(unknown)"}`";
-        yield return $"  - Root: `{RepoRoot ?? "(unknown)"}`";
-        yield return $"  - Branch: `{Workspace?.GitBranch ?? "(detached)"}`";
-        yield return $"  - Commit: `{Workspace?.GitCommit ?? "(unknown)"}`";
-        yield return $"  - Dirty: `{Workspace?.GitDirty ?? false}`";
-        yield return $"  - HEAD state: `{HeadStateId ?? "(unknown)"}`";
-        yield return $"  - HEAD short id: `{HeadShortId ?? "(unknown)"}`";
-        yield return $"  - Counts: states {StateCount}, deltas {DeltaCount}, anchors {AnchorCount}, active chain {ActiveChainLength}, orphan states {OrphanStateCount}, orphan deltas {OrphanDeltaCount}";
-
-        yield return $"  - Current changed artifacts ({ChangedArtifacts.Count}):";
-        if (ChangedArtifacts.Count == 0)
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            yield return "    - (none)";
-        }
-        else
-        {
-            foreach (var artifact in ChangedArtifacts.Take(8))
+            ["schemaVersion"] = 1,
+            ["type"] = "rck-dag-context-pack-v1",
+            ["generatedAtUtc"] = GeneratedAtUtc,
+            ["schema"] = BuildContextPackSchema(),
+            ["interpretationRules"] = BuildInterpretationRules(),
+            ["quickIndex"] = BuildQuickIndex(),
+            ["workspace"] = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                yield return $"    - {FormatArtifactSummary(artifact)}";
-            }
-
-            if (ChangedArtifacts.Count > 8)
+                ["name"] = WorkspaceName,
+                ["root"] = RepoRoot,
+                ["gitContext"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["branch"] = Workspace?.GitBranch,
+                    ["commit"] = Workspace?.GitCommit,
+                    ["dirty"] = Workspace?.GitDirty ?? false,
+                },
+                ["changedArtifacts"] = ChangedArtifacts,
+            },
+            ["headStateId"] = HeadStateId,
+            ["headShortId"] = HeadShortId,
+            ["counts"] = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                yield return $"    - … {ChangedArtifacts.Count - 8} more";
-            }
-        }
+                ["states"] = StateCount,
+                ["deltas"] = DeltaCount,
+                ["anchors"] = AnchorCount,
+                ["activeChainLength"] = ActiveChainLength,
+                ["orphanStateCount"] = OrphanStateCount,
+                ["orphanDeltaCount"] = OrphanDeltaCount,
+            },
+            ["activeChain"] = ActiveChain,
+            ["states"] = States,
+            ["deltas"] = Deltas,
+            ["anchors"] = Anchors,
+            ["derivedRelationships"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["activeStateIds"] = ActiveStateIds,
+                ["activeDeltaIds"] = ActiveDeltaIds,
+                ["orphanStateIds"] = OrphanStateIds,
+                ["orphanDeltaIds"] = OrphanDeltaIds,
+                ["anchorsByStateId"] = AnchorsByStateId,
+                ["deltasByToStateId"] = DeltasByToStateId,
+                ["deltasByFromStateId"] = DeltasByFromStateId,
+            },
+            ["notes"] = BuildNotes(),
+        };
+    }
 
+    private object BuildQuickIndex()
+    {
         var mainAnchors = ActiveChain.SelectMany(entry => entry.Anchors).ToArray();
-        yield return $"  - Main anchors ({mainAnchors.Length}):";
-        if (mainAnchors.Length == 0)
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            yield return "    - (none)";
-        }
-        else
-        {
-            foreach (var anchor in mainAnchors.Take(8))
+            ["workspace"] = WorkspaceName,
+            ["root"] = RepoRoot,
+            ["branch"] = Workspace?.GitBranch,
+            ["commit"] = Workspace?.GitCommit,
+            ["dirty"] = Workspace?.GitDirty ?? false,
+            ["headStateId"] = HeadStateId,
+            ["headShortId"] = HeadShortId,
+            ["counts"] = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                var label = string.IsNullOrWhiteSpace(anchor.Label) ? anchor.Id : $"{anchor.Id} — {anchor.Label}";
-                yield return $"    - {label}";
-            }
-
-            if (mainAnchors.Length > 8)
-            {
-                yield return $"    - … {mainAnchors.Length - 8} more";
-            }
-        }
+                ["states"] = StateCount,
+                ["deltas"] = DeltaCount,
+                ["anchors"] = AnchorCount,
+                ["activeChainLength"] = ActiveChainLength,
+                ["orphanStateCount"] = OrphanStateCount,
+                ["orphanDeltaCount"] = OrphanDeltaCount,
+            },
+            ["currentChangedArtifacts"] = ChangedArtifacts,
+            ["mainAnchors"] = mainAnchors,
+        };
     }
 
     private static IEnumerable<string> BuildInterpretationRules()
     {
         return new[]
         {
-            "- RCK is a cognitive trace DAG.",
-            "- State = cognitive snapshot.",
-            "- Delta = transition between two States.",
-            "- Anchor = semantic/material milestone pointing to a State.",
-            "- HEAD points to the current active State.",
-            "- The active chain is recovered by starting from HEAD and following Deltas backwards from `toStateId` to `fromStateId`.",
-            "- Not every object is necessarily on the active chain.",
-            "- Orphan States/Deltas/Anchors may exist during tests.",
-            "- `workspace.changedArtifacts` is derived from Git status and excludes `.rfs/`, `bin/`, and `obj/`.",
-            "- `.rfs/` is internal RCK workspace metadata; if it appears in tool observations or agent answers, do not treat it as a user artifact or a functional repo change.",
-            "- Git stores actual file contents and diffs.",
-            "- RCK only stores cognitive metadata, prompts, answers, tools, artifact paths, and Git context.",
-            "- Artifact paths are references, not file contents.",
-            "- Agent answers are recorded observations, not direct source-code evidence.",
-            "- `decodedValueJson` is a direct parse of each delta op `valueJson`; if the decoded object contains `change`, `cause`, and `evidence`, treat them as siblings unless the raw JSON shows a different nesting.",
-            "- Do not assume file contents unless provided separately.",
+            "RCK is a cognitive trace DAG.",
+            "State = cognitive snapshot.",
+            "Delta = transition between two States.",
+            "Anchor = semantic/material milestone pointing to a State.",
+            "HEAD points to the current active State.",
+            "The active chain is recovered by starting from HEAD and following Deltas backwards from toStateId to fromStateId.",
+            ".rfs/ is internal RCK workspace metadata.",
+            ".rfs/ may appear in agent observations, but it should not be treated as user-facing repository source.",
+            "The recorder excludes .rfs/ from changed artifact tracking.",
+            "Git stores actual file contents and diffs.",
+            "Artifact paths are references, not file contents.",
+            "Agent answers are recorded observations, not direct source-code evidence.",
+            "Do not assume file contents unless provided separately.",
         };
     }
 
     private static object BuildContextPackSchema()
     {
-        static Dictionary<string, object?> Dict(params (string Key, object? Value)[] entries)
+        const string schemaJson = """
         {
-            var result = new Dictionary<string, object?>(StringComparer.Ordinal);
-            foreach (var entry in entries)
-            {
-                result[entry.Key] = entry.Value;
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "urn:rfs:rck-dag-context-pack:v1",
+          "title": "RCK DAG Context Pack v1",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "type",
+            "generatedAtUtc",
+            "schema",
+            "interpretationRules",
+            "quickIndex",
+            "workspace",
+            "headStateId",
+            "headShortId",
+            "counts",
+            "activeChain",
+            "states",
+            "deltas",
+            "anchors",
+            "derivedRelationships",
+            "notes"
+          ],
+          "properties": {
+            "schemaVersion": { "type": "integer", "const": 1 },
+            "type": { "type": "string", "const": "rck-dag-context-pack-v1" },
+            "generatedAtUtc": { "type": "string", "format": "date-time" },
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["$schema", "$id", "title", "type", "required", "properties", "$defs"],
+              "properties": {
+                "$schema": { "type": "string", "const": "https://json-schema.org/draft/2020-12/schema" },
+                "$id": { "type": "string", "const": "urn:rfs:rck-dag-context-pack:v1" },
+                "title": { "type": "string", "const": "RCK DAG Context Pack v1" },
+                "type": { "type": "string", "const": "object" },
+                "required": { "type": "array", "items": { "type": "string" } },
+                "properties": { "type": "object" },
+                "$defs": { "type": "object" }
+              }
+            },
+            "interpretationRules": { "type": "array", "items": { "type": "string" } },
+            "quickIndex": { "$ref": "#/$defs/quickIndex" },
+            "workspace": { "$ref": "#/$defs/workspace" },
+            "headStateId": { "type": "string" },
+            "headShortId": { "type": "string" },
+            "counts": { "$ref": "#/$defs/counts" },
+            "activeChain": { "type": "array", "items": { "$ref": "#/$defs/activeEntry" } },
+            "states": { "type": "array", "items": { "$ref": "#/$defs/stateObject" } },
+            "deltas": { "type": "array", "items": { "$ref": "#/$defs/deltaObject" } },
+            "anchors": { "type": "array", "items": { "$ref": "#/$defs/anchorObject" } },
+            "derivedRelationships": { "$ref": "#/$defs/derivedRelationships" },
+            "notes": { "$ref": "#/$defs/notes" }
+          },
+          "$defs": {
+            "quickIndex": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["workspace", "root", "branch", "commit", "dirty", "headStateId", "headShortId", "counts", "currentChangedArtifacts", "mainAnchors"],
+              "properties": {
+                "workspace": { "type": "string" },
+                "root": { "type": "string" },
+                "branch": { "type": ["string", "null"] },
+                "commit": { "type": ["string", "null"] },
+                "dirty": { "type": "boolean" },
+                "headStateId": { "type": "string" },
+                "headShortId": { "type": "string" },
+                "counts": { "$ref": "#/$defs/counts" },
+                "currentChangedArtifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+                "mainAnchors": { "type": "array", "items": { "$ref": "#/$defs/anchorSummary" } }
+              }
+            },
+            "workspace": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "root", "gitContext", "changedArtifacts"],
+              "properties": {
+                "name": { "type": "string" },
+                "root": { "type": "string" },
+                "gitContext": { "$ref": "#/$defs/gitContext" },
+                "changedArtifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } }
+              }
+            },
+            "gitContext": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["branch", "commit", "dirty"],
+              "properties": {
+                "branch": { "type": ["string", "null"] },
+                "commit": { "type": ["string", "null"] },
+                "dirty": { "type": "boolean" }
+              }
+            },
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["states", "deltas", "anchors", "activeChainLength", "orphanStateCount", "orphanDeltaCount"],
+              "properties": {
+                "states": { "type": "integer", "minimum": 0 },
+                "deltas": { "type": "integer", "minimum": 0 },
+                "anchors": { "type": "integer", "minimum": 0 },
+                "activeChainLength": { "type": "integer", "minimum": 0 },
+                "orphanStateCount": { "type": "integer", "minimum": 0 },
+                "orphanDeltaCount": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "activeEntry": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["stateId", "anchors", "mode", "promptIsExcerpt", "gitContext", "artifacts"],
+              "properties": {
+                "stateId": { "type": "string" },
+                "incomingDeltaId": { "type": ["string", "null"] },
+                "anchors": { "type": "array", "items": { "$ref": "#/$defs/anchorSummary" } },
+                "mode": { "type": "string" },
+                "prompt": { "type": ["string", "null"] },
+                "promptIsExcerpt": { "type": "boolean" },
+                "answerSummary": { "type": ["string", "null"] },
+                "gitContext": { "$ref": "#/$defs/gitContext" },
+                "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } }
+              }
+            },
+            "stateObject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "payloadCanonicalJson", "payloadDecoded", "refs", "meta"],
+              "properties": {
+                "id": { "type": "string" },
+                "payloadCanonicalJson": { "type": "string" },
+                "payloadDecoded": { "$ref": "#/$defs/jsonValue" },
+                "refs": { "type": "array", "items": { "$ref": "#/$defs/refObject" } },
+                "meta": { "$ref": "#/$defs/meta" }
+              }
+            },
+            "deltaObject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "fromStateId", "toStateId", "ops", "refs", "evidenceRefs", "meta"],
+              "properties": {
+                "id": { "type": "string" },
+                "fromStateId": { "type": "string" },
+                "toStateId": { "type": "string" },
+                "ops": { "type": "array", "items": { "$ref": "#/$defs/deltaOpObject" } },
+                "refs": { "type": "array", "items": { "$ref": "#/$defs/refObject" } },
+                "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRefObject" } },
+                "meta": { "$ref": "#/$defs/meta" }
+              }
+            },
+            "deltaOpObject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "path"],
+              "properties": {
+                "kind": { "type": "string" },
+                "path": { "type": "string" },
+                "valueJson": { "type": ["string", "null"] },
+                "decodedValueJson": { "$ref": "#/$defs/jsonValue" }
+              }
+            },
+            "anchorObject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "stateId", "parentAnchorIds", "meta"],
+              "properties": {
+                "id": { "type": "string" },
+                "stateId": { "type": "string" },
+                "parentAnchorIds": { "type": "array", "items": { "type": "string" } },
+                "meta": { "$ref": "#/$defs/meta" }
+              }
+            },
+            "meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["createdAtUtc"],
+              "properties": {
+                "createdAtUtc": { "type": "string", "format": "date-time" },
+                "createdBy": { "type": ["string", "null"] },
+                "label": { "type": ["string", "null"] },
+                "reason": { "type": ["string", "null"] }
+              }
+            },
+            "refObject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind", "uri"],
+              "properties": {
+                "id": { "type": "string" },
+                "kind": { "type": "string" },
+                "uri": { "type": "string" },
+                "hash": { "type": ["string", "null"] },
+                "mediaType": { "type": ["string", "null"] },
+                "meta": { "oneOf": [ { "$ref": "#/$defs/meta" }, { "type": "null" } ] }
+              }
+            },
+            "evidenceRefObject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind", "ref"],
+              "properties": {
+                "id": { "type": "string" },
+                "kind": { "type": "string" },
+                "ref": { "$ref": "#/$defs/refObject" },
+                "summary": { "type": ["string", "null"] },
+                "hash": { "type": ["string", "null"] }
+              }
+            },
+            "artifact": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "path", "changeType", "gitStatus", "source"],
+              "properties": {
+                "kind": { "type": "string" },
+                "path": { "type": "string" },
+                "changeType": { "type": "string" },
+                "gitStatus": { "type": "string" },
+                "source": { "type": "string" }
+              }
+            },
+            "derivedRelationships": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["activeStateIds", "activeDeltaIds", "orphanStateIds", "orphanDeltaIds", "anchorsByStateId", "deltasByToStateId", "deltasByFromStateId"],
+              "properties": {
+                "activeStateIds": { "type": "array", "items": { "type": "string" } },
+                "activeDeltaIds": { "type": "array", "items": { "type": "string" } },
+                "orphanStateIds": { "type": "array", "items": { "type": "string" } },
+                "orphanDeltaIds": { "type": "array", "items": { "type": "string" } },
+                "anchorsByStateId": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/anchorSummary" } } },
+                "deltasByToStateId": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+                "deltasByFromStateId": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } }
+              }
+            },
+            "anchorSummary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "label"],
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": ["string", "null"] }
+              }
+            },
+            "jsonValue": {
+              "description": "Any JSON value.",
+              "type": ["object", "array", "string", "number", "boolean", "null"]
+            },
+            "notes": {
+              "type": "array",
+              "items": { "type": "string" }
             }
-
-            return result;
+          }
         }
+        """;
 
-        static object Ref(string path) => Dict(("$ref", path));
+        return JsonDocument.Parse(schemaJson).RootElement.Clone();
+    }
 
-        var jsonValueTypes = new[] { "object", "array", "string", "number", "boolean", "null" };
-        var stringOrNull = new[] { "string", "null" };
-
-        return Dict(
-            ("$schema", "https://json-schema.org/draft/2020-12/schema"),
-            ("$id", "urn:rfs:rck-dag-context-pack:v1"),
-            ("title", "RCK DAG Context Pack v1"),
-            ("type", "object"),
-            ("additionalProperties", false),
-            ("required", new[]
-            {
-                "schemaVersion",
-                "type",
-                "generatedAtUtc",
-                "workspace",
-                "headStateId",
-                "headShortId",
-                "counts",
-                "activeChain",
-                "states",
-                "deltas",
-                "anchors",
-                "derivedRelationships",
-            }),
-            ("properties", Dict(
-                ("schemaVersion", Dict(("type", "integer"), ("const", 1))),
-                ("type", Dict(("type", "string"), ("const", "rck-dag-context-pack-v1"))),
-                ("generatedAtUtc", Dict(("type", "string"), ("format", "date-time"))),
-                ("workspace", Ref("#/$defs/workspace")),
-                ("headStateId", Dict(("type", "string"))),
-                ("headShortId", Dict(("type", "string"))),
-                ("counts", Ref("#/$defs/counts")),
-                ("activeChain", Dict(("type", "array"), ("items", Ref("#/$defs/activeEntry")))),
-                ("states", Dict(("type", "array"), ("items", Ref("#/$defs/stateObject")))),
-                ("deltas", Dict(("type", "array"), ("items", Ref("#/$defs/deltaObject")))),
-                ("anchors", Dict(("type", "array"), ("items", Ref("#/$defs/anchorObject")))),
-                ("derivedRelationships", Ref("#/$defs/derivedRelationships"))
-            )),
-            ("$defs", Dict(
-                ("workspace", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "name", "root", "gitContext", "changedArtifacts" }),
-                    ("properties", Dict(
-                        ("name", Dict(("type", "string"))),
-                        ("root", Dict(("type", "string"))),
-                        ("gitContext", Ref("#/$defs/gitContext")),
-                        ("changedArtifacts", Dict(("type", "array"), ("items", Ref("#/$defs/artifact"))))
-                    ))
-                )),
-                ("gitContext", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "branch", "commit", "dirty" }),
-                    ("properties", Dict(
-                        ("branch", Dict(("type", stringOrNull))),
-                        ("commit", Dict(("type", stringOrNull))),
-                        ("dirty", Dict(("type", "boolean")))
-                    ))
-                )),
-                ("counts", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "states", "deltas", "anchors", "activeChainLength", "orphanStateCount", "orphanDeltaCount" }),
-                    ("properties", Dict(
-                        ("states", Dict(("type", "integer"), ("minimum", 0))),
-                        ("deltas", Dict(("type", "integer"), ("minimum", 0))),
-                        ("anchors", Dict(("type", "integer"), ("minimum", 0))),
-                        ("activeChainLength", Dict(("type", "integer"), ("minimum", 0))),
-                        ("orphanStateCount", Dict(("type", "integer"), ("minimum", 0))),
-                        ("orphanDeltaCount", Dict(("type", "integer"), ("minimum", 0)))
-                    ))
-                )),
-                ("activeEntry", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "stateId", "anchors", "mode", "promptIsExcerpt", "gitContext", "artifacts" }),
-                    ("properties", Dict(
-                        ("stateId", Dict(("type", "string"))),
-                        ("incomingDeltaId", Dict(("type", stringOrNull))),
-                        ("anchors", Dict(("type", "array"), ("items", Ref("#/$defs/anchorSummary")))),
-                        ("mode", Dict(("type", "string"))),
-                        ("prompt", Dict(("type", stringOrNull))),
-                        ("promptIsExcerpt", Dict(("type", "boolean"))),
-                        ("answerSummary", Dict(("type", stringOrNull))),
-                        ("gitContext", Ref("#/$defs/gitContext")),
-                        ("artifacts", Dict(("type", "array"), ("items", Ref("#/$defs/artifact"))))
-                    ))
-                )),
-                ("stateObject", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "id", "payloadCanonicalJson", "payloadDecoded", "refs", "meta" }),
-                    ("properties", Dict(
-                        ("id", Dict(("type", "string"))),
-                        ("payloadCanonicalJson", Dict(("type", "string"))),
-                        ("payloadDecoded", Dict(
-                            ("description", "Parsed JSON payload for the state; shape varies by state type."),
-                            ("type", jsonValueTypes)
-                        )),
-                        ("refs", Dict(("type", "array"), ("items", Ref("#/$defs/refObject")))),
-                        ("meta", Ref("#/$defs/meta"))
-                    ))
-                )),
-                ("deltaObject", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "id", "fromStateId", "toStateId", "ops", "refs", "evidenceRefs", "meta" }),
-                    ("properties", Dict(
-                        ("id", Dict(("type", "string"))),
-                        ("fromStateId", Dict(("type", "string"))),
-                        ("toStateId", Dict(("type", "string"))),
-                        ("ops", Dict(("type", "array"), ("items", Ref("#/$defs/deltaOpObject")))),
-                        ("refs", Dict(("type", "array"), ("items", Ref("#/$defs/refObject")))),
-                        ("evidenceRefs", Dict(("type", "array"), ("items", Ref("#/$defs/evidenceRefObject")))),
-                        ("meta", Ref("#/$defs/meta"))
-                    ))
-                )),
-                ("deltaOpObject", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "kind", "path" }),
-                    ("properties", Dict(
-                        ("kind", Dict(("type", "string"))),
-                        ("path", Dict(("type", "string"))),
-                        ("valueJson", Dict(("type", stringOrNull))),
-                        ("decodedValueJson", Dict(
-                            ("description", "Parsed JSON payload for the delta op valueJson; preserve the raw object shape when present."),
-                            ("type", jsonValueTypes)
-                        ))
-                    ))
-                )),
-                ("anchorObject", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "id", "stateId", "parentAnchorIds", "meta" }),
-                    ("properties", Dict(
-                        ("id", Dict(("type", "string"))),
-                        ("stateId", Dict(("type", "string"))),
-                        ("parentAnchorIds", Dict(("type", "array"), ("items", Dict(("type", "string"))))),
-                        ("meta", Ref("#/$defs/meta"))
-                    ))
-                )),
-                ("meta", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "createdAtUtc" }),
-                    ("properties", Dict(
-                        ("createdAtUtc", Dict(("type", "string"), ("format", "date-time"))),
-                        ("createdBy", Dict(("type", stringOrNull))),
-                        ("label", Dict(("type", stringOrNull))),
-                        ("reason", Dict(("type", stringOrNull)))
-                    ))
-                )),
-                ("refObject", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "id", "kind", "uri" }),
-                    ("properties", Dict(
-                        ("id", Dict(("type", "string"))),
-                        ("kind", Dict(("type", "string"))),
-                        ("uri", Dict(("type", "string"))),
-                        ("hash", Dict(("type", stringOrNull))),
-                        ("mediaType", Dict(("type", stringOrNull))),
-                        ("meta", Dict(("oneOf", new object[] { Ref("#/$defs/meta"), Dict(("type", "null")) })))
-                    ))
-                )),
-                ("evidenceRefObject", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "id", "kind", "ref" }),
-                    ("properties", Dict(
-                        ("id", Dict(("type", "string"))),
-                        ("kind", Dict(("type", "string"))),
-                        ("ref", Ref("#/$defs/refObject")),
-                        ("summary", Dict(("type", stringOrNull))),
-                        ("hash", Dict(("type", stringOrNull)))
-                    ))
-                )),
-                ("artifact", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "kind", "path", "changeType", "gitStatus", "source" }),
-                    ("properties", Dict(
-                        ("kind", Dict(("type", "string"))),
-                        ("path", Dict(("type", "string"))),
-                        ("changeType", Dict(("type", "string"))),
-                        ("gitStatus", Dict(("type", "string"))),
-                        ("source", Dict(("type", "string")))
-                    ))
-                )),
-                ("derivedRelationships", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "activeStateIds", "activeDeltaIds", "orphanStateIds", "orphanDeltaIds", "anchorsByStateId", "deltasByToStateId", "deltasByFromStateId" }),
-                    ("properties", Dict(
-                        ("activeStateIds", Dict(("type", "array"), ("items", Dict(("type", "string"))))),
-                        ("activeDeltaIds", Dict(("type", "array"), ("items", Dict(("type", "string"))))),
-                        ("orphanStateIds", Dict(("type", "array"), ("items", Dict(("type", "string"))))),
-                        ("orphanDeltaIds", Dict(("type", "array"), ("items", Dict(("type", "string"))))),
-                        ("anchorsByStateId", Dict(("type", "object"), ("additionalProperties", Dict(("type", "array"), ("items", Ref("#/$defs/anchorSummary")))))),
-                        ("deltasByToStateId", Dict(("type", "object"), ("additionalProperties", Dict(("type", "array"), ("items", Dict(("type", "string"))))))),
-                        ("deltasByFromStateId", Dict(("type", "object"), ("additionalProperties", Dict(("type", "array"), ("items", Dict(("type", "string")))))))
-                    ))
-                )),
-                ("anchorSummary", Dict(
-                    ("type", "object"),
-                    ("additionalProperties", false),
-                    ("required", new[] { "id", "label" }),
-                    ("properties", Dict(
-                        ("id", Dict(("type", "string"))),
-                        ("label", Dict(("type", stringOrNull)))
-                    ))
-                ))
-            ))
-        );
+    private static object BuildNotes()
+    {
+        return new[]
+        {
+            "This is a full DAG export, not a repository content export.",
+            "It does not include file contents.",
+            "It does not include git diffs.",
+            "It does not include artifact hashes yet.",
+            "RckRef / EvidenceRef may be empty in the current implementation.",
+            "The LLM should use this as trace context, not as source code evidence.",
+        };
     }
 
     private object BuildDagMetadata()

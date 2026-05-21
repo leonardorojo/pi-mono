@@ -70,10 +70,7 @@ if (args[0] == "context-pack")
         return 1;
     }
 
-    foreach (var line in contextPackResult.FormatMarkdownLines())
-    {
-        Console.WriteLine(line);
-    }
+    Console.WriteLine(contextPackResult.ToJson());
 
     return 0;
 }
@@ -652,7 +649,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs init   = bootstrap .rfs + RCK genesis state/anchor");
     Console.WriteLine("  rfs status = show local rfs/RCK workspace status");
     Console.WriteLine("  rfs log    = show active RCK cognitive history");
-    Console.WriteLine("  rfs context-pack = export full RCK DAG context pack for LLMs");
+    Console.WriteLine("  rfs context-pack = export full RCK DAG context pack as JSON");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");

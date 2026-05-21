@@ -27,7 +27,7 @@ High-level behavior:
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
 - `rfs status` is read-only and reports workspace, RCK, and Git context
 - `rfs log` is read-only and walks the active RCK chain from `.rfs/rck/HEAD` backward through reachable Deltas
-- `rfs context-pack` is read-only and exports the full RCK DAG plus a schema/interpretation guide for LLMs
+- `rfs context-pack` is read-only and exports the full RCK DAG as canonical JSON with an embedded schema and interpretation rules
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
 
@@ -304,10 +304,13 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- context-pack
 ```
 
 `rfs context-pack` is read-only.
-It exports the full `.rfs/rck/` DAG, not a compact summary.
+It exports the full `.rfs/rck/` DAG as *JSON puro*.
+JSON is the canonical portable format for this command.
 It includes:
 
-- a schema / interpretation guide for LLMs
+- a formal JSON Schema embedded in the payload
+- embedded interpretation rules
+- a quick index
 - workspace metadata
 - HEAD metadata
 - the active chain
@@ -315,11 +318,14 @@ It includes:
 - all Delta objects
 - all Anchor objects
 - derived relationships such as `activeStateIds`, `activeDeltaIds`, and `anchorsByStateId`
+- decoded `payloadDecoded` values on states
+- decoded `decodedValueJson` values on delta ops when parseable
 
 Output notes:
 
-- Markdown on stdout
-- JSON blocks for machine- and LLM-friendly parsing
+- no Markdown report
+- no fenced code blocks
+- no narrative text outside the JSON object
 - no file contents
 - no git diffs
 - no artifact hashes yet

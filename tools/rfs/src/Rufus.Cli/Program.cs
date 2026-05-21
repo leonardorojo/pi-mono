@@ -112,11 +112,11 @@ if (args[0] == "agent")
         return 1;
     }
 
-    const string helperRelativePath = "tools/rfs/bridge/rfs-agent.mjs";
-    var helperPath = FindRepoFile(helperRelativePath);
+    const string helperRelativePath = "rfs-agent.mjs";
+    var helperPath = FindBridgeHelperPath(helperRelativePath);
     if (helperPath is null)
     {
-        Console.Error.WriteLine($"rfs agent helper not found: {helperRelativePath}");
+        Console.Error.WriteLine($"rfs agent helper not found: tools/rfs/bridge/{helperRelativePath}");
         return 1;
     }
 
@@ -525,11 +525,11 @@ if (args[0] == "ask")
 
     var task = prompt;
 
-    const string helperRelativePath = "tools/rfs/bridge/rfs-ask.mjs";
-    var helperPath = FindRepoFile(helperRelativePath);
+    const string helperRelativePath = "rfs-ask.mjs";
+    var helperPath = FindBridgeHelperPath(helperRelativePath);
     if (helperPath is null)
     {
-        Console.Error.WriteLine($"rfs ask helper not found: {helperRelativePath}");
+        Console.Error.WriteLine($"rfs ask helper not found: tools/rfs/bridge/{helperRelativePath}");
         return 1;
     }
 
@@ -639,19 +639,26 @@ static void PrintHelp()
     Console.WriteLine("  agent  = agente headless con tools read-only + streaming");
 }
 
-static bool IsHelpCommand(string command)
+static string? FindBridgeHelperPath(string helperFileName)
 {
-    return command is "help" or "--help" or "-h";
+    var bridgeRoot = FindRfsBridgeRoot();
+    if (bridgeRoot is null)
+    {
+        return null;
+    }
+
+    var helperPath = Path.Combine(bridgeRoot, helperFileName);
+    return File.Exists(helperPath) ? helperPath : null;
 }
-static string? FindRepoFile(string relativePath)
+
+static string? FindRfsBridgeRoot()
 {
-    var currentDirectory = Directory.GetCurrentDirectory();
-    var current = new DirectoryInfo(currentDirectory);
+    var current = new DirectoryInfo(AppContext.BaseDirectory);
 
     while (current is not null)
     {
-        var candidate = Path.Combine(current.FullName, relativePath);
-        if (File.Exists(candidate))
+        var candidate = Path.Combine(current.FullName, "tools", "rfs", "bridge");
+        if (Directory.Exists(candidate))
         {
             return candidate;
         }
@@ -660,4 +667,9 @@ static string? FindRepoFile(string relativePath)
     }
 
     return null;
+}
+
+static bool IsHelpCommand(string command)
+{
+    return command is "help" or "--help" or "-h";
 }

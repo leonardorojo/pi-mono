@@ -707,7 +707,7 @@ public sealed record RckWorkspaceContextPackActiveEntry(
     string? Prompt,
     bool PromptIsExcerpt,
     string? AnswerSummary,
-    string? GitBranch,
-    string? GitCommit,
-    bool GitDirty,
+    RckWorkspaceContextPackGitContext GitContext,
     IReadOnlyList<GitWorkspaceArtifactChange> Artifacts);
+
+public sealed record RckWorkspaceContextPackGitContext(string? Branch, string? Commit, bool Dirty);

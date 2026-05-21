@@ -127,9 +127,10 @@ public static class RckWorkspaceContextPackReader
                 Prompt: promptPreview,
                 PromptIsExcerpt: promptIsExcerpt,
                 AnswerSummary: stateSnapshot.InteractionAnswerSummary,
-                GitBranch: stateSnapshot.GitBranch,
-                GitCommit: stateSnapshot.GitCommit,
-                GitDirty: stateSnapshot.GitDirty,
+                GitContext: new RckWorkspaceContextPackGitContext(
+                    Branch: stateSnapshot.GitBranch,
+                    Commit: stateSnapshot.GitCommit,
+                    Dirty: stateSnapshot.GitDirty),
                 Artifacts: stateSnapshot.Artifacts));
 
             if (incomingDelta is null)

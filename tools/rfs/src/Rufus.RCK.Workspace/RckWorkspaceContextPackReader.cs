@@ -91,7 +91,8 @@ public static class RckWorkspaceContextPackReader
             orphanDeltaIds: orphanDeltaIds,
             anchorsByStateId: anchorsByStateId,
             deltasByToStateId: BuildDeltaIdIndex(deltasByToStateSnapshots),
-            deltasByFromStateId: BuildDeltaIdIndex(deltasByFromStateSnapshots));
+            deltasByFromStateId: BuildDeltaIdIndex(deltasByFromStateSnapshots),
+            changedArtifacts: gitContext.ChangedArtifacts);
     }
 
     private static IReadOnlyList<RckWorkspaceContextPackActiveEntry> BuildActiveChain(

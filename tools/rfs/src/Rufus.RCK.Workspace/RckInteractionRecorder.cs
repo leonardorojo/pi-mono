@@ -54,26 +54,12 @@ public static class RckInteractionRecorder
             nextStatePayloadJson,
             meta: new RckStateMeta(DateTimeOffset.UtcNow, createdBy, record.Mode, "recorded LLM interaction"));
 
-        var interactionPayload = new Dictionary<string, object?>
-        {
-            ["mode"] = record.Mode,
-            ["prompt"] = record.Prompt,
-            ["answer"] = record.Answer,
-        };
-
-        if (record.Tools.Count > 0)
-        {
-            interactionPayload["tools"] = record.Tools.Select(tool => new
-            {
-                name = tool.Name,
-                status = tool.Status,
-            }).ToArray();
-        }
+        var interactionDeltaPayload = BuildInteractionDeltaPayload(previousState.Id, nextState.Id, record);
 
         var interactionOp = new PatchOp(
             PatchOpKind.Replace,
             "/interaction",
-            JsonSerializer.Serialize(interactionPayload));
+            JsonSerializer.Serialize(interactionDeltaPayload));
 
         var delta = RckDelta.Create(
             previousState.Id,
@@ -178,6 +164,68 @@ public static class RckInteractionRecorder
         };
 
         return JsonSerializer.Serialize(payload);
+    }
+
+    private static object BuildInteractionDeltaPayload(RckStateId previousStateId, RckStateId nextStateId, RckInteractionRecord record)
+    {
+        var changes = new List<object>
+        {
+            new
+            {
+                path = "/interaction",
+                kind = "updated",
+                summary = "Recorded a new LLM interaction.",
+            },
+            new
+            {
+                path = "/git",
+                kind = "refreshed",
+                summary = "Captured current Git context.",
+            },
+        };
+
+        var tools = record.Mode == "agent"
+            ? record.Tools.Select(tool => new
+            {
+                name = tool.Name,
+                status = tool.Status,
+            }).Cast<object>().ToArray()
+            : Array.Empty<object>();
+
+        if (record.Mode == "agent" && record.Tools.Count > 0)
+        {
+            changes.Add(new
+            {
+                path = "/tools",
+                kind = "added",
+                summary = "Captured tool calls used by the agent.",
+            });
+        }
+
+        return new
+        {
+            type = "rufus.interaction-delta",
+            schemaVersion = 1,
+            change = new
+            {
+                summary = "Recorded a new LLM interaction.",
+                fromStateId = previousStateId.ToString(),
+                toStateId = nextStateId.ToString(),
+                changes = changes.ToArray(),
+            },
+            cause = new
+            {
+                type = "llm-interaction",
+                mode = record.Mode,
+                prompt = record.Prompt,
+                answer = record.Answer,
+            },
+            evidence = new
+            {
+                tools = tools,
+                artifacts = Array.Empty<object>(),
+            },
+        };
     }
 
     private static string SerializeStateEnvelope(RckState state)

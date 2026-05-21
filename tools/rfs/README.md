@@ -27,7 +27,7 @@ High-level behavior:
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
 - `rfs status` is read-only and reports workspace, RCK, and Git context
 - `rfs log` is read-only and walks the active RCK chain from `.rfs/rck/HEAD` backward through reachable Deltas
-- `rfs context-pack` is read-only and exports the full RCK DAG as canonical JSON with an embedded schema and interpretation rules
+- `rfs context-pack` is read-only and exports the full RCK DAG as JSON
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
 
@@ -304,36 +304,83 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- context-pack
 ```
 
 `rfs context-pack` is read-only.
-It exports the full `.rfs/rck/` DAG as *JSON puro*.
+It exports the active workspace RCK DAG as *pure JSON*.
 JSON is the canonical portable format for this command.
-It includes:
+It is intended to be pasted into another LLM or consumed by tools.
+Markdown is not emitted by this command.
 
-- a formal JSON Schema embedded in the payload
-- embedded interpretation rules
-- a quick index
-- workspace metadata
-- HEAD metadata
-- the active chain
-- all State objects
-- all Delta objects
-- all Anchor objects
-- derived relationships such as `activeStateIds`, `activeDeltaIds`, and `anchorsByStateId`
-- decoded `payloadDecoded` values on states
-- decoded `decodedValueJson` values on delta ops when parseable
+Top-level fields:
+
+- `schemaVersion`
+- `type`
+- `generatedAtUtc`
+- `schema`
+- `interpretationRules`
+- `quickIndex`
+- `workspace`
+- `headStateId`
+- `headShortId`
+- `counts`
+- `activeChain`
+- `states`
+- `deltas`
+- `anchors`
+- `derivedRelationships`
+- `notes`
+
+Content notes:
+
+- `schema` contains a formal JSON Schema document embedded in the payload
+- `interpretationRules` defines the DAG reading rules
+- `quickIndex` is a compact navigation summary
+- `workspace` captures the repository root and git context
+- `headStateId` / `headShortId` identify the current HEAD State
+- `counts` summarizes DAG sizes and reachability counts
+- `activeChain` walks backward from HEAD toward genesis
+- `states` includes `payloadDecoded`
+- `deltas` includes `decodedValueJson` when the op payload can be parsed
+- `anchors` is always present
+- `derivedRelationships` is always present
+- `notes` explains output limits and interpretation boundaries
+
+Active chain shape:
+
+- ordered from HEAD backward to genesis
+- each entry includes:
+  - `stateId`
+  - `incomingDeltaId`
+  - `anchors`
+  - `mode`
+  - `prompt`
+  - `answerSummary`
+  - `gitContext`
+  - `artifacts`
+
+The `gitContext` shape is explicitly nested:
+
+```json
+{
+  "gitContext": {
+    "branch": "master",
+    "commit": "...",
+    "dirty": true
+  }
+}
+```
 
 Output notes:
 
 - no Markdown report
-- no fenced code blocks
+- no fenced code blocks in the command output
 - no narrative text outside the JSON object
 - no file contents
 - no git diffs
 - no artifact hashes yet
 - it can be large
 - it does not modify `.rfs/`
+- `.rfs/` is internal metadata and is excluded from changed artifact tracking
 
 This v1 is a full DAG export. A future compact context pack can be added later as a separate command or mode.
-
 
 Still not present:
 

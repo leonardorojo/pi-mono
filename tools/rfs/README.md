@@ -134,6 +134,7 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- ask --record "Respond in one sho
 ```
 
 `rfs ask --record` executes the headless ask flow and records the interaction into local RCK.
+When the worktree has changed files, the recording captures `artifacts` for `ask --record` and `agent --record`.
 
 Recording shape:
 
@@ -149,6 +150,47 @@ Minimum payload shape includes:
 - answer / answerSummary
 - git context
 - artifacts []
+
+## Changed artifact paths
+
+RCK records a minimal artifact footprint when the worktree has changes.
+
+- RCK does not store diffs.
+- RCK does not store file contents.
+- RCK does not store artifact hashes yet.
+- Git keeps the full content and the diffs.
+- RCK stores only a minimal trace of changed artifacts.
+- The source of truth is `git status --porcelain`.
+- `.rfs/` is excluded and must not contaminate the recording.
+
+Each artifact entry includes, at minimum:
+
+- `kind = file`
+- `path`
+- `changeType`
+- `gitStatus`
+- `source = git-status`
+
+State payload:
+
+- `artifacts` can include real changed paths.
+
+Delta payload:
+
+- `evidence.artifacts` can include real changed paths.
+- `change.changes` includes `/artifacts` when artifacts are detected.
+
+Conceptual example:
+
+```json
+{
+  "kind": "file",
+  "path": "tools/rfs/README.md",
+  "changeType": "modified",
+  "gitStatus": " M",
+  "source": "git-status"
+}
+```
 
 ## Test `agent`
 
@@ -186,11 +228,13 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- agent --record "inspect tools/rf
 ```
 
 `rfs agent --record` executes the headless streaming agent and records the interaction into local RCK.
+When the worktree has changed files, the recording captures `artifacts` for `agent --record` and `ask --record`.
 
 Recording behavior:
 
 - records a full interaction as State + Delta
 - captures basic tools from the streamed events
+- captures changed artifacts when the worktree has changes
 - updates `.rfs/rck/HEAD`
 - does not record anything unless `--record` is present
 

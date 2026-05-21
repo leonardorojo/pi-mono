@@ -46,6 +46,17 @@ if (args[0] == "init")
     return initResult.Success ? 0 : 1;
 }
 
+if (args[0] == "log")
+{
+    var logResult = RckWorkspaceLogReader.Read();
+    foreach (var line in logResult.FormatConsoleLines())
+    {
+        Console.WriteLine(line);
+    }
+
+    return logResult.Success ? 0 : 1;
+}
+
 if (args[0] == "pi")
 {
     var message = string.Join(" ", args.Skip(1));
@@ -617,6 +628,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs help");
     Console.WriteLine("  rfs init   = bootstrap .rfs + RCK genesis state/anchor");
     Console.WriteLine("  rfs status = show local rfs/RCK workspace status");
+    Console.WriteLine("  rfs log    = show active RCK cognitive history");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");

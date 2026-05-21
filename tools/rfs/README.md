@@ -11,6 +11,7 @@ Implemented commands:
 - `rfs --version`
 - `rfs init`
 - `rfs status`
+- `rfs log`
 - `rfs pi [message]`
 - `rfs ask <prompt>`
 - `rfs ask --record <prompt>`
@@ -25,6 +26,7 @@ High-level behavior:
 - `rfs agent` is the headless streaming agent path
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
 - `rfs status` is read-only and reports workspace, RCK, and Git context
+- `rfs log` is read-only and walks the active RCK chain from `.rfs/rck/HEAD` backward through reachable Deltas
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
 
@@ -54,6 +56,7 @@ Meaning:
 - `.rfs/config.json` stores local workspace configuration
 - `.rfs/rck/HEAD` points to the current State id
 - `.rfs/rck/HEAD` defines the active cognitive chain
+- `rfs log` starts from `HEAD`, follows incoming Deltas backward, and ignores orphan objects not reachable from `HEAD`
 - future log/navigation commands should start from `HEAD`
 - extra State/Delta JSON files do not necessarily belong to the active chain
 - orphan objects may exist during development/testing and should be handled by future validation/log tooling

@@ -38,7 +38,7 @@ if (args[0] == "status")
 if (args[0] == "init")
 {
     var initResult = RckWorkspaceInitializer.Initialize();
-    foreach (var line in initResult.FormatConsoleLines())
+    foreach (var line in initResult.FormatConsoleSummaryLines())
     {
         Console.WriteLine(line);
     }

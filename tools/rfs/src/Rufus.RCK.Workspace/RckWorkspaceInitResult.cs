@@ -93,6 +93,27 @@ public sealed record RckWorkspaceInitResult
             anchorId: anchorId);
     }
 
+    public IEnumerable<string> FormatConsoleSummaryLines()
+    {
+        if (!Success)
+        {
+            if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                yield return ErrorMessage;
+            }
+
+            yield break;
+        }
+
+        var workspacePath = Path.GetRelativePath(RepoRoot!, Paths!.WorkspaceDirectory);
+        var alreadyInitialized = !ConfigCreated && !RckDirectoriesCreated && !HeadCreated && !StateCreated && !AnchorCreated;
+        var prefix = alreadyInitialized
+            ? "RFS workspace already initialized in"
+            : "Initialized RFS workspace in";
+
+        yield return $"{prefix} {workspacePath}";
+    }
+
     public IEnumerable<string> FormatConsoleLines()
     {
         if (!Success)

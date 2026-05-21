@@ -53,6 +53,10 @@ Meaning:
 - `.rfs/` is workspace-local Rufus state and is ignored by Git
 - `.rfs/config.json` stores local workspace configuration
 - `.rfs/rck/HEAD` points to the current State id
+- `.rfs/rck/HEAD` defines the active cognitive chain
+- future log/navigation commands should start from `HEAD`
+- extra State/Delta JSON files do not necessarily belong to the active chain
+- orphan objects may exist during development/testing and should be handled by future validation/log tooling
 - `.rfs/rck/states/` stores State JSON files
 - `.rfs/rck/deltas/` stores Delta JSON files
 - `.rfs/rck/anchors/` stores Anchor JSON files
@@ -141,13 +145,16 @@ Recording shape:
 - previous State + Delta -> next State
 - updates `.rfs/rck/HEAD`
 - captures the Git context in the State payload as material context
+- State payload stores `answerSummary`
+- Delta cause stores the full answer
 - does not record anything unless `--record` is present
 
 Minimum payload shape includes:
 
 - mode
 - prompt
-- answer / answerSummary
+- answerSummary in State
+- answer in Delta cause
 - git context
 - artifacts []
 
@@ -174,6 +181,7 @@ Each artifact entry includes, at minimum:
 State payload:
 
 - `artifacts` can include real changed paths.
+- `answerSummary` stays compact; the full answer lives in Delta cause.
 
 Delta payload:
 
@@ -234,6 +242,9 @@ Recording behavior:
 
 - records a full interaction as State + Delta
 - captures basic tools from the streamed events
+- Agent tool calls are recorded in Delta `evidence.tools`.
+- Tools are not currently stored in the State payload.
+- State only stores `answerSummary`, not the full answer or tool list.
 - captures changed artifacts when the worktree has changes
 - updates `.rfs/rck/HEAD`
 - does not record anything unless `--record` is present
@@ -284,6 +295,11 @@ Still not present:
 - DAG navigation commands
 - automatic recording without `--record`
 - production-grade command routing or lifecycle management
+- `RckRef` and `EvidenceRef` population in the current recorder
+- changed artifacts represented as `RckRef` / `EvidenceRef`
+- artifact hashes
+- file diffs
+- file contents in RCK artifacts
 
 `ask` is only as good as the Pi configuration underneath it.
 If Pi is not configured or authenticated, `ask` will fail the same way Pi would.
@@ -340,16 +356,18 @@ It should stay small and focused on base DAG concepts:
 If higher-level behavior is needed, it should live in a separate layer, preferably `tools/rfs/src/Rufus.RCK.Workspace/`.
 That layer owns `.rfs/` layout, workspace persistence, Git context capture, interactivity mapping, and future commit-aware anchors such as `git-commit:<hash>`.
 
-Dependency rule:
+Preferred dependency rule:
 
 ```text
 Rufus.Cli
   -> Rufus.RCK.Workspace
       -> Rufus.RCK.Core
-
-Rufus.Cli
-  -> Rufus.RCK.Core
 ```
+
+In this design, `Rufus.Cli` should use `Rufus.RCK.Workspace` for workspace logic, `.rfs`, Git context, recording, and local persistence.
+`Rufus.RCK.Workspace` should use `Rufus.RCK.Core`.
+`Rufus.RCK.Core` must not depend on `Rufus.Cli` or `Rufus.RCK.Workspace`.
+Direct `Rufus.Cli -> Rufus.RCK.Core` references should be avoided unless there is an explicit justification.
 
 Prohibited dependencies:
 
@@ -359,6 +377,44 @@ Prohibited dependencies:
 - `Rufus.RCK.Core -> Node`
 - `Rufus.RCK.Core -> .rfs layout`
 - `Rufus.RCK.Core -> agent runtime`
+
+## State and Delta shape
+
+State = how the cognitive state ends up.
+Delta = what changed, what caused it, and what evidence supports it.
+
+State:
+
+- represents the snapshot cognitive result
+- in interaction states stores:
+  - `interaction.mode`
+  - `interaction.prompt`
+  - `interaction.answerSummary`
+  - `git.branch`
+  - `git.commit`
+  - `git.dirty`
+  - artifacts snapshot
+- does not store the full answer
+- does not store tools
+
+Delta:
+
+- represents the transition between previous State and next State
+- stores:
+  - `fromStateId`
+  - `toStateId`
+  - `PatchOp` over `/interaction`
+  - `valueJson` with:
+    - `change`
+    - `cause`
+    - `evidence`
+- `cause` contains:
+  - `mode`
+  - `prompt`
+  - full `answer`
+- `evidence` contains:
+  - tools for agent
+  - artifacts when there are changed artifact paths
 
 ## Conceptual boundary
 

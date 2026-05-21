@@ -49,12 +49,13 @@ public static class RckInteractionRecorder
 
         var previousState = LoadStoredState(previousStatePath);
         var currentGit = GitWorkspaceContext.Capture(repoRoot);
-        var nextStatePayloadJson = BuildInteractionStatePayload(record, currentGit);
+        var changedArtifacts = currentGit.ChangedArtifacts;
+        var nextStatePayloadJson = BuildInteractionStatePayload(record, currentGit, changedArtifacts);
         var nextState = RckState.Create(
             nextStatePayloadJson,
             meta: new RckStateMeta(DateTimeOffset.UtcNow, createdBy, record.Mode, "recorded LLM interaction"));
 
-        var interactionDeltaPayload = BuildInteractionDeltaPayload(previousState.Id, nextState.Id, record);
+        var interactionDeltaPayload = BuildInteractionDeltaPayload(previousState.Id, nextState.Id, record, changedArtifacts);
 
         var interactionOp = new PatchOp(
             PatchOpKind.Replace,
@@ -142,7 +143,10 @@ public static class RckInteractionRecorder
         return true;
     }
 
-    private static string BuildInteractionStatePayload(RckInteractionRecord record, GitWorkspaceContext gitContext)
+    private static string BuildInteractionStatePayload(
+        RckInteractionRecord record,
+        GitWorkspaceContext gitContext,
+        IReadOnlyList<GitWorkspaceArtifactChange> artifacts)
     {
         var payload = new
         {
@@ -160,13 +164,17 @@ public static class RckInteractionRecorder
                 commit = gitContext.Commit,
                 dirty = gitContext.Dirty,
             },
-            artifacts = Array.Empty<object>(),
+            artifacts = artifacts.Select(SerializeArtifactChange).ToArray(),
         };
 
         return JsonSerializer.Serialize(payload);
     }
 
-    private static object BuildInteractionDeltaPayload(RckStateId previousStateId, RckStateId nextStateId, RckInteractionRecord record)
+    private static object BuildInteractionDeltaPayload(
+        RckStateId previousStateId,
+        RckStateId nextStateId,
+        RckInteractionRecord record,
+        IReadOnlyList<GitWorkspaceArtifactChange> artifacts)
     {
         var changes = new List<object>
         {
@@ -183,6 +191,16 @@ public static class RckInteractionRecorder
                 summary = "Captured current Git context.",
             },
         };
+
+        if (artifacts.Count > 0)
+        {
+            changes.Add(new
+            {
+                path = "/artifacts",
+                kind = "updated",
+                summary = "Detected changed workspace artifacts.",
+            });
+        }
 
         var tools = record.Mode == "agent"
             ? record.Tools.Select(tool => new
@@ -223,7 +241,7 @@ public static class RckInteractionRecorder
             evidence = new
             {
                 tools = tools,
-                artifacts = Array.Empty<object>(),
+                artifacts = artifacts.Select(SerializeArtifactChange).ToArray(),
             },
         };
     }
@@ -329,6 +347,18 @@ public static class RckInteractionRecorder
             @ref = SerializeRckRef(evidenceRef.Ref),
             evidenceRef.Summary,
             hash = evidenceRef.Hash?.Value,
+        };
+    }
+
+    private static object SerializeArtifactChange(GitWorkspaceArtifactChange artifactChange)
+    {
+        return new
+        {
+            kind = artifactChange.Kind,
+            path = artifactChange.Path,
+            changeType = artifactChange.ChangeType,
+            gitStatus = artifactChange.GitStatus,
+            source = artifactChange.Source,
         };
     }
 

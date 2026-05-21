@@ -27,6 +27,7 @@ High-level behavior:
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
 - `rfs status` is read-only and reports workspace, RCK, and Git context
 - `rfs log` is read-only and walks the active RCK chain from `.rfs/rck/HEAD` backward through reachable Deltas
+- `rfs context-pack` is read-only and exports the full RCK DAG plus a schema/interpretation guide for LLMs
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
 
@@ -296,7 +297,37 @@ It shows the active cognitive history starting at `.rfs/rck/HEAD` and walking ba
 It ignores orphan State/Delta JSON files that are not reachable from `HEAD`.
 It prints a compact summary of each entry, including the interaction mode, prompt excerpt, answer summary, Git commit/dirty state, changed artifacts, Delta id, and `createdAt` / `CreatedBy` when present.
 
-## Current limitations
+## Test `context-pack`
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- context-pack
+```
+
+`rfs context-pack` is read-only.
+It exports the full `.rfs/rck/` DAG, not a compact summary.
+It includes:
+
+- a schema / interpretation guide for LLMs
+- workspace metadata
+- HEAD metadata
+- the active chain
+- all State objects
+- all Delta objects
+- all Anchor objects
+- derived relationships such as `activeStateIds`, `activeDeltaIds`, and `anchorsByStateId`
+
+Output notes:
+
+- Markdown on stdout
+- JSON blocks for machine- and LLM-friendly parsing
+- no file contents
+- no git diffs
+- no artifact hashes yet
+- it can be large
+- it does not modify `.rfs/`
+
+This v1 is a full DAG export. A future compact context pack can be added later as a separate command or mode.
+
 
 Still not present:
 

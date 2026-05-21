@@ -57,6 +57,27 @@ if (args[0] == "log")
     return logResult.Success ? 0 : 1;
 }
 
+if (args[0] == "context-pack")
+{
+    var contextPackResult = RckWorkspaceContextPackReader.Read();
+    if (!contextPackResult.Success)
+    {
+        if (!string.IsNullOrWhiteSpace(contextPackResult.ErrorMessage))
+        {
+            Console.Error.WriteLine(contextPackResult.ErrorMessage);
+        }
+
+        return 1;
+    }
+
+    foreach (var line in contextPackResult.FormatMarkdownLines())
+    {
+        Console.WriteLine(line);
+    }
+
+    return 0;
+}
+
 if (args[0] == "pi")
 {
     var message = string.Join(" ", args.Skip(1));
@@ -631,6 +652,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs init   = bootstrap .rfs + RCK genesis state/anchor");
     Console.WriteLine("  rfs status = show local rfs/RCK workspace status");
     Console.WriteLine("  rfs log    = show active RCK cognitive history");
+    Console.WriteLine("  rfs context-pack = export full RCK DAG context pack for LLMs");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");

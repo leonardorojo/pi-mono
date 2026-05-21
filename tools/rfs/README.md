@@ -285,12 +285,22 @@ It reports:
 
 It does not create, modify, or delete any files.
 
+## Test `log`
+
+```bash
+dotnet run --project tools/rfs/src/Rufus.Cli -- log
+```
+
+`rfs log` is read-only.
+It shows the active cognitive history starting at `.rfs/rck/HEAD` and walking backward through reachable Deltas.
+It ignores orphan State/Delta JSON files that are not reachable from `HEAD`.
+It prints a compact summary of each entry, including the interaction mode, prompt excerpt, answer summary, Git commit/dirty state, changed artifacts, Delta id, and `createdAt` / `CreatedBy` when present.
+
 ## Current limitations
 
 Still not present:
 
 - `rfs pi` recording
-- `rfs log`
 - sessions
 - `TraceSlice`
 - cognitive branch/merge workflows
@@ -303,6 +313,10 @@ Still not present:
 - artifact hashes
 - file diffs
 - file contents in RCK artifacts
+
+Next candidate command:
+
+- `rfs show <state-id|delta-id|anchor-id>`
 
 `ask` is only as good as the Pi configuration underneath it.
 If Pi is not configured or authenticated, `ask` will fail the same way Pi would.

@@ -3,6 +3,22 @@
 `rfs` is a small C#/.NET proof of concept for a Rufus CLI inside `pi-mono`.
 It is intentionally still a POC, not a finished product.
 
+## Command governance
+
+Canonical policy reference: [`docs/RFS_COMMAND_GOVERNANCE.md`](docs/RFS_COMMAND_GOVERNANCE.md).
+
+Short version:
+
+- Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`.
+- Deterministic baseline pipeline: `rfs trace-slice "<prompt>"` -> `rfs context-pack --trace-slice "<prompt>"`.
+- Governed deterministic pipeline: `rfs trace-slice-proposal "<prompt>"` -> `rfs trace-slice-validate "<prompt>"` -> `rfs context-pack --trace-slice-validated "<prompt>"`.
+- LLM experimental proposal pipeline: `rfs trace-slice-proposal-llm "<prompt>"` -> `rfs trace-slice-validate-llm "<prompt>"`.
+- Experimental / diagnostic commands: `rfs ask-json`, `rfs agent-json`, `rfs trace-slice-proposal`, `rfs trace-slice-validate`, `rfs trace-slice-proposal-llm`, `rfs trace-slice-validate-llm`, `rfs context-pack --trace-slice-validated`.
+- Legacy current commands: `rfs agent`, `rfs agent --record`.
+- RCK writers: `rfs ask --record`, `rfs intent --record`, `rfs agent --record`.
+- Do not confuse proposal with the final TraceSlice, or TraceSlice with ContextPack.
+- Do not add new commands before closing the current cycle.
+
 ## Current shape
 
 ## Command catalog
@@ -135,7 +151,7 @@ Each command lists: what it does, whether it writes `.rfs/rck`, whether it is re
   - Writes RCK: no.
   - Read-only: yes.
   - Experimental: yes / diagnostic.
-  - Pi / JSONL / RPC / legacy: Pi + JSONL.
+  - Pi / JSONL / RPC / legacy: Pi JSON mode + JSONL.
 
 ### Agenting
 
@@ -161,14 +177,14 @@ Each command lists: what it does, whether it writes `.rfs/rck`, whether it is re
   - Pi / JSONL / RPC / legacy: Pi + JSONL; relies on Pi `--tools` enforcement.
 
 - `rfs agent <task>`
-  - Description: headless streaming agent path for a task.
+  - Description: current legacy headless streaming agent path for a task.
   - Writes RCK: no.
   - Read-only: yes.
   - Experimental: no.
   - Pi / JSONL / RPC / legacy: legacy Node helper.
 
 - `rfs agent --record <task>`
-  - Description: runs the same headless streaming agent path and records the interaction into local RCK as State + Delta.
+  - Description: current legacy agent path that records the interaction into local RCK as State + Delta.
   - Writes RCK: yes.
   - Read-only: no.
   - Experimental: no.

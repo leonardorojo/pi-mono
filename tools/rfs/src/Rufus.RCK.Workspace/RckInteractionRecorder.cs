@@ -50,6 +50,7 @@ public static class RckInteractionRecorder
         var previousState = LoadStoredState(previousStatePath);
         var currentGit = GitWorkspaceContext.Capture(repoRoot);
         var changedArtifacts = currentGit.ChangedArtifacts;
+        var artifactReferences = BuildArtifactReferences(repoRoot, changedArtifacts);
         var nextStatePayloadJson = BuildInteractionStatePayload(record, currentGit, changedArtifacts);
         var nextState = RckState.Create(
             nextStatePayloadJson,
@@ -66,6 +67,8 @@ public static class RckInteractionRecorder
             previousState.Id,
             nextState.Id,
             ops: new[] { interactionOp },
+            refs: artifactReferences.Select(reference => reference.Ref),
+            evidenceRefs: artifactReferences.Select(reference => reference.EvidenceRef),
             meta: new RckDeltaMeta(DateTimeOffset.UtcNow, createdBy, record.Mode, "recorded LLM interaction delta"));
 
         var stateCreated = EnsureState(paths, nextState);
@@ -236,7 +239,7 @@ public static class RckInteractionRecorder
                 type = "llm-interaction",
                 mode = record.Mode,
                 prompt = record.Prompt,
-                answer = record.Answer,
+                answer = record.AnswerSummary,
             },
             evidence = new
             {
@@ -265,6 +268,35 @@ public static class RckInteractionRecorder
         };
 
         return JsonSerializer.Serialize(envelope, IndentedJsonOptions);
+    }
+
+    private static IReadOnlyList<ArtifactReferencePair> BuildArtifactReferences(
+        string repoRoot,
+        IReadOnlyList<GitWorkspaceArtifactChange> artifacts)
+    {
+        if (artifacts.Count == 0)
+        {
+            return Array.Empty<ArtifactReferencePair>();
+        }
+
+        var references = new List<ArtifactReferencePair>(artifacts.Count);
+        foreach (var artifact in artifacts)
+        {
+            var normalizedPath = artifact.Path.Replace('\\', '/');
+            var absolutePath = Path.GetFullPath(Path.Combine(repoRoot, artifact.Path));
+            var referenceId = $"file:{normalizedPath}";
+            var referenceUri = new Uri(absolutePath, UriKind.Absolute);
+            var reference = new RckRef(referenceId, artifact.Kind, referenceUri);
+            var evidence = new EvidenceRef(
+                id: $"changed-artifact:{artifact.ChangeType}:{normalizedPath}",
+                kind: "changed-artifact",
+                @ref: reference,
+                summary: $"{artifact.ChangeType} file detected by git-status ({artifact.GitStatus})");
+
+            references.Add(new ArtifactReferencePair(reference, evidence));
+        }
+
+        return references;
     }
 
     private static string SerializeDeltaEnvelope(RckDelta delta)
@@ -448,6 +480,8 @@ public static class RckInteractionRecorder
 
         return null;
     }
+
+    private sealed record ArtifactReferencePair(RckRef Ref, EvidenceRef EvidenceRef);
 
     private sealed record StoredState(RckStateId Id, string PayloadCanonicalJson, string? GitCommit);
 }

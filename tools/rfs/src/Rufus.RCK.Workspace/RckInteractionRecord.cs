@@ -52,11 +52,12 @@ public sealed record RckInteractionRecord
         }
 
         var normalized = answer.ReplaceLineEndings(" ").Trim();
-        if (normalized.Length <= 240)
+        var redacted = Regex.Replace(normalized, "`[^`]*`", "`…`");
+        if (redacted.Length <= 240)
         {
-            return normalized;
+            return redacted;
         }
 
-        return normalized[..240] + "…";
+        return redacted[..240] + "…";
     }
 }

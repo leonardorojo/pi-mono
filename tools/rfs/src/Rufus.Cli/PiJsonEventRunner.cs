@@ -152,6 +152,7 @@ public static class PiJsonEventRunner
         string? model = null;
         string? explicitError = null;
         var completionObserved = false;
+        var lineNumber = 0;
 
         while (true)
         {
@@ -161,86 +162,99 @@ public static class PiJsonEventRunner
                 break;
             }
 
+            lineNumber++;
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
             }
 
-            using var document = JsonDocument.Parse(line);
-            var root = document.RootElement;
-            var type = GetString(root, "type") ?? throw new JsonException("Event line is missing a string 'type' property.");
-
-            switch (type)
+            JsonDocument document;
+            try
             {
-                case "session":
-                case "agent_start":
-                case "turn_start":
-                case "message_start":
-                case "tool_execution_start":
-                case "tool_execution_update":
-                case "tool_execution_end":
-                case "queue_update":
-                case "auto_retry_start":
-                    break;
+                document = JsonDocument.Parse(line);
+            }
+            catch (JsonException ex)
+            {
+                throw new JsonException($"Invalid JSONL on line {lineNumber}: {ex.Message}");
+            }
 
-                case "message_update":
-                    CaptureAssistantMetadata(root, ref provider, ref model);
-                    AppendTextDelta(root, deltaBuilder);
-                    break;
+            using (document)
+            {
+                var root = document.RootElement;
+                var type = GetString(root, "type") ?? throw new JsonException($"Event line {lineNumber} is missing a string 'type' property.");
 
-                case "message_end":
-                    CaptureAssistantMetadata(root, ref provider, ref model);
-                    if (TryGetAssistantMessage(root, "message", out var assistantMessageAtEnd))
-                    {
-                        var answerFromMessageEnd = ExtractTextFromMessage(assistantMessageAtEnd);
-                        if (!string.IsNullOrWhiteSpace(answerFromMessageEnd))
+                switch (type)
+                {
+                    case "session":
+                    case "agent_start":
+                    case "turn_start":
+                    case "message_start":
+                    case "tool_execution_start":
+                    case "tool_execution_update":
+                    case "tool_execution_end":
+                    case "queue_update":
+                    case "auto_retry_start":
+                        break;
+
+                    case "message_update":
+                        CaptureAssistantMetadata(root, ref provider, ref model);
+                        AppendTextDelta(root, deltaBuilder);
+                        break;
+
+                    case "message_end":
+                        CaptureAssistantMetadata(root, ref provider, ref model);
+                        if (TryGetAssistantMessage(root, "message", out var assistantMessageAtEnd))
                         {
-                            structuredAnswer = answerFromMessageEnd;
-                            completionObserved = true;
+                            var answerFromMessageEnd = ExtractTextFromMessage(assistantMessageAtEnd);
+                            if (!string.IsNullOrWhiteSpace(answerFromMessageEnd))
+                            {
+                                structuredAnswer = answerFromMessageEnd;
+                                completionObserved = true;
+                            }
                         }
-                    }
-                    break;
+                        break;
 
-                case "turn_end":
-                    completionObserved = true;
-                    CaptureAssistantMetadata(root, ref provider, ref model);
-                    if (TryGetAssistantMessage(root, "message", out var turnMessage))
-                    {
-                        var answerFromTurnEnd = ExtractTextFromMessage(turnMessage);
-                        if (!string.IsNullOrWhiteSpace(answerFromTurnEnd))
+                    case "turn_end":
+                        completionObserved = true;
+                        CaptureAssistantMetadata(root, ref provider, ref model);
+                        if (TryGetAssistantMessage(root, "message", out var turnMessage))
                         {
-                            structuredAnswer = answerFromTurnEnd;
+                            var answerFromTurnEnd = ExtractTextFromMessage(turnMessage);
+                            if (!string.IsNullOrWhiteSpace(answerFromTurnEnd))
+                            {
+                                structuredAnswer = answerFromTurnEnd;
+                            }
                         }
-                    }
-                    break;
+                        break;
 
-                case "agent_end":
-                    completionObserved = true;
-                    if (TryExtractLastAssistantText(root, ref provider, ref model, out var agentEndAnswer) && !string.IsNullOrWhiteSpace(agentEndAnswer))
-                    {
-                        structuredAnswer = agentEndAnswer;
-                    }
-                    break;
+                    case "agent_end":
+                        completionObserved = true;
+                        if (TryExtractLastAssistantText(root, ref provider, ref model, out var agentEndAnswer) && !string.IsNullOrWhiteSpace(agentEndAnswer))
+                        {
+                            structuredAnswer = agentEndAnswer;
+                        }
+                        break;
 
-                case "compaction_end":
-                    if (root.TryGetProperty("aborted", out var abortedElement)
-                        && abortedElement.ValueKind == JsonValueKind.True
-                        && (!root.TryGetProperty("willRetry", out var willRetryElement) || willRetryElement.ValueKind == JsonValueKind.False))
-                    {
-                        explicitError = GetString(root, "errorMessage") ?? "Pi JSON mode reported a compaction failure.";
-                    }
-                    break;
+                    case "compaction_end":
+                        if (root.TryGetProperty("aborted", out var abortedElement)
+                            && abortedElement.ValueKind == JsonValueKind.True
+                            && (!root.TryGetProperty("willRetry", out var willRetryElement) || willRetryElement.ValueKind == JsonValueKind.False))
+                        {
+                            explicitError = GetString(root, "errorMessage") ?? "Pi JSON mode reported a compaction failure.";
+                        }
+                        break;
 
-                case "auto_retry_end":
-                    if (root.TryGetProperty("success", out var successElement)
-                        && successElement.ValueKind == JsonValueKind.False)
-                    {
-                        explicitError = GetString(root, "finalError") ?? "Pi JSON mode exhausted retries.";
-                    }
-                    break;
+                    case "auto_retry_end":
+                        if (root.TryGetProperty("success", out var successElement)
+                            && successElement.ValueKind == JsonValueKind.False)
+                        {
+                            explicitError = GetString(root, "finalError") ?? "Pi JSON mode exhausted retries.";
+                        }
+                        break;
 
-                default:
-                    break;
+                    default:
+                        break;
+                }
             }
         }
 
@@ -248,14 +262,14 @@ public static class PiJsonEventRunner
             ? deltaBuilder.ToString().Trim()
             : structuredAnswer.Trim();
 
-        if (string.IsNullOrWhiteSpace(answer) && !string.IsNullOrWhiteSpace(explicitError))
+        if (string.IsNullOrWhiteSpace(answer))
         {
-            return new ParsedPiJsonResult(false, explicitError, string.Empty, provider, model);
-        }
+            var errorMessage = explicitError
+                ?? (completionObserved
+                    ? "Pi JSON stream completed without an assistant answer."
+                    : "Pi JSON stream ended before a final assistant answer was observed.");
 
-        if (string.IsNullOrWhiteSpace(answer) && !completionObserved)
-        {
-            return new ParsedPiJsonResult(false, "Pi JSON stream ended before a final assistant answer was observed.", string.Empty, provider, model);
+            return new ParsedPiJsonResult(false, errorMessage, string.Empty, provider, model);
         }
 
         return new ParsedPiJsonResult(true, null, answer, provider, model);

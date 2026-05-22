@@ -4,6 +4,7 @@ Status: analysis-only microphase.
 
 Update note: `rfs model list` has since been implemented in a later microphase using Pi RPC `get_available_models`. The analysis and recommendations below remain useful as the pre-implementation audit baseline.
 Update note: `rfs ask-json` has since been added as an experimental JSON Event Stream prototype. It validates `pi --mode json` from C# with minimal JSONL parsing, but it does not replace the legacy `rfs ask` bridge yet.
+Update note: `rfs ask` now uses Pi JSON Event Stream by default and keeps `rfs ask --record` on the legacy bridge for now. A temporary fallback remains available via `RFS_USE_LEGACY_ASK_BRIDGE=1`.
 
 Branch: `feature/rfs-pi-programmatic-integration-audit`, created from `feature/rufus-cli-design`.
 

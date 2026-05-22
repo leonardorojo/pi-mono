@@ -714,100 +714,138 @@ if (args[0] == "ask")
         return 1;
     }
 
-    var task = prompt;
-
-    const string helperRelativePath = "rfs-ask.mjs";
-    var helperPath = FindBridgeHelperPath(helperRelativePath);
-    if (helperPath is null)
+    if (recordInteraction || IsLegacyAskBridgeEnabled())
     {
-        Console.Error.WriteLine($"rfs ask helper not found: tools/rfs/bridge/{helperRelativePath}");
-        return 1;
+        const string helperRelativePath = "rfs-ask.mjs";
+        var helperPath = FindBridgeHelperPath(helperRelativePath);
+        if (helperPath is null)
+        {
+            Console.Error.WriteLine($"rfs ask helper not found: tools/rfs/bridge/{helperRelativePath}");
+            return 1;
+        }
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "node",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+
+        psi.ArgumentList.Add(helperPath);
+        psi.ArgumentList.Add(prompt);
+        ApplyWorkspaceModelEnvironment(psi);
+
+        Process? process;
+
+        try
+        {
+            process = Process.Start(psi);
+        }
+        catch (Exception)
+        {
+            Console.Error.WriteLine("Failed to start rfs ask helper.");
+            return 1;
+        }
+
+        if (process is null)
+        {
+            Console.Error.WriteLine("Failed to start rfs ask helper.");
+            return 1;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Rufus Ask");
+        Console.WriteLine("─────────");
+        Console.WriteLine(prompt);
+        Console.WriteLine();
+        Console.WriteLine("Answer");
+        Console.WriteLine("────────────────────────────────────────────");
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        await process.WaitForExitAsync();
+        var stdoutText = await stdoutTask;
+        var stderrText = await stderrTask;
+
+        if (!string.IsNullOrWhiteSpace(stderrText))
+        {
+            Console.Error.Write(stderrText);
+        }
+
+        var finalAssistantAnswer = stdoutText.TrimEnd();
+        if (string.IsNullOrWhiteSpace(finalAssistantAnswer))
+        {
+            Console.WriteLine("(no assistant output)");
+        }
+        else
+        {
+            Console.Write(stdoutText);
+            if (!stdoutText.EndsWith(Environment.NewLine, StringComparison.Ordinal))
+            {
+                Console.WriteLine();
+            }
+        }
+
+        if (recordInteraction && process.ExitCode == 0)
+        {
+            var recordResult = RckInteractionRecorder.RecordAsk(prompt, finalAssistantAnswer);
+            if (!recordResult.Success)
+            {
+                if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+                {
+                    Console.Error.WriteLine(recordResult.ErrorMessage);
+                }
+
+                return 1;
+            }
+
+            foreach (var line in recordResult.FormatConsoleLines())
+            {
+                Console.WriteLine(line);
+            }
+        }
+
+        return process.ExitCode;
     }
 
-    var psi = new ProcessStartInfo
-    {
-        FileName = "node",
-        UseShellExecute = false,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true
-    };
+    var askJsonResult = await PiJsonEventRunner.RunAskAsync(
+        Directory.GetCurrentDirectory(),
+        prompt,
+        RckWorkspaceModelConfigStore.TryReadDefaultModel(Directory.GetCurrentDirectory()));
 
-    psi.ArgumentList.Add(helperPath);
-    psi.ArgumentList.Add(prompt);
-    ApplyWorkspaceModelEnvironment(psi);
-
-    Process? process;
-
-    try
+    if (!askJsonResult.Success)
     {
-        process = Process.Start(psi);
-    }
-    catch (Exception)
-    {
-        Console.Error.WriteLine("Failed to start rfs ask helper.");
-        return 1;
-    }
+        if (!string.IsNullOrWhiteSpace(askJsonResult.ErrorMessage))
+        {
+            Console.Error.WriteLine(askJsonResult.ErrorMessage);
+        }
 
-    if (process is null)
-    {
-        Console.Error.WriteLine("Failed to start rfs ask helper.");
         return 1;
     }
 
     Console.WriteLine();
     Console.WriteLine("Rufus Ask");
     Console.WriteLine("─────────");
-    Console.WriteLine(task);
+    Console.WriteLine(prompt);
     Console.WriteLine();
     Console.WriteLine("Answer");
     Console.WriteLine("────────────────────────────────────────────");
 
-    var stdoutTask = process.StandardOutput.ReadToEndAsync();
-    var stderrTask = process.StandardError.ReadToEndAsync();
-
-    await process.WaitForExitAsync();
-    var stdoutText = await stdoutTask;
-    var stderrText = await stderrTask;
-
-    if (!string.IsNullOrWhiteSpace(stderrText))
-    {
-        Console.Error.Write(stderrText);
-    }
-
-    var finalAssistantAnswer = stdoutText.TrimEnd();
-    if (string.IsNullOrWhiteSpace(finalAssistantAnswer))
+    if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
     {
         Console.WriteLine("(no assistant output)");
     }
     else
     {
-        Console.Write(stdoutText);
-        if (!stdoutText.EndsWith(Environment.NewLine, StringComparison.Ordinal))
+        foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
         {
-            Console.WriteLine();
+            Console.WriteLine(answerLine);
         }
     }
 
-    if (recordInteraction && process.ExitCode == 0)
-    {
-        var recordResult = RckInteractionRecorder.RecordAsk(prompt, finalAssistantAnswer);
-        if (!recordResult.Success)
-        {
-            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
-            {
-                Console.Error.WriteLine(recordResult.ErrorMessage);
-            }
-
-            return 1;
-        }
-
-        foreach (var line in recordResult.FormatConsoleLines())
-        {
-            Console.WriteLine(line);
-        }
-    }
-
-    return process.ExitCode;
+    return 0;
 }
 Console.Error.WriteLine($"Unknown command: {args[0]}");
 return 1;
@@ -832,9 +870,14 @@ static void PrintHelp()
     Console.WriteLine();
     Console.WriteLine("Modos:");
     Console.WriteLine("  pi       = passthrough interactivo a Pi TUI");
-    Console.WriteLine("  ask      = prompt único headless legacy sin tools");
+    Console.WriteLine("  ask      = prompt único headless con JSON Event Stream; fallback legacy vía RFS_USE_LEGACY_ASK_BRIDGE=1");
     Console.WriteLine("  ask-json = prototipo experimental con Pi JSON Event Stream");
     Console.WriteLine("  agent    = agente headless con tools read-only + streaming");
+}
+
+static bool IsLegacyAskBridgeEnabled()
+{
+    return string.Equals(Environment.GetEnvironmentVariable("RFS_USE_LEGACY_ASK_BRIDGE"), "1", StringComparison.Ordinal);
 }
 
 static void ApplyWorkspaceModelEnvironment(ProcessStartInfo processStartInfo)

@@ -46,6 +46,7 @@ High-level behavior:
 
 `Rufus.Agenting` defines the operational agent/task layer used by RFS.
 `Rufus.RCK.Core` stays focused on the persistent cognitive model: State, Delta, Anchor, DAG, Trace, and other traceable RCK models.
+Detailed reference: [`docs/RUFUS_AGENTING.md`](docs/RUFUS_AGENTING.md).
 
 - An `IAgent` executes a single `AgentTask`.
 - Each `Agent` has a fixed `AgentExecutionModel` with provider + model baked into the descriptor.

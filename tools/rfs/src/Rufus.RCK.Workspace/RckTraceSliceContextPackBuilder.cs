@@ -42,18 +42,35 @@ public static class RckTraceSliceContextPackBuilder
                 contextPackResult.ErrorMessage ?? "rfs context-pack --trace-slice-validated: failed to read RCK workspace state.");
         }
 
-        return BuildFromTraceSliceJson(
-            contextPackResult,
-            validatedTraceSliceJson,
-            scope: "trace-slice-validated",
-            errorPrefix: "rfs context-pack --trace-slice-validated");
+        try
+        {
+            using var document = JsonDocument.Parse(validatedTraceSliceJson);
+            var traceSlice = document.RootElement.Clone();
+            if (!TryGetObjectProperty(traceSlice, "validation", out var validation))
+            {
+                return RckTraceSliceContextPackBuildResult.Failure("rfs context-pack --trace-slice-validated: trace slice is missing validation.");
+            }
+
+            return BuildFromTraceSliceJson(
+                contextPackResult,
+                validatedTraceSliceJson,
+                scope: "trace-slice-validated",
+                errorPrefix: "rfs context-pack --trace-slice-validated",
+                validationElement: validation);
+        }
+        catch (Exception ex)
+        {
+            return RckTraceSliceContextPackBuildResult.Failure(
+                $"rfs context-pack --trace-slice-validated: failed to project validated trace slice: {ex.Message}");
+        }
     }
 
     private static RckTraceSliceContextPackBuildResult BuildFromTraceSliceJson(
         RckWorkspaceContextPackResult contextPackResult,
         string traceSliceJson,
         string scope,
-        string errorPrefix)
+        string errorPrefix,
+        JsonElement? validationElement = null)
     {
         try
         {
@@ -135,6 +152,11 @@ public static class RckTraceSliceContextPackBuilder
                 ["notes"] = notes,
                 ["exclusions"] = exclusions,
             };
+
+            if (validationElement.HasValue)
+            {
+                output["validation"] = validationElement.Value.Clone();
+            }
 
             return RckTraceSliceContextPackBuildResult.SuccessResult(JsonSerializer.Serialize(output, JsonOptions));
         }

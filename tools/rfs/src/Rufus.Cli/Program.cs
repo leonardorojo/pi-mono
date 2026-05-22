@@ -655,6 +655,86 @@ if (args[0] == "agent")
     return process.ExitCode;
 }
 
+if (args[0] == "agent-json")
+{
+    var task = string.Join(" ", args.Skip(1));
+    if (string.IsNullOrWhiteSpace(task))
+    {
+        Console.Error.WriteLine("Missing task.");
+        return 1;
+    }
+
+    var agentResult = await PiJsonEventRunner.RunAgentAsync(
+        Directory.GetCurrentDirectory(),
+        task,
+        RckWorkspaceModelConfigStore.TryReadDefaultModel(Directory.GetCurrentDirectory()));
+
+    if (!agentResult.Success)
+    {
+        if (!string.IsNullOrWhiteSpace(agentResult.ErrorMessage))
+        {
+            Console.Error.WriteLine(agentResult.ErrorMessage);
+        }
+
+        return 1;
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Rufus Agent JSON Prototype");
+    Console.WriteLine("────────────────────────────");
+    Console.WriteLine("Task:");
+    Console.WriteLine($"  {agentResult.Task}");
+    Console.WriteLine();
+
+    if (agentResult.ToolEvents != null && agentResult.ToolEvents.Count > 0)
+    {
+        Console.WriteLine("Actions:");
+        foreach (var ev in agentResult.ToolEvents)
+        {
+            var label = ev.Name ?? ev.Type;
+            if (!string.IsNullOrWhiteSpace(ev.Details))
+            {
+                label += $" {ev.Details}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(ev.Summary))
+            {
+                Console.WriteLine($"→ {label} — {ev.Summary}");
+            }
+            else
+            {
+                Console.WriteLine($"→ {label}");
+            }
+        }
+
+        Console.WriteLine();
+    }
+
+    Console.WriteLine("Answer:");
+    Console.WriteLine("────────────────────────────────────────────");
+    if (string.IsNullOrWhiteSpace(agentResult.Answer))
+    {
+        Console.WriteLine("(no assistant output)");
+    }
+    else
+    {
+        foreach (var answerLine in agentResult.Answer.Split('\n', StringSplitOptions.None))
+        {
+            Console.WriteLine(answerLine);
+        }
+    }
+
+    if (!string.IsNullOrWhiteSpace(agentResult.Provider) || !string.IsNullOrWhiteSpace(agentResult.Model))
+    {
+        Console.WriteLine();
+        Console.WriteLine("Source:");
+        Console.WriteLine($"  provider: {(string.IsNullOrWhiteSpace(agentResult.Provider) ? "(unknown)" : agentResult.Provider)}");
+        Console.WriteLine($"  model: {(string.IsNullOrWhiteSpace(agentResult.Model) ? "(unknown)" : agentResult.Model)}");
+    }
+
+    return 0;
+}
+
 if (args[0] == "ask-json")
 {
     var prompt = string.Join(" ", args.Skip(1));

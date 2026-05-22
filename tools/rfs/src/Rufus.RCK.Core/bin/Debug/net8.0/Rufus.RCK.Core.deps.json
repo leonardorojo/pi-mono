@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "Rufus.RCK.Core/1.0.0": {
+        "runtime": {
+          "Rufus.RCK.Core.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Rufus.RCK.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

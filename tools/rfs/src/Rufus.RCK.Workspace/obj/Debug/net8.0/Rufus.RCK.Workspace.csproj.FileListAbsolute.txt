@@ -1,0 +1,16 @@
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/bin/Debug/net8.0/Rufus.RCK.Workspace.deps.json
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/bin/Debug/net8.0/Rufus.RCK.Workspace.dll
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/bin/Debug/net8.0/Rufus.RCK.Workspace.pdb
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/bin/Debug/net8.0/Rufus.RCK.Core.dll
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/bin/Debug/net8.0/Rufus.RCK.Core.pdb
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.csproj.AssemblyReference.cache
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.GeneratedMSBuildEditorConfig.editorconfig
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.AssemblyInfoInputs.cache
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.AssemblyInfo.cs
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.csproj.CoreCompileInputs.cache
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.sourcelink.json
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.csproj.CopyComplete
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.dll
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/refint/Rufus.RCK.Workspace.dll
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/Rufus.RCK.Workspace.pdb
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Workspace/obj/Debug/net8.0/ref/Rufus.RCK.Workspace.dll

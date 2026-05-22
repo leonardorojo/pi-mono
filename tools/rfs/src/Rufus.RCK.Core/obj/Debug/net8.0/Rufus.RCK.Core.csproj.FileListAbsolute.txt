@@ -1,0 +1,12 @@
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/bin/Debug/net8.0/Rufus.RCK.Core.deps.json
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/bin/Debug/net8.0/Rufus.RCK.Core.dll
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/bin/Debug/net8.0/Rufus.RCK.Core.pdb
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/Rufus.RCK.Core.GeneratedMSBuildEditorConfig.editorconfig
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/Rufus.RCK.Core.AssemblyInfoInputs.cache
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/Rufus.RCK.Core.AssemblyInfo.cs
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/Rufus.RCK.Core.csproj.CoreCompileInputs.cache
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/Rufus.RCK.Core.sourcelink.json
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/Rufus.RCK.Core.dll
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/refint/Rufus.RCK.Core.dll
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/Rufus.RCK.Core.pdb
+/home/rufus/DEV/leonardorojo/pi-mono/tools/rfs/src/Rufus.RCK.Core/obj/Debug/net8.0/ref/Rufus.RCK.Core.dll

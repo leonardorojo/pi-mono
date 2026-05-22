@@ -42,6 +42,20 @@ High-level behavior:
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
 
+## Agent / Task abstraction
+
+`Rufus.Agenting` defines the operational agent/task layer used by RFS.
+`Rufus.RCK.Core` stays focused on the persistent cognitive model: State, Delta, Anchor, DAG, Trace, and other traceable RCK models.
+
+- An `IAgent` executes a single `AgentTask`.
+- Each `Agent` has a fixed `AgentExecutionModel` with provider + model baked into the descriptor.
+- There is no `ModelRouter` and no runtime model selection.
+- `AgentTaskResult` records `AgentId`, `ExecutionModel`, `Output`, `Summary`, `Evidence`, `Warnings`, and `Errors`.
+- `IntentInferenceAgent` is the first mock example.
+- It accepts `Kind = infer-intent` and returns a deterministic `PromptIntent` JSON payload.
+- RFS can run agents and later persist or project their results into RCK, but RCK Core does not execute agents.
+- This is the base for future task kinds such as TraceSlice, ContextPack, diff inspection, and evidence summaries.
+
 ## Model config
 
 `.rfs/config.json` can persist the workspace default model under `llm.defaultModel`.

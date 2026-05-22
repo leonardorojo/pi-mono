@@ -32,6 +32,15 @@ Workspace is the adapter between them.
 
 `Rufus.RCK.Core` must remain simple and pure.
 
+## 0. RCK DAG principles
+
+Before adding new RCK features, preserve the DAG design rules:
+
+- reference or reproduce, do not duplicate
+- keep the DAG consistent, robust, and non-redundant
+- keep the DAG complete but optimized for cognitive value
+- treat the Context Pack as an export projection, not the storage model
+
 ---
 
 ## 1. Immediate next step — rfs log

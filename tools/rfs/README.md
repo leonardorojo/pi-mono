@@ -382,6 +382,10 @@ Output notes:
 
 This v1 is a full DAG export. A future compact context pack can be added later as a separate command or mode.
 
+RCK DAG design principles are documented in `tools/rfs/docs/RCK_DAG_PRINCIPLES.md`.
+The main rule is: reference or reproduce, do not duplicate.
+The context-pack is an export projection, not the storage model.
+
 Still not present:
 
 - `rfs pi` recording

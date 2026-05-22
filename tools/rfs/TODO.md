@@ -34,12 +34,13 @@ Workspace is the adapter between them.
 
 ## 0. RCK DAG principles
 
-Before adding new RCK features, preserve the DAG design rules:
+Preserve these rules before adding new RCK features:
 
 - reference or reproduce, do not duplicate
 - keep the DAG consistent, robust, and non-redundant
 - keep the DAG complete but optimized for cognitive value
 - treat the Context Pack as an export projection, not the storage model
+- future features must respect the reference/reproduce rule, non-redundancy, and the complete-but-optimized constraint
 
 ---
 

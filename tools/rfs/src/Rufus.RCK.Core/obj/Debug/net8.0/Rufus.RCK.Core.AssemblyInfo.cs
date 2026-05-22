@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Rufus.RCK.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f439e3ca1d8ae78a7f67bd064483ab2f6ee8c09b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2cdf87a28f6d1c51af80106484016c5a7ec9a9c8")]
 [assembly: System.Reflection.AssemblyProductAttribute("Rufus.RCK.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Rufus.RCK.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

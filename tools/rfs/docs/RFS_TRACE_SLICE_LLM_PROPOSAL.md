@@ -6,8 +6,9 @@ It does not write RCK, does not emit a final TraceSlice, and does not materializ
 ## Boundary
 
 The command asks Pi for a single JSON object shaped as `rufus.trace-slice-proposal`.
-RFS then performs strict structural checks on the returned JSON.
-If the output is not valid JSON, or if `type != "rufus.trace-slice-proposal"`, the command fails.
+RFS performs strict structural checks on the returned JSON and does not attempt to repair malformed output.
+If the output is not valid JSON, if markdown fences or extra prose are present, or if `type != "rufus.trace-slice-proposal"`, the command fails.
+The proposal output is also checked for basic contamination patterns such as raw diffs, stdout/stderr dumps, JSONL event fragments, and obvious leaked internals.
 
 ## Input contract
 

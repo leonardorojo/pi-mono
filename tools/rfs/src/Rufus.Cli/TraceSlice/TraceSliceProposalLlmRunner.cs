@@ -271,6 +271,11 @@ public static class TraceSliceProposalLlmRunner
                 return false;
             }
 
+            if (!TryValidateNoForbiddenContent(root, out errorMessage))
+            {
+                return false;
+            }
+
             if (!root.TryGetProperty("confidence", out var confidenceElement) || confidenceElement.ValueKind != JsonValueKind.Number)
             {
                 errorMessage = "rfs trace-slice-proposal-llm: missing confidence.";
@@ -290,6 +295,95 @@ public static class TraceSliceProposalLlmRunner
             errorMessage = $"rfs trace-slice-proposal-llm: invalid proposal payload: {ex.Message}";
             return false;
         }
+    }
+
+    private static bool TryValidateNoForbiddenContent(JsonElement element, out string? errorMessage)
+    {
+        foreach (var stringValue in EnumerateStringValues(element))
+        {
+            if (ContainsForbiddenFragment(stringValue, out var fragment))
+            {
+                errorMessage = $"rfs trace-slice-proposal-llm: forbidden content detected in LLM output ('{fragment}').";
+                return false;
+            }
+        }
+
+        errorMessage = null;
+        return true;
+    }
+
+    private static IEnumerable<string> EnumerateStringValues(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                yield return element.GetString() ?? string.Empty;
+                yield break;
+
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    foreach (var value in EnumerateStringValues(property.Value))
+                    {
+                        yield return value;
+                    }
+                }
+                yield break;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    foreach (var value in EnumerateStringValues(item))
+                    {
+                        yield return value;
+                    }
+                }
+                yield break;
+
+            default:
+                yield break;
+        }
+    }
+
+    private static bool ContainsForbiddenFragment(string value, out string fragment)
+    {
+        foreach (var candidate in new[]
+        {
+            "diff --git",
+            "message_update",
+            "message_end",
+            "assistantMessageEvent",
+            "```",
+            ".rfs/rck",
+            "stdout",
+            "stderr",
+        })
+        {
+            if (value.Contains(candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                fragment = candidate;
+                return true;
+            }
+        }
+
+        foreach (var candidate in new[]
+        {
+            "BEGIN PRIVATE KEY",
+            "api key",
+            "secret=",
+            "token=",
+            "password=",
+        })
+        {
+            if (value.Contains(candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                fragment = candidate;
+                return true;
+            }
+        }
+
+        fragment = string.Empty;
+        return false;
     }
 
     private static JsonElement ValidateRequiredObject(JsonElement element, string propertyName)

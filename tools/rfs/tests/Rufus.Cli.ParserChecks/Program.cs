@@ -78,17 +78,43 @@ await RunTraceSliceProposalCliCaseAsync(
 await RunTraceSliceProposalLlmCliCaseAsync(
     name: "trace slice proposal llm cli renders proposal json",
     prompt: "Implement rfs show command",
-    failures);
+    failures: failures,
+    fixtureMode: "valid");
+
+await RunTraceSliceProposalLlmCliCaseAsync(
+    name: "trace slice proposal llm cli rejects invalid json",
+    prompt: "Implement rfs show command",
+    failures: failures,
+    fixtureMode: "invalid-json",
+    expectSuccess: false,
+    expectedErrorContains: "invalid JSON from LLM");
+
+await RunTraceSliceProposalLlmCliCaseAsync(
+    name: "trace slice proposal llm cli rejects invalid shape",
+    prompt: "Implement rfs show command",
+    failures: failures,
+    fixtureMode: "invalid-shape",
+    expectSuccess: false,
+    expectedErrorContains: "missing materialization policy field");
 
 await RunTraceSliceValidateCliCaseAsync(
     name: "trace slice validate cli renders validated trace slice json",
     prompt: "Implement rfs show command",
-    failures);
+    failures: failures);
 
 await RunTraceSliceValidateLlmCliCaseAsync(
     name: "trace slice validate llm cli renders validated trace slice json",
     prompt: "Implement rfs show command",
-    failures);
+    failures: failures,
+    fixtureMode: "valid");
+
+await RunTraceSliceValidateLlmCliCaseAsync(
+    name: "trace slice validate llm cli rejects unsafe materialization policy",
+    prompt: "Implement rfs show command",
+    failures: failures,
+    fixtureMode: "unsafe-policy",
+    expectSuccess: false,
+    expectedErrorContains: "expected restricted materialization policy flags to be false");
 
 await RunContextPackTraceSliceCliCaseAsync(
     name: "context pack trace-slice cli renders scoped json",
@@ -403,6 +429,241 @@ static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
     return (process.ExitCode, await stdoutTask, await stderrTask);
 }
 
+static async Task RunTraceSliceValidateCliCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-trace-slice-validate-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var validateResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "trace-slice-validate", prompt);
+        if (validateResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {validateResult.ExitCode}. stderr: {validateResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(validateResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {validateResult.Stderr.Trim()}.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(validateResult.Stdout);
+            var root = document.RootElement;
+
+            if (!string.Equals(root.GetProperty("type").GetString(), "rufus.trace-slice", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected type rufus.trace-slice.");
+            }
+
+            if (root.GetProperty("schemaVersion").GetInt32() != 1)
+            {
+                failures.Add($"[{name}] expected schemaVersion 1.");
+            }
+
+            var promptElement = root.GetProperty("prompt");
+            if (!string.Equals(promptElement.GetProperty("text").GetString(), prompt, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] prompt.text did not round-trip.");
+            }
+
+            var selection = root.GetProperty("selection");
+            if (!string.Equals(selection.GetProperty("strategy").GetString(), "proposal-validated", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected selection.strategy=proposal-validated.");
+            }
+
+            if (selection.GetProperty("maxStates").GetInt32() != 5)
+            {
+                failures.Add($"[{name}] expected selection.maxStates=5.");
+            }
+
+            if (!root.TryGetProperty("validation", out var validation))
+            {
+                failures.Add($"[{name}] expected validation block.");
+            }
+            else
+            {
+                if (!validation.TryGetProperty("status", out var statusProperty) || statusProperty.ValueKind != JsonValueKind.String)
+                {
+                    failures.Add($"[{name}] expected validation.status.");
+                }
+
+                foreach (var propertyName in new[] { "accepted", "rejected", "downgraded", "reasons" })
+                {
+                    if (!validation.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
+                    {
+                        failures.Add($"[{name}] expected validation.{propertyName} array.");
+                    }
+                }
+            }
+
+            var materializationPolicy = root.GetProperty("materializationPolicy");
+            foreach (var propertyName in new[] { "includeArtifactContents", "includeGitDiffs", "includeStdoutStderr", "includeJsonl" })
+            {
+                if (materializationPolicy.GetProperty(propertyName).ValueKind != JsonValueKind.False)
+                {
+                    failures.Add($"[{name}] expected {propertyName}=false.");
+                }
+            }
+
+            if (root.TryGetProperty("artifacts", out var artifacts) && artifacts.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var artifact in artifacts.EnumerateArray())
+                {
+                    if (!string.Equals(artifact.GetProperty("includeMode").GetString(), "metadata-only", StringComparison.Ordinal))
+                    {
+                        failures.Add($"[{name}] expected artifacts to be metadata-only.");
+                        break;
+                    }
+                }
+            }
+
+            var text = validateResult.Stdout;
+            foreach (var fragment in new[] { "diff --git", "assistantMessageEvent", "message_update", "message_end" })
+            {
+                if (text.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+                {
+                    failures.Add($"[{name}] unexpected raw fragment '{fragment}' in trace-slice-validate output.");
+                    break;
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            failures.Add($"[{name}] trace-slice-validate output was not valid JSON: {ex.Message}");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static string BuildPiFixtureScript(string prompt)
+{
+    var validAnswerJson = BuildTraceSliceProposalAnswer(prompt, includeUnsafePolicy: false, includeMissingPolicyField: false);
+    var invalidShapeAnswerJson = BuildTraceSliceProposalAnswer(prompt, includeUnsafePolicy: false, includeMissingPolicyField: true);
+    var unsafePolicyAnswerJson = BuildTraceSliceProposalAnswer(prompt, includeUnsafePolicy: true, includeMissingPolicyField: false);
+    var validAnswerLiteral = JsonSerializer.Serialize(validAnswerJson);
+    var invalidShapeAnswerLiteral = JsonSerializer.Serialize(invalidShapeAnswerJson);
+    var unsafePolicyAnswerLiteral = JsonSerializer.Serialize(unsafePolicyAnswerJson);
+
+    return
+        "#!/usr/bin/env bash\n" +
+        "set -euo pipefail\n" +
+        "case \"${RFS_PI_TRACE_SLICE_FIXTURE_MODE:-}\" in\n" +
+        "  valid)\n" +
+        "    cat <<'EOF'\n" +
+        "{\"type\":\"session\"}\n" +
+        "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":" + validAnswerLiteral + "}]}}\n" +
+        "EOF\n" +
+        "    ;;\n" +
+        "  invalid-json)\n" +
+        "    cat <<'EOF'\n" +
+        "{\"type\":\"session\"}\n" +
+        "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"not-json\"}]}}\n" +
+        "EOF\n" +
+        "    ;;\n" +
+        "  invalid-shape)\n" +
+        "    cat <<'EOF'\n" +
+        "{\"type\":\"session\"}\n" +
+        "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":" + invalidShapeAnswerLiteral + "}]}}\n" +
+        "EOF\n" +
+        "    ;;\n" +
+        "  unsafe-policy)\n" +
+        "    cat <<'EOF'\n" +
+        "{\"type\":\"session\"}\n" +
+        "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":" + unsafePolicyAnswerLiteral + "}]}}\n" +
+        "EOF\n" +
+        "    ;;\n" +
+        "  *)\n" +
+        "    echo 'unexpected fixture mode' >&2\n" +
+        "    exit 1\n" +
+        "    ;;\n" +
+        "esac\n" +
+        "exit 0\n";
+}
+
+static string BuildTraceSliceProposalAnswer(string prompt, bool includeUnsafePolicy, bool includeMissingPolicyField)
+{
+    var policy = new Dictionary<string, object?>
+    {
+        ["includeStatePayloads"] = true,
+        ["includeDeltaDecodedOps"] = true,
+        ["includeArtifactContents"] = includeUnsafePolicy,
+        ["includeGitDiffs"] = includeUnsafePolicy,
+        ["includeStdoutStderr"] = includeUnsafePolicy,
+        ["includeJsonl"] = includeUnsafePolicy,
+    };
+
+    if (includeMissingPolicyField)
+    {
+        policy.Remove("includeJsonl");
+    }
+
+    var proposal = new Dictionary<string, object?>
+    {
+        ["type"] = "rufus.trace-slice-proposal",
+        ["schemaVersion"] = 1,
+        ["prompt"] = new Dictionary<string, object?>
+        {
+            ["text"] = prompt,
+            ["isExcerpt"] = false,
+        },
+        ["intent"] = new Dictionary<string, object?>
+        {
+            ["kind"] = "build-trace-slice",
+            ["summary"] = "Fixture proposal for trace-slice LLM hardening tests.",
+            ["source"] = "intent-inference-agent",
+        },
+        ["requestedSelection"] = new Dictionary<string, object?>
+        {
+            ["stateIds"] = Array.Empty<string>(),
+            ["deltaIds"] = Array.Empty<string>(),
+            ["anchorIds"] = Array.Empty<string>(),
+            ["artifactRefs"] = Array.Empty<string>(),
+        },
+        ["requestedMaterializationPolicy"] = policy,
+        ["rationale"] = Array.Empty<string>(),
+        ["confidence"] = 1.0,
+        ["warnings"] = Array.Empty<string>(),
+    };
+
+    return JsonSerializer.Serialize(proposal);
+}
+
 static async Task RunTraceSliceProposalCliCaseAsync(
     string name,
     string prompt,
@@ -580,15 +841,35 @@ static async Task RunTraceSliceProposalCliCaseAsync(
 static async Task RunTraceSliceProposalLlmCliCaseAsync(
     string name,
     string prompt,
-    List<string> failures)
+    List<string> failures,
+    string fixtureMode,
+    bool expectSuccess = true,
+    string? expectedErrorContains = null)
 {
     var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
     var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
     var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-trace-slice-proposal-llm-checks", Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(tempRoot);
 
+    var piScriptPath = Path.Combine(tempRoot, "pi");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    var originalFixtureMode = Environment.GetEnvironmentVariable("RFS_PI_TRACE_SLICE_FIXTURE_MODE");
+
     try
     {
+        await File.WriteAllTextAsync(piScriptPath, BuildPiFixtureScript(prompt));
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                piScriptPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+
+        Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+        Environment.SetEnvironmentVariable("RFS_PI_TRACE_SLICE_FIXTURE_MODE", fixtureMode);
+
         var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
         if (gitInitResult.ExitCode != 0)
         {
@@ -604,261 +885,157 @@ static async Task RunTraceSliceProposalLlmCliCaseAsync(
         }
 
         var proposalResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "trace-slice-proposal-llm", prompt);
-        if (proposalResult.ExitCode != 0)
+        if (expectSuccess)
         {
-            failures.Add($"[{name}] expected exit code 0 but got {proposalResult.ExitCode}. stderr: {proposalResult.Stderr}");
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(proposalResult.Stderr))
-        {
-            failures.Add($"[{name}] expected no stderr but got: {proposalResult.Stderr.Trim()}.");
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(proposalResult.Stdout);
-            var root = document.RootElement;
-
-            if (!string.Equals(root.GetProperty("type").GetString(), "rufus.trace-slice-proposal", StringComparison.Ordinal))
+            if (proposalResult.ExitCode != 0)
             {
-                failures.Add($"[{name}] expected type rufus.trace-slice-proposal.");
+                failures.Add($"[{name}] expected exit code 0 but got {proposalResult.ExitCode}. stderr: {proposalResult.Stderr}");
+                return;
             }
 
-            if (root.GetProperty("schemaVersion").GetInt32() != 1)
+            if (!string.IsNullOrWhiteSpace(proposalResult.Stderr))
             {
-                failures.Add($"[{name}] expected schemaVersion 1.");
+                failures.Add($"[{name}] expected no stderr but got: {proposalResult.Stderr.Trim()}.");
             }
 
-            var promptElement = root.GetProperty("prompt");
-            if (!string.Equals(promptElement.GetProperty("text").GetString(), prompt, StringComparison.Ordinal))
+            try
             {
-                failures.Add($"[{name}] prompt.text did not round-trip.");
-            }
+                using var document = JsonDocument.Parse(proposalResult.Stdout);
+                var root = document.RootElement;
 
-            if (promptElement.GetProperty("isExcerpt").ValueKind != JsonValueKind.False)
-            {
-                failures.Add($"[{name}] expected prompt.isExcerpt to be false.");
-            }
-
-            var selection = root.GetProperty("requestedSelection");
-            if (!selection.TryGetProperty("stateIds", out var stateIds) || stateIds.ValueKind != JsonValueKind.Array)
-            {
-                failures.Add($"[{name}] expected requestedSelection.stateIds array.");
-            }
-
-            if (!selection.TryGetProperty("deltaIds", out var deltaIds) || deltaIds.ValueKind != JsonValueKind.Array)
-            {
-                failures.Add($"[{name}] expected requestedSelection.deltaIds array.");
-            }
-
-            if (!selection.TryGetProperty("anchorIds", out var anchorIds) || anchorIds.ValueKind != JsonValueKind.Array)
-            {
-                failures.Add($"[{name}] expected requestedSelection.anchorIds array.");
-            }
-
-            if (!selection.TryGetProperty("artifactRefs", out var artifactRefs) || artifactRefs.ValueKind != JsonValueKind.Array)
-            {
-                failures.Add($"[{name}] expected requestedSelection.artifactRefs array.");
-            }
-
-            if (!root.TryGetProperty("requestedMaterializationPolicy", out var materializationPolicy))
-            {
-                failures.Add($"[{name}] expected requestedMaterializationPolicy.");
-            }
-            else
-            {
-                if (materializationPolicy.GetProperty("includeArtifactContents").ValueKind != JsonValueKind.False)
+                if (!string.Equals(root.GetProperty("type").GetString(), "rufus.trace-slice-proposal", StringComparison.Ordinal))
                 {
-                    failures.Add($"[{name}] expected includeArtifactContents=false.");
+                    failures.Add($"[{name}] expected type rufus.trace-slice-proposal.");
                 }
 
-                if (materializationPolicy.GetProperty("includeGitDiffs").ValueKind != JsonValueKind.False)
+                if (root.GetProperty("schemaVersion").GetInt32() != 1)
                 {
-                    failures.Add($"[{name}] expected includeGitDiffs=false.");
+                    failures.Add($"[{name}] expected schemaVersion 1.");
                 }
 
-                if (materializationPolicy.GetProperty("includeStdoutStderr").ValueKind != JsonValueKind.False)
+                var promptElement = root.GetProperty("prompt");
+                if (!string.Equals(promptElement.GetProperty("text").GetString(), prompt, StringComparison.Ordinal))
                 {
-                    failures.Add($"[{name}] expected includeStdoutStderr=false.");
+                    failures.Add($"[{name}] prompt.text did not round-trip.");
                 }
 
-                if (materializationPolicy.GetProperty("includeJsonl").ValueKind != JsonValueKind.False)
+                if (promptElement.GetProperty("isExcerpt").ValueKind != JsonValueKind.False)
                 {
-                    failures.Add($"[{name}] expected includeJsonl=false.");
-                }
-            }
-
-            if (!root.TryGetProperty("rationale", out var rationale) || rationale.ValueKind != JsonValueKind.Array)
-            {
-                failures.Add($"[{name}] expected rationale array.");
-            }
-
-            if (!root.TryGetProperty("warnings", out var warnings) || warnings.ValueKind != JsonValueKind.Array)
-            {
-                failures.Add($"[{name}] expected warnings array.");
-            }
-
-            if (!root.TryGetProperty("confidence", out var confidence) || confidence.ValueKind != JsonValueKind.Number)
-            {
-                failures.Add($"[{name}] expected confidence number.");
-            }
-
-            var text = proposalResult.Stdout;
-            foreach (var fragment in new[] { "diff --git", "AgentTaskResult", "assistantMessageEvent", "message_update", "message_end" })
-            {
-                if (text.Contains(fragment, StringComparison.OrdinalIgnoreCase))
-                {
-                    failures.Add($"[{name}] unexpected raw fragment '{fragment}' in trace-slice-proposal-llm output.");
-                    break;
-                }
-            }
-        }
-        catch (JsonException ex)
-        {
-            failures.Add($"[{name}] trace-slice-proposal-llm output was not valid JSON: {ex.Message}");
-        }
-    }
-    catch (Exception ex)
-    {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
-    }
-    finally
-    {
-        try
-        {
-            Directory.Delete(tempRoot, recursive: true);
-        }
-        catch
-        {
-        }
-    }
-}
-
-static async Task RunTraceSliceValidateCliCaseAsync(
-    string name,
-    string prompt,
-    List<string> failures)
-{
-    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
-    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-trace-slice-validate-checks", Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(tempRoot);
-
-    try
-    {
-        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
-        if (gitInitResult.ExitCode != 0)
-        {
-            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
-            return;
-        }
-
-        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
-        if (initResult.ExitCode != 0)
-        {
-            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
-            return;
-        }
-
-        var validateResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "trace-slice-validate", prompt);
-        if (validateResult.ExitCode != 0)
-        {
-            failures.Add($"[{name}] expected exit code 0 but got {validateResult.ExitCode}. stderr: {validateResult.Stderr}");
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(validateResult.Stderr))
-        {
-            failures.Add($"[{name}] expected no stderr but got: {validateResult.Stderr.Trim()}.");
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(validateResult.Stdout);
-            var root = document.RootElement;
-
-            if (!string.Equals(root.GetProperty("type").GetString(), "rufus.trace-slice", StringComparison.Ordinal))
-            {
-                failures.Add($"[{name}] expected type rufus.trace-slice.");
-            }
-
-            if (root.GetProperty("schemaVersion").GetInt32() != 1)
-            {
-                failures.Add($"[{name}] expected schemaVersion 1.");
-            }
-
-            var promptElement = root.GetProperty("prompt");
-            if (!string.Equals(promptElement.GetProperty("text").GetString(), prompt, StringComparison.Ordinal))
-            {
-                failures.Add($"[{name}] prompt.text did not round-trip.");
-            }
-
-            var selection = root.GetProperty("selection");
-            if (!string.Equals(selection.GetProperty("strategy").GetString(), "proposal-validated", StringComparison.Ordinal))
-            {
-                failures.Add($"[{name}] expected selection.strategy=proposal-validated.");
-            }
-
-            if (selection.GetProperty("maxStates").GetInt32() != 5)
-            {
-                failures.Add($"[{name}] expected selection.maxStates=5.");
-            }
-
-            if (!root.TryGetProperty("validation", out var validation))
-            {
-                failures.Add($"[{name}] expected validation block.");
-            }
-            else
-            {
-                if (!validation.TryGetProperty("status", out var statusProperty) || statusProperty.ValueKind != JsonValueKind.String)
-                {
-                    failures.Add($"[{name}] expected validation.status.");
+                    failures.Add($"[{name}] expected prompt.isExcerpt to be false.");
                 }
 
-                foreach (var propertyName in new[] { "accepted", "rejected", "downgraded", "reasons" })
+                var intent = root.GetProperty("intent");
+                if (!intent.TryGetProperty("kind", out var kindProperty) || kindProperty.ValueKind != JsonValueKind.String)
                 {
-                    if (!validation.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
+                    failures.Add($"[{name}] expected intent.kind.");
+                }
+
+                if (!intent.TryGetProperty("summary", out var summaryProperty) || summaryProperty.ValueKind != JsonValueKind.String)
+                {
+                    failures.Add($"[{name}] expected intent.summary.");
+                }
+
+                if (!intent.TryGetProperty("source", out var sourceProperty) || sourceProperty.ValueKind != JsonValueKind.String)
+                {
+                    failures.Add($"[{name}] expected intent.source.");
+                }
+
+                var selection = root.GetProperty("requestedSelection");
+                if (!selection.TryGetProperty("stateIds", out var stateIds) || stateIds.ValueKind != JsonValueKind.Array)
+                {
+                    failures.Add($"[{name}] expected requestedSelection.stateIds array.");
+                }
+
+                if (!selection.TryGetProperty("deltaIds", out var deltaIds) || deltaIds.ValueKind != JsonValueKind.Array)
+                {
+                    failures.Add($"[{name}] expected requestedSelection.deltaIds array.");
+                }
+
+                if (!selection.TryGetProperty("anchorIds", out var anchorIds) || anchorIds.ValueKind != JsonValueKind.Array)
+                {
+                    failures.Add($"[{name}] expected requestedSelection.anchorIds array.");
+                }
+
+                if (!selection.TryGetProperty("artifactRefs", out var artifactRefs) || artifactRefs.ValueKind != JsonValueKind.Array)
+                {
+                    failures.Add($"[{name}] expected requestedSelection.artifactRefs array.");
+                }
+
+                if (!root.TryGetProperty("requestedMaterializationPolicy", out var materializationPolicy))
+                {
+                    failures.Add($"[{name}] expected requestedMaterializationPolicy.");
+                }
+                else
+                {
+                    if (materializationPolicy.GetProperty("includeArtifactContents").ValueKind != JsonValueKind.False)
                     {
-                        failures.Add($"[{name}] expected validation.{propertyName} array.");
+                        failures.Add($"[{name}] expected includeArtifactContents=false.");
+                    }
+
+                    if (materializationPolicy.GetProperty("includeGitDiffs").ValueKind != JsonValueKind.False)
+                    {
+                        failures.Add($"[{name}] expected includeGitDiffs=false.");
+                    }
+
+                    if (materializationPolicy.GetProperty("includeStdoutStderr").ValueKind != JsonValueKind.False)
+                    {
+                        failures.Add($"[{name}] expected includeStdoutStderr=false.");
+                    }
+
+                    if (materializationPolicy.GetProperty("includeJsonl").ValueKind != JsonValueKind.False)
+                    {
+                        failures.Add($"[{name}] expected includeJsonl=false.");
                     }
                 }
-            }
 
-            var materializationPolicy = root.GetProperty("materializationPolicy");
-            foreach (var propertyName in new[] { "includeArtifactContents", "includeGitDiffs", "includeStdoutStderr", "includeJsonl" })
-            {
-                if (materializationPolicy.GetProperty(propertyName).ValueKind != JsonValueKind.False)
+                if (!root.TryGetProperty("rationale", out var rationale) || rationale.ValueKind != JsonValueKind.Array)
                 {
-                    failures.Add($"[{name}] expected {propertyName}=false.");
+                    failures.Add($"[{name}] expected rationale array.");
                 }
-            }
 
-            if (root.TryGetProperty("artifacts", out var artifacts) && artifacts.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var artifact in artifacts.EnumerateArray())
+                if (!root.TryGetProperty("warnings", out var warnings) || warnings.ValueKind != JsonValueKind.Array)
                 {
-                    if (!string.Equals(artifact.GetProperty("includeMode").GetString(), "metadata-only", StringComparison.Ordinal))
+                    failures.Add($"[{name}] expected warnings array.");
+                }
+
+                if (!root.TryGetProperty("confidence", out var confidence) || confidence.ValueKind != JsonValueKind.Number)
+                {
+                    failures.Add($"[{name}] expected confidence number.");
+                }
+
+                var text = proposalResult.Stdout;
+                foreach (var fragment in new[] { "diff --git", "AgentTaskResult", "assistantMessageEvent", "message_update", "message_end" })
+                {
+                    if (text.Contains(fragment, StringComparison.OrdinalIgnoreCase))
                     {
-                        failures.Add($"[{name}] expected artifacts to be metadata-only.");
+                        failures.Add($"[{name}] unexpected raw fragment '{fragment}' in trace-slice-proposal-llm output.");
                         break;
                     }
                 }
             }
-
-            var text = validateResult.Stdout;
-            foreach (var fragment in new[] { "diff --git", "assistantMessageEvent", "message_update", "message_end" })
+            catch (JsonException ex)
             {
-                if (text.Contains(fragment, StringComparison.OrdinalIgnoreCase))
-                {
-                    failures.Add($"[{name}] unexpected raw fragment '{fragment}' in trace-slice-validate output.");
-                    break;
-                }
+                failures.Add($"[{name}] trace-slice-proposal-llm output was not valid JSON: {ex.Message}");
             }
         }
-        catch (JsonException ex)
+        else
         {
-            failures.Add($"[{name}] trace-slice-validate output was not valid JSON: {ex.Message}");
+            if (proposalResult.ExitCode == 0)
+            {
+                failures.Add($"[{name}] expected non-zero exit code for failing fixture mode '{fixtureMode}'.");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(proposalResult.Stderr))
+            {
+                failures.Add($"[{name}] expected stderr for failing fixture mode '{fixtureMode}'.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedErrorContains) &&
+                (string.IsNullOrWhiteSpace(proposalResult.Stderr) || !proposalResult.Stderr.Contains(expectedErrorContains, StringComparison.Ordinal)))
+            {
+                failures.Add($"[{name}] expected stderr containing '{expectedErrorContains}' but got: {proposalResult.Stderr.Trim()}.");
+            }
         }
     }
     catch (Exception ex)
@@ -867,6 +1044,9 @@ static async Task RunTraceSliceValidateCliCaseAsync(
     }
     finally
     {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        Environment.SetEnvironmentVariable("RFS_PI_TRACE_SLICE_FIXTURE_MODE", originalFixtureMode);
+
         try
         {
             Directory.Delete(tempRoot, recursive: true);
@@ -877,18 +1057,39 @@ static async Task RunTraceSliceValidateCliCaseAsync(
     }
 }
 
+
 static async Task RunTraceSliceValidateLlmCliCaseAsync(
     string name,
     string prompt,
-    List<string> failures)
+    List<string> failures,
+    string fixtureMode,
+    bool expectSuccess = true,
+    string? expectedErrorContains = null)
 {
     var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
     var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
     var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-trace-slice-validate-llm-checks", Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(tempRoot);
 
+    var piScriptPath = Path.Combine(tempRoot, "pi");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    var originalFixtureMode = Environment.GetEnvironmentVariable("RFS_PI_TRACE_SLICE_FIXTURE_MODE");
+
     try
     {
+        await File.WriteAllTextAsync(piScriptPath, BuildPiFixtureScript(prompt));
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                piScriptPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+
+        Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+        Environment.SetEnvironmentVariable("RFS_PI_TRACE_SLICE_FIXTURE_MODE", fixtureMode);
+
         var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
         if (gitInitResult.ExitCode != 0)
         {
@@ -904,103 +1105,125 @@ static async Task RunTraceSliceValidateLlmCliCaseAsync(
         }
 
         var validateResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "trace-slice-validate-llm", prompt);
-        if (validateResult.ExitCode != 0)
+        if (expectSuccess)
         {
-            failures.Add($"[{name}] expected exit code 0 but got {validateResult.ExitCode}. stderr: {validateResult.Stderr}");
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(validateResult.Stderr))
-        {
-            failures.Add($"[{name}] expected no stderr but got: {validateResult.Stderr.Trim()}.");
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(validateResult.Stdout);
-            var root = document.RootElement;
-
-            if (!string.Equals(root.GetProperty("type").GetString(), "rufus.trace-slice", StringComparison.Ordinal))
+            if (validateResult.ExitCode != 0)
             {
-                failures.Add($"[{name}] expected type rufus.trace-slice.");
+                failures.Add($"[{name}] expected exit code 0 but got {validateResult.ExitCode}. stderr: {validateResult.Stderr}");
+                return;
             }
 
-            if (root.GetProperty("schemaVersion").GetInt32() != 1)
+            if (!string.IsNullOrWhiteSpace(validateResult.Stderr))
             {
-                failures.Add($"[{name}] expected schemaVersion 1.");
+                failures.Add($"[{name}] expected no stderr but got: {validateResult.Stderr.Trim()}.");
             }
 
-            var promptElement = root.GetProperty("prompt");
-            if (!string.Equals(promptElement.GetProperty("text").GetString(), prompt, StringComparison.Ordinal))
+            try
             {
-                failures.Add($"[{name}] prompt.text did not round-trip.");
-            }
+                using var document = JsonDocument.Parse(validateResult.Stdout);
+                var root = document.RootElement;
 
-            var selection = root.GetProperty("selection");
-            if (!string.Equals(selection.GetProperty("strategy").GetString(), "proposal-validated", StringComparison.Ordinal))
-            {
-                failures.Add($"[{name}] expected selection.strategy=proposal-validated.");
-            }
-
-            if (selection.GetProperty("maxStates").GetInt32() != 5)
-            {
-                failures.Add($"[{name}] expected selection.maxStates=5.");
-            }
-
-            if (!root.TryGetProperty("validation", out var validation))
-            {
-                failures.Add($"[{name}] expected validation block.");
-            }
-            else
-            {
-                if (!validation.TryGetProperty("status", out var statusProperty) || statusProperty.ValueKind != JsonValueKind.String)
+                if (!string.Equals(root.GetProperty("type").GetString(), "rufus.trace-slice", StringComparison.Ordinal))
                 {
-                    failures.Add($"[{name}] expected validation.status.");
+                    failures.Add($"[{name}] expected type rufus.trace-slice.");
                 }
 
-                foreach (var propertyName in new[] { "accepted", "rejected", "downgraded", "reasons" })
+                if (root.GetProperty("schemaVersion").GetInt32() != 1)
                 {
-                    if (!validation.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
+                    failures.Add($"[{name}] expected schemaVersion 1.");
+                }
+
+                var promptElement = root.GetProperty("prompt");
+                if (!string.Equals(promptElement.GetProperty("text").GetString(), prompt, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] prompt.text did not round-trip.");
+                }
+
+                var selection = root.GetProperty("selection");
+                if (!string.Equals(selection.GetProperty("strategy").GetString(), "proposal-validated", StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected selection.strategy=proposal-validated.");
+                }
+
+                if (selection.GetProperty("maxStates").GetInt32() != 5)
+                {
+                    failures.Add($"[{name}] expected selection.maxStates=5.");
+                }
+
+                if (!root.TryGetProperty("validation", out var validation))
+                {
+                    failures.Add($"[{name}] expected validation block.");
+                }
+                else
+                {
+                    if (!validation.TryGetProperty("status", out var statusProperty) || statusProperty.ValueKind != JsonValueKind.String)
                     {
-                        failures.Add($"[{name}] expected validation.{propertyName} array.");
+                        failures.Add($"[{name}] expected validation.status.");
+                    }
+
+                    foreach (var propertyName in new[] { "accepted", "rejected", "downgraded", "reasons" })
+                    {
+                        if (!validation.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
+                        {
+                            failures.Add($"[{name}] expected validation.{propertyName} array.");
+                        }
                     }
                 }
-            }
 
-            var materializationPolicy = root.GetProperty("materializationPolicy");
-            foreach (var propertyName in new[] { "includeArtifactContents", "includeGitDiffs", "includeStdoutStderr", "includeJsonl" })
-            {
-                if (materializationPolicy.GetProperty(propertyName).ValueKind != JsonValueKind.False)
+                var materializationPolicy = root.GetProperty("materializationPolicy");
+                foreach (var propertyName in new[] { "includeArtifactContents", "includeGitDiffs", "includeStdoutStderr", "includeJsonl" })
                 {
-                    failures.Add($"[{name}] expected {propertyName}=false.");
-                }
-            }
-
-            if (root.TryGetProperty("artifacts", out var artifacts) && artifacts.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var artifact in artifacts.EnumerateArray())
-                {
-                    if (!string.Equals(artifact.GetProperty("includeMode").GetString(), "metadata-only", StringComparison.Ordinal))
+                    if (materializationPolicy.GetProperty(propertyName).ValueKind != JsonValueKind.False)
                     {
-                        failures.Add($"[{name}] expected artifacts to be metadata-only.");
+                        failures.Add($"[{name}] expected {propertyName}=false.");
+                    }
+                }
+
+                if (root.TryGetProperty("artifacts", out var artifacts) && artifacts.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var artifact in artifacts.EnumerateArray())
+                    {
+                        if (!string.Equals(artifact.GetProperty("includeMode").GetString(), "metadata-only", StringComparison.Ordinal))
+                        {
+                            failures.Add($"[{name}] expected artifacts to be metadata-only.");
+                            break;
+                        }
+                    }
+                }
+
+                var text = validateResult.Stdout;
+                foreach (var fragment in new[] { "diff --git", "assistantMessageEvent", "message_update", "message_end" })
+                {
+                    if (text.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+                    {
+                        failures.Add($"[{name}] unexpected raw fragment '{fragment}' in trace-slice-validate-llm output.");
                         break;
                     }
                 }
             }
-
-            var text = validateResult.Stdout;
-            foreach (var fragment in new[] { "diff --git", "assistantMessageEvent", "message_update", "message_end" })
+            catch (JsonException ex)
             {
-                if (text.Contains(fragment, StringComparison.OrdinalIgnoreCase))
-                {
-                    failures.Add($"[{name}] unexpected raw fragment '{fragment}' in trace-slice-validate-llm output.");
-                    break;
-                }
+                failures.Add($"[{name}] trace-slice-validate-llm output was not valid JSON: {ex.Message}");
             }
         }
-        catch (JsonException ex)
+        else
         {
-            failures.Add($"[{name}] trace-slice-validate-llm output was not valid JSON: {ex.Message}");
+            if (validateResult.ExitCode == 0)
+            {
+                failures.Add($"[{name}] expected non-zero exit code for failing fixture mode '{fixtureMode}'.");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(validateResult.Stderr))
+            {
+                failures.Add($"[{name}] expected stderr for failing fixture mode '{fixtureMode}'.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedErrorContains) &&
+                (string.IsNullOrWhiteSpace(validateResult.Stderr) || !validateResult.Stderr.Contains(expectedErrorContains, StringComparison.Ordinal)))
+            {
+                failures.Add($"[{name}] expected stderr containing '{expectedErrorContains}' but got: {validateResult.Stderr.Trim()}.");
+            }
         }
     }
     catch (Exception ex)
@@ -1009,6 +1232,9 @@ static async Task RunTraceSliceValidateLlmCliCaseAsync(
     }
     finally
     {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        Environment.SetEnvironmentVariable("RFS_PI_TRACE_SLICE_FIXTURE_MODE", originalFixtureMode);
+
         try
         {
             Directory.Delete(tempRoot, recursive: true);
@@ -1018,6 +1244,7 @@ static async Task RunTraceSliceValidateLlmCliCaseAsync(
         }
     }
 }
+
 
 static async Task RunContextPackTraceSliceCliCaseAsync(
     string name,

@@ -31,6 +31,12 @@ Principle:
 - ContextPack materializes;
 - the main LLM consumes.
 
+Hardening rule:
+- proposal LLM output is never authoritative;
+- validation stays on the RFS side;
+- no LLM output becomes a TraceSlice or ContextPack without RFS validation;
+- RFS validation keeps unsafe materialization flags disabled unless explicitly decided otherwise.
+
 ## 1. Baseline stable commands
 
 These commands are the current baseline surface. They are not experimental.

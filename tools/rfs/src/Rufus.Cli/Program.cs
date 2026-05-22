@@ -745,7 +745,9 @@ if (args[0] == "agent-json")
 
 if (args[0] == "intent")
 {
-    var prompt = string.Join(" ", args.Skip(1)).Trim();
+    var intentArgs = args.Skip(1).ToArray();
+    var recordIntent = intentArgs.Any(arg => string.Equals(arg, "--record", StringComparison.Ordinal));
+    var prompt = string.Join(" ", intentArgs.Where(arg => !string.Equals(arg, "--record", StringComparison.Ordinal))).Trim();
     if (string.IsNullOrWhiteSpace(prompt))
     {
         Console.Error.WriteLine("Missing prompt.");
@@ -783,6 +785,26 @@ if (args[0] == "intent")
     {
         Console.WriteLine("  Errors:");
         WriteStringListBlock(result.Errors, "    ");
+    }
+
+    if (recordIntent)
+    {
+        if (!TryBuildIntentRecordInput(task, result, prompt, out var recordInput, out var errorMessage))
+        {
+            Console.Error.WriteLine(errorMessage);
+            return 1;
+        }
+
+        var recorderResult = RckAgentTaskRecorder.RecordIntent(recordInput, Directory.GetCurrentDirectory());
+        foreach (var line in recorderResult.FormatConsoleLines())
+        {
+            Console.WriteLine(line);
+        }
+
+        if (!recorderResult.Success)
+        {
+            return 1;
+        }
     }
 
     return result.Status == AgentTaskStatus.Failed ? 1 : 0;
@@ -1020,7 +1042,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs ask-json <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");
     Console.WriteLine("  rfs agent-json <task>");
-    Console.WriteLine("  rfs intent <prompt>");
+    Console.WriteLine("  rfs intent [--record] <prompt>");
     Console.WriteLine();
     Console.WriteLine("Modos:");
     Console.WriteLine("  pi         = passthrough interactivo a Pi TUI");
@@ -1028,7 +1050,7 @@ static void PrintHelp()
     Console.WriteLine("  ask-json   = prototipo experimental con Pi JSON Event Stream");
     Console.WriteLine("  agent      = agente headless con tools read-only + streaming");
     Console.WriteLine("  agent-json = prototipo experimental con Pi JSON Event Stream; relies on Pi --tools enforcement for read-only behavior");
-    Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico sin Pi ni RCK");
+    Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico con opción --record para RCK");
 }
 
 static bool IsLegacyAskBridgeEnabled()
@@ -1039,6 +1061,92 @@ static bool IsLegacyAskBridgeEnabled()
 static string FormatOptional(string? value)
 {
     return string.IsNullOrWhiteSpace(value) ? "(none)" : value;
+}
+
+static bool TryBuildIntentRecordInput(
+    AgentTask task,
+    AgentTaskResult result,
+    string prompt,
+    out RckAgentTaskRecordInput recordInput,
+    out string? errorMessage)
+{
+    recordInput = null!;
+    errorMessage = null;
+
+    if (string.IsNullOrWhiteSpace(result.Output))
+    {
+        errorMessage = "[rck] record: intent inference output is empty.";
+        return false;
+    }
+
+    try
+    {
+        using var document = JsonDocument.Parse(result.Output);
+        var root = document.RootElement;
+
+        var intent = GetRequiredString(root, "Intent");
+        var summary = GetRequiredString(root, "Summary");
+        var entities = GetStringArray(root, "Entities");
+        var constraints = GetStringArray(root, "Constraints");
+
+        var executionModel = result.ExecutionModel;
+        recordInput = new RckAgentTaskRecordInput(
+            TaskId: task.Id,
+            TaskKind: task.Kind,
+            AgentId: result.AgentId,
+            Status: result.Status.ToString(),
+            TaskSummary: FormatOptional(result.Summary),
+            GoalSummary: prompt,
+            InputSummary: prompt,
+            ExecutionProvider: executionModel.Provider,
+            ExecutionModel: executionModel.Model,
+            OutputKind: "intent",
+            OutputSummary: summary,
+            OutputData: new RckIntentProjection(intent, entities, constraints),
+            Warnings: result.Warnings,
+            Errors: result.Errors);
+        return true;
+    }
+    catch (Exception ex)
+    {
+        errorMessage = $"[rck] record: failed to project intent result: {ex.Message}";
+        return false;
+    }
+}
+
+static string GetRequiredString(JsonElement element, string propertyName)
+{
+    if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+    {
+        throw new InvalidDataException($"Missing string property '{propertyName}'.");
+    }
+
+    return property.GetString() ?? string.Empty;
+}
+
+static IReadOnlyList<string> GetStringArray(JsonElement element, string propertyName)
+{
+    if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
+    {
+        return Array.Empty<string>();
+    }
+
+    var values = new List<string>();
+    foreach (var item in property.EnumerateArray())
+    {
+        if (item.ValueKind != JsonValueKind.String)
+        {
+            continue;
+        }
+
+        var value = item.GetString();
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            values.Add(value);
+        }
+    }
+
+    return values;
 }
 
 static void WriteIndentedBlock(string? value, string indent)

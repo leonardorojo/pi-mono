@@ -14,7 +14,32 @@ This review is documentation-first. No runtime behavior was changed.
 
 **Freeze TraceSlice v0 as-is.**
 
-The current shape is sufficiently clear and stable for P15 planning: `ContextPack from TraceSlice` can be built from the existing top-level contract without adding new fields or introducing a TraceSlice agent.
+The current shape is sufficiently clear and stable for P15 planning.
+P14.2 adds an interpretation rule, not a widened payload: TraceSlice v0 must be read as an intent-first contract.
+
+## Intent-first interpretation
+
+The command surface:
+
+```text
+lrfs trace-slice "Implement rfs show command"
+```
+
+is a shorthand form.
+Conceptually it should be read as:
+
+```text
+Prompt -> Intent -> TraceSlice
+```
+
+not as:
+
+```text
+Prompt -> TraceSlice
+```
+
+In the current v0 runtime, the command internally uses a deterministic/mock intent and still emits the `intent` block explicitly.
+That means the current output remains valid while the architecture is documented more clearly.
 
 ## Abbreviated current shape
 
@@ -99,7 +124,7 @@ The current shape keeps the important boundaries visible:
 - **Materialization policy**: the output states what may be expanded later.
 - **Notes / exclusions**: the contract states the read-only and no-leak boundaries.
 
-This is the right level for TraceSlice v0. It does *not* behave like ContextPack yet, and that is correct.
+This is the right level for TraceSlice v0. It does not behave like ContextPack yet, and that is correct.
 
 ## Selection review
 
@@ -145,7 +170,7 @@ The policy is explicit and useful:
 
 ### Decision
 
-For v0, `includeStatePayloads` and `includeDeltaDecodedOps` can remain in **TraceSlice** as a materialization policy, not only in the eventual ContextPack. That is the right abstraction boundary: TraceSlice is a plan for what context may be surfaced later, not the final materialized ContextPack.
+For v0, `includeStatePayloads` and `includeDeltaDecodedOps` can remain in TraceSlice as a materialization policy, not only in the eventual ContextPack. That is the right abstraction boundary: TraceSlice is a plan for what context may be surfaced later, not the final materialized ContextPack.
 
 ## Intent review
 
@@ -161,7 +186,25 @@ Current intent shape:
 
 This is sufficient for v0.
 
-It is intentionally naive and deterministic. It does not need LLM interpretation yet. For P15, the intent object only needs to give the downstream projection a stable request label and summary.
+It is intentionally naive and deterministic:
+
+- `source = deterministic` in the current shorthand path
+- `kind` is a simple request label, not a semantic planner result
+- `summary` is effectively a prompt excerpt
+- no LLM step is involved
+- no RCK write is involved
+
+The important review outcome is not that this intent is sophisticated.
+The important outcome is that the `intent` block is always present, so the current shape already supports an intent-first interpretation.
+
+Future phases may source intent from:
+
+- `IntentInferenceAgent`
+- a previously recorded intent
+- a JSON file
+- a future Pi-backed `IntentAgent`
+
+Those future sources are not implemented here, and they do not require a `TraceSliceAgent` in v0.
 
 ## What TraceSlice v0 must not contain
 
@@ -175,7 +218,7 @@ The live output and builder both correctly avoid:
 - TraceSliceAgent
 - LLM calls
 
-Also important: TraceSlice v0 is *not* attempting to summarize the entire history. It is a bounded active-chain slice.
+Also important: TraceSlice v0 is not attempting to summarize the entire history. It is a bounded active-chain slice.
 
 ## Limitations known and accepted in v0
 
@@ -189,15 +232,35 @@ These are acceptable v0 constraints.
 
 ## P15 criteria
 
-TraceSlice v0 is ready to support **P15: ContextPack from TraceSlice** if P15 continues to honor these rules:
+TraceSlice v0 is ready to support P15 only if P15 continues to honor this chain:
+
+```text
+Prompt + Intent + TraceSlice -> ContextPack
+```
+
+That means:
 
 1. Treat TraceSlice as the input projection, not as storage.
-2. Preserve the explicit selection metadata.
+2. Preserve the explicit intent and selection metadata.
 3. Preserve metadata-only artifact observations unless P15 deliberately widens them.
 4. Expand only through the materialization policy, not by changing the TraceSlice contract ad hoc.
 5. Keep `lrfs trace-slice` read-only and deterministic.
 6. Keep `lrfs context-pack` valid and independent.
 7. Do not require a TraceSlice-specific agent or LLM step.
+8. Do not skip the intent layer by treating ContextPack as `Prompt -> ContextPack`.
+
+## Non-goals reinforced by this review
+
+This review does not implement:
+
+- ContextPack from TraceSlice
+- TraceSliceAgent
+- TraceSliceProposal
+- `--intent` CLI support
+- Pi-backed intent inference
+- any LLM path
+- any `Rufus.RCK.Core` change
+- any `.rfs/rck` write
 
 ## Verification notes
 
@@ -210,7 +273,7 @@ Observed checks during this review:
 
 ## Final assessment
 
-The v0 shape is good enough to freeze.
+The v0 shape is good enough to remain frozen.
 
-No code change is required for the shape review itself.
+No code change is required for the P14.2 contract clarification.
 If P15 needs more context, it should evolve from this policy boundary rather than by widening TraceSlice v0 now.

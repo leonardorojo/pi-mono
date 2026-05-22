@@ -38,7 +38,7 @@ High-level behavior:
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
 - `rfs agent-json` is an experimental prototype that runs `pi --mode json` for agent execution, prints a visible warning, and still relies on Pi `--tools` enforcement for read-only behavior without touching `.rfs/rck`
 - `rfs intent` executes `Rufus.Agenting.Intent.IntentInferenceAgent` with a deterministic `AgentTask` (`Kind = infer-intent`) and prints the agent result without calling Pi or writing `.rfs/rck`
-- `rfs trace-slice` builds a deterministic read-only JSON slice from the active RCK chain without calling Pi, writing `.rfs/rck`, or materializing file contents/diffs
+- `rfs trace-slice` builds a deterministic read-only JSON slice from the active RCK chain; conceptually it is intent-first, so the shorthand command internally uses an intent v0 and always emits an `intent` block without calling Pi, writing `.rfs/rck`, or materializing file contents/diffs
 - `rfs ask` and `rfs agent` use the workspace default model when one is configured; otherwise they keep using the current Pi/RFS default
 - `rfs ask-json` also reads `.rfs/config.json` and prefers `--model provider/id` when the configured model includes a provider prefix; otherwise it falls back to `RUFUSCHAT_LLM_MODEL` for bare model ids
 - `rfs ask` can temporarily fall back to the legacy bridge with `RFS_USE_LEGACY_ASK_BRIDGE=1`

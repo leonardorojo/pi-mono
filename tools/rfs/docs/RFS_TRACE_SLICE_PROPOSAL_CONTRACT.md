@@ -127,24 +127,30 @@ It:
 
 `ContextPack` is a deterministic materialization layer, not a planning layer.
 
-## 3. Contract status in P18
+## 3. Contract status in P19
 
-P18 implements a minimal deterministic/experimental runtime for:
+P19 keeps the minimal deterministic/experimental runtime for:
 
 ```text
 rfs trace-slice-proposal "<prompt>"
 ```
 
+and adds a separate validation runtime for:
+
+```text
+rfs trace-slice-validate "<prompt>"
+```
+
 Important scope notes for this implementation:
 
-- the command emits `TraceSliceProposal` JSON to stdout;
+- `rfs trace-slice-proposal` still emits `TraceSliceProposal` JSON to stdout;
 - the planner remains non-authoritative;
 - the implementation is deterministic/mock, not LLM-backed;
-- the implementation does not validate into final `TraceSlice` yet;
-- the implementation does not materialize `ContextPack`;
-- the implementation does not write `.rfs/rck`.
+- `rfs trace-slice-validate` runs the same proposal pipeline internally and validates that proposal into a final `TraceSlice`;
+- proposal validation remains read-only and does not materialize `ContextPack`;
+- neither command writes `.rfs/rck`.
 
-The conceptual shape below is therefore now also the concrete runtime shape for the experimental proposal command, even though future phases may still widen validation/reporting around it.
+The conceptual shape below is therefore also the concrete runtime shape for the experimental proposal command, while the validated output is a separate authoritative `TraceSlice` decision with a `validation` block.
 
 ## 4. Conceptual shape of TraceSliceProposal v0
 

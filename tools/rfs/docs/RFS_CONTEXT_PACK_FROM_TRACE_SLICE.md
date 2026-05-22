@@ -163,7 +163,7 @@ It must not:
 - call an LLM
 - require RPC
 
-P18 adds a separate experimental command, `rfs trace-slice-proposal "<prompt>"`, that produces a non-authoritative deterministic proposal JSON using the same high-level boundaries. That proposal command is planning-only; this `context-pack --trace-slice` mode still consumes validated deterministic TraceSlice output, not proposal output.
+P18 adds a separate experimental command, `rfs trace-slice-proposal "<prompt>"`, that produces a non-authoritative deterministic proposal JSON using the same high-level boundaries. P19 adds `rfs trace-slice-validate "<prompt>"`, which validates that proposal path into a final TraceSlice. This `context-pack --trace-slice` mode still uses its existing TraceSlice flow; it does not yet consume proposal output or the new proposal-validation path.
 
 ## RCK Core boundary
 

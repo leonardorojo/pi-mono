@@ -75,6 +75,11 @@ await RunTraceSliceProposalCliCaseAsync(
     prompt: "Implement rfs show command",
     failures);
 
+await RunTraceSliceValidateCliCaseAsync(
+    name: "trace slice validate cli renders validated trace slice json",
+    prompt: "Implement rfs show command",
+    failures);
+
 await RunContextPackTraceSliceCliCaseAsync(
     name: "context pack trace-slice cli renders scoped json",
     prompt: "Implement rfs show command",
@@ -538,6 +543,148 @@ static async Task RunTraceSliceProposalCliCaseAsync(
         catch (JsonException ex)
         {
             failures.Add($"[{name}] trace-slice-proposal output was not valid JSON: {ex.Message}");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunTraceSliceValidateCliCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-trace-slice-validate-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var validateResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "trace-slice-validate", prompt);
+        if (validateResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {validateResult.ExitCode}. stderr: {validateResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(validateResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {validateResult.Stderr.Trim()}.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(validateResult.Stdout);
+            var root = document.RootElement;
+
+            if (!string.Equals(root.GetProperty("type").GetString(), "rufus.trace-slice", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected type rufus.trace-slice.");
+            }
+
+            if (root.GetProperty("schemaVersion").GetInt32() != 1)
+            {
+                failures.Add($"[{name}] expected schemaVersion 1.");
+            }
+
+            var promptElement = root.GetProperty("prompt");
+            if (!string.Equals(promptElement.GetProperty("text").GetString(), prompt, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] prompt.text did not round-trip.");
+            }
+
+            var selection = root.GetProperty("selection");
+            if (!string.Equals(selection.GetProperty("strategy").GetString(), "proposal-validated", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected selection.strategy=proposal-validated.");
+            }
+
+            if (selection.GetProperty("maxStates").GetInt32() != 5)
+            {
+                failures.Add($"[{name}] expected selection.maxStates=5.");
+            }
+
+            if (!root.TryGetProperty("validation", out var validation))
+            {
+                failures.Add($"[{name}] expected validation block.");
+            }
+            else
+            {
+                if (!validation.TryGetProperty("status", out var statusProperty) || statusProperty.ValueKind != JsonValueKind.String)
+                {
+                    failures.Add($"[{name}] expected validation.status.");
+                }
+
+                foreach (var propertyName in new[] { "accepted", "rejected", "downgraded", "reasons" })
+                {
+                    if (!validation.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
+                    {
+                        failures.Add($"[{name}] expected validation.{propertyName} array.");
+                    }
+                }
+            }
+
+            var materializationPolicy = root.GetProperty("materializationPolicy");
+            foreach (var propertyName in new[] { "includeArtifactContents", "includeGitDiffs", "includeStdoutStderr", "includeJsonl" })
+            {
+                if (materializationPolicy.GetProperty(propertyName).ValueKind != JsonValueKind.False)
+                {
+                    failures.Add($"[{name}] expected {propertyName}=false.");
+                }
+            }
+
+            if (root.TryGetProperty("artifacts", out var artifacts) && artifacts.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var artifact in artifacts.EnumerateArray())
+                {
+                    if (!string.Equals(artifact.GetProperty("includeMode").GetString(), "metadata-only", StringComparison.Ordinal))
+                    {
+                        failures.Add($"[{name}] expected artifacts to be metadata-only.");
+                        break;
+                    }
+                }
+            }
+
+            var text = validateResult.Stdout;
+            foreach (var fragment in new[] { "diff --git", "assistantMessageEvent", "message_update", "message_end" })
+            {
+                if (text.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+                {
+                    failures.Add($"[{name}] unexpected raw fragment '{fragment}' in trace-slice-validate output.");
+                    break;
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            failures.Add($"[{name}] trace-slice-validate output was not valid JSON: {ex.Message}");
         }
     }
     catch (Exception ex)

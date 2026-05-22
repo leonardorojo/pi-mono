@@ -261,6 +261,7 @@ P17 adds a contractual clarification, not a runtime widening:
 - current TraceSlice v0 may still emit empty `anchorIds`;
 - future planning should become anchor-aware;
 - P18 is the phase expected to make the deterministic planner emit anchor-aware `TraceSliceProposal` output.
+- P19 adds `rfs trace-slice-validate` as a separate proposal-validation runtime, while `rfs trace-slice` itself remains the baseline deterministic selection path.
 
 ## Non-goals for P14.2 + P15A+B
 

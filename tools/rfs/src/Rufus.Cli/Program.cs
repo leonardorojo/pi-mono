@@ -149,70 +149,53 @@ if (args[0] == "trace-slice-proposal")
         return 1;
     }
 
-    var quickIndexResult = RckTraceSliceProposalInputBuilder.Build(Directory.GetCurrentDirectory(), 5);
-    if (!quickIndexResult.Success || quickIndexResult.DagQuickIndex is null)
+    var proposalResult = await BuildTraceSliceProposalJsonAsync(prompt, Directory.GetCurrentDirectory(), "rfs trace-slice-proposal");
+    if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
     {
-        if (!string.IsNullOrWhiteSpace(quickIndexResult.ErrorMessage))
+        if (!string.IsNullOrWhiteSpace(proposalResult.ErrorMessage))
         {
-            Console.Error.WriteLine(quickIndexResult.ErrorMessage);
+            Console.Error.WriteLine(proposalResult.ErrorMessage);
         }
 
         return 1;
     }
 
-    var intentAgent = new IntentInferenceAgent();
-    var intentTask = new AgentTask(
-        id: $"intent-{Guid.NewGuid():N}",
-        kind: "infer-intent",
-        goal: "infer deterministic operational intent for a trace slice proposal",
-        input: prompt,
-        expectedOutput: "PromptIntent JSON");
-    var intentResult = await intentAgent.ExecuteAsync(intentTask);
-    if (intentResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(intentResult.Output))
+    Console.WriteLine(proposalResult.ProposalJson);
+    return 0;
+}
+
+if (args[0] == "trace-slice-validate")
+{
+    var prompt = string.Join(" ", args.Skip(1)).Trim();
+    if (string.IsNullOrWhiteSpace(prompt))
     {
-        foreach (var error in intentResult.Errors)
+        Console.Error.WriteLine("Missing prompt.");
+        return 1;
+    }
+
+    var proposalResult = await BuildTraceSliceProposalJsonAsync(prompt, Directory.GetCurrentDirectory(), "rfs trace-slice-validate");
+    if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
+    {
+        if (!string.IsNullOrWhiteSpace(proposalResult.ErrorMessage))
         {
-            Console.Error.WriteLine(error);
+            Console.Error.WriteLine(proposalResult.ErrorMessage);
         }
 
         return 1;
     }
 
-    if (!TryBuildTraceSliceProposalIntent(intentResult.Output, out var proposalIntent, out var intentErrorMessage))
+    var validationResult = RckTraceSliceProposalValidator.Validate(proposalResult.ProposalJson, Directory.GetCurrentDirectory(), maxStates: 5, maxDeltas: 5);
+    if (!validationResult.Success || string.IsNullOrWhiteSpace(validationResult.Json))
     {
-        Console.Error.WriteLine(intentErrorMessage);
-        return 1;
-    }
-
-    var plannerInputJson = JsonSerializer.Serialize(new
-    {
-        prompt,
-        intent = proposalIntent,
-        dagQuickIndex = quickIndexResult.DagQuickIndex,
-    }, new JsonSerializerOptions
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    });
-
-    var plannerAgent = new TraceSlicePlannerAgent();
-    var plannerTask = new AgentTask(
-        id: $"trace-slice-proposal-{Guid.NewGuid():N}",
-        kind: "propose-trace-slice",
-        goal: "build a deterministic anchor-aware trace slice proposal",
-        input: plannerInputJson,
-        expectedOutput: "TraceSliceProposal JSON");
-    var plannerResult = await plannerAgent.ExecuteAsync(plannerTask);
-    if (plannerResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(plannerResult.Output))
-    {
-        foreach (var error in plannerResult.Errors)
+        if (!string.IsNullOrWhiteSpace(validationResult.ErrorMessage))
         {
-            Console.Error.WriteLine(error);
+            Console.Error.WriteLine(validationResult.ErrorMessage);
         }
 
         return 1;
     }
 
-    Console.WriteLine(plannerResult.Output);
+    Console.WriteLine(validationResult.Json);
     return 0;
 }
 
@@ -1175,6 +1158,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs context-pack --trace-slice <prompt>");
     Console.WriteLine("  rfs trace-slice <prompt>");
     Console.WriteLine("  rfs trace-slice-proposal <prompt>");
+    Console.WriteLine("  rfs trace-slice-validate <prompt>");
     Console.WriteLine("  rfs model get");
     Console.WriteLine("  rfs model set <model>");
     Console.WriteLine("  rfs model list");
@@ -1194,6 +1178,7 @@ static void PrintHelp()
     Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico con opción --record para RCK");
     Console.WriteLine("  trace-slice = exporta un corte determinístico del RCK activo como JSON");
     Console.WriteLine("  trace-slice-proposal = prototipo experimental determinístico/anchor-aware; emite JSON puro sin escribir RCK");
+    Console.WriteLine("  trace-slice-validate = valida una TraceSliceProposal determinística y emite un TraceSlice final sin escribir RCK");
     Console.WriteLine("  context-pack --trace-slice = materializa un context-pack focalizado desde TraceSlice v0 sin escribir RCK");
 }
 
@@ -1393,7 +1378,7 @@ static bool IsHelpCommand(string command)
     return command is "help" or "--help" or "-h";
 }
 
-static bool TryBuildTraceSliceProposalIntent(string intentOutputJson, out object intentProjection, out string? errorMessage)
+static bool TryBuildTraceSliceProposalIntent(string intentOutputJson, out object intentProjection, out string? errorMessage, string errorPrefix)
 {
     intentProjection = null!;
     errorMessage = null;
@@ -1412,7 +1397,68 @@ static bool TryBuildTraceSliceProposalIntent(string intentOutputJson, out object
     }
     catch (Exception ex)
     {
-        errorMessage = $"rfs trace-slice-proposal: failed to project intent result: {ex.Message}";
+        errorMessage = $"{errorPrefix}: failed to project intent result: {ex.Message}";
         return false;
     }
+}
+
+static async Task<TraceSliceProposalPipelineResult> BuildTraceSliceProposalJsonAsync(string prompt, string currentDirectory, string errorPrefix)
+{
+    var quickIndexResult = RckTraceSliceProposalInputBuilder.Build(currentDirectory, 5);
+    if (!quickIndexResult.Success || quickIndexResult.DagQuickIndex is null)
+    {
+        return TraceSliceProposalPipelineResult.Failure(quickIndexResult.ErrorMessage ?? $"{errorPrefix}: failed to read TraceSliceProposal input.");
+    }
+
+    var intentAgent = new IntentInferenceAgent();
+    var intentTask = new AgentTask(
+        id: $"intent-{Guid.NewGuid():N}",
+        kind: "infer-intent",
+        goal: "infer deterministic operational intent for a trace slice proposal",
+        input: prompt,
+        expectedOutput: "PromptIntent JSON");
+    var intentResult = await intentAgent.ExecuteAsync(intentTask);
+    if (intentResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(intentResult.Output))
+    {
+        var firstError = intentResult.Errors.FirstOrDefault();
+        return TraceSliceProposalPipelineResult.Failure(firstError ?? $"{errorPrefix}: intent inference failed.");
+    }
+
+    if (!TryBuildTraceSliceProposalIntent(intentResult.Output, out var proposalIntent, out var intentErrorMessage, errorPrefix))
+    {
+        return TraceSliceProposalPipelineResult.Failure(intentErrorMessage ?? $"{errorPrefix}: failed to project intent result.");
+    }
+
+    var plannerInputJson = JsonSerializer.Serialize(new
+    {
+        prompt,
+        intent = proposalIntent,
+        dagQuickIndex = quickIndexResult.DagQuickIndex,
+    }, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    });
+
+    var plannerAgent = new TraceSlicePlannerAgent();
+    var plannerTask = new AgentTask(
+        id: $"trace-slice-proposal-{Guid.NewGuid():N}",
+        kind: "propose-trace-slice",
+        goal: "build a deterministic anchor-aware trace slice proposal",
+        input: plannerInputJson,
+        expectedOutput: "TraceSliceProposal JSON");
+    var plannerResult = await plannerAgent.ExecuteAsync(plannerTask);
+    if (plannerResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(plannerResult.Output))
+    {
+        var firstError = plannerResult.Errors.FirstOrDefault();
+        return TraceSliceProposalPipelineResult.Failure(firstError ?? $"{errorPrefix}: trace slice planner failed.");
+    }
+
+    return TraceSliceProposalPipelineResult.SuccessResult(plannerResult.Output);
+}
+
+sealed record TraceSliceProposalPipelineResult(bool Success, string? ErrorMessage, string? ProposalJson)
+{
+    public static TraceSliceProposalPipelineResult Failure(string errorMessage) => new(false, errorMessage, null);
+
+    public static TraceSliceProposalPipelineResult SuccessResult(string proposalJson) => new(true, null, proposalJson);
 }

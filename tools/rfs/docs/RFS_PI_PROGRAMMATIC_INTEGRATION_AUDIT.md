@@ -2,6 +2,8 @@
 
 Status: analysis-only microphase.
 
+Update note: `rfs model list` has since been implemented in a later microphase using Pi RPC `get_available_models`. The analysis and recommendations below remain useful as the pre-implementation audit baseline.
+
 Branch: `feature/rfs-pi-programmatic-integration-audit`, created from `feature/rufus-cli-design`.
 
 Scope constraints:

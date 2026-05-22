@@ -15,6 +15,7 @@ Implemented commands:
 - `rfs pi [message]`
 - `rfs model get`
 - `rfs model set <model>`
+- `rfs model list`
 - `rfs ask <prompt>`
 - `rfs ask --record <prompt>`
 - `rfs agent <task>`
@@ -25,6 +26,7 @@ High-level behavior:
 - `rfs init` initializes the local Rufus workspace and seeds the local RCK DAG with a genesis State and Anchor
 - `rfs model get` reads the workspace default LLM model when it has been configured in `.rfs/config.json`
 - `rfs model set <model>` stores the workspace default LLM model in `.rfs/config.json`
+- `rfs model list` queries Pi RPC mode for the currently available models without opening the Pi TUI
 - `rfs ask` is headless prompt execution through Pi's auth/provider/model stack
 - `rfs ask --record` records the ask interaction into local RCK as State + Delta
 - `rfs agent` is the headless streaming agent path
@@ -56,6 +58,7 @@ Commands:
 ```bash
 rfs model get
 rfs model set gpt-5.4-mini
+rfs model list
 ```
 
 If you are using the local wrapper from another repository, the same commands work there too:
@@ -63,11 +66,27 @@ If you are using the local wrapper from another repository, the same commands wo
 ```bash
 cd /home/rufus/DEV/leonardorojo/ChessBoardApp
 lrfs model get
+lrfs model list
 lrfs model set gpt-5.4-mini
+lrfs model list
 lrfs ask "Respond with a short sentence confirming RFS model config is being used."
 ```
 
-`rfs model list` is intentionally deferred for now. Pi's interactive model picker is not a reliable non-interactive source yet.
+`rfs model list` uses `pi --mode rpc --no-session` with a single `get_available_models` request.
+RFS disables extensions and context files for this RPC call so stdout stays dedicated to JSONL protocol traffic.
+The command prints provider + model id, includes the display name when Pi returns one, and marks the current workspace model with `*` when it matches `.rfs/config.json`.
+
+Example:
+
+```text
+Available models:
+
+* gpt-5.4-mini - GPT-5.4 Mini  github-copilot
+  claude-haiku-4.5 - Claude Haiku 4.5  github-copilot
+
+Current workspace model:
+  gpt-5.4-mini
+```
 
 This workspace default is the base for future subagent-specific routing, but that routing is not implemented yet.
 

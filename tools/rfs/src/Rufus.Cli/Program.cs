@@ -2,6 +2,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Rufus.Cli.PiIntegration;
 using Rufus.RCK.Workspace;
 
 if (args.Length == 0 || IsHelpCommand(args[0]))
@@ -77,9 +78,9 @@ if (args[0] == "context-pack")
 
 if (args[0] == "model")
 {
-    if (args.Length != 2 && args.Length != 3)
+    if (args.Length < 2 || args.Length > 3)
     {
-        Console.Error.WriteLine("Usage: rfs model get|set <model>");
+        Console.Error.WriteLine("Usage: rfs model get|set|list <model>");
         return 1;
     }
 
@@ -136,8 +137,59 @@ if (args[0] == "model")
 
     if (args[1] == "list")
     {
-        Console.Error.WriteLine("rfs model list is not implemented yet.");
-        return 1;
+        if (args.Length != 2)
+        {
+            Console.Error.WriteLine("Usage: rfs model list");
+            return 1;
+        }
+
+        var modelListResult = await PiRpcClient.GetAvailableModelsAsync(Directory.GetCurrentDirectory());
+        if (!modelListResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(modelListResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(modelListResult.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        var currentWorkspaceModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(Directory.GetCurrentDirectory());
+        var orderedModels = modelListResult.Models
+            .OrderBy(model => model.Provider, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Console.WriteLine("Available models:");
+        Console.WriteLine();
+
+        if (orderedModels.Count == 0)
+        {
+            Console.WriteLine("  (no models returned by Pi RPC)");
+        }
+        else
+        {
+            var modelWidth = Math.Max(
+                "Model".Length,
+                orderedModels.Max(model => model.Id.Length + (string.IsNullOrWhiteSpace(model.DisplayName) ? 0 : model.DisplayName!.Length + 3)));
+            var providerWidth = Math.Max("Provider".Length, orderedModels.Max(model => model.Provider.Length));
+
+            foreach (var model in orderedModels)
+            {
+                var marker = string.Equals(model.Id, currentWorkspaceModel, StringComparison.Ordinal) ? "*" : " ";
+                var modelLabel = string.IsNullOrWhiteSpace(model.DisplayName)
+                    ? model.Id
+                    : $"{model.Id} - {model.DisplayName}";
+
+                Console.WriteLine($"{marker} {modelLabel.PadRight(modelWidth)}  {model.Provider.PadRight(providerWidth)}");
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Current workspace model:");
+        Console.WriteLine($"  {(string.IsNullOrWhiteSpace(currentWorkspaceModel) ? "(inherited)" : currentWorkspaceModel)}");
+
+        return 0;
     }
 
     Console.Error.WriteLine("Unknown model command.");
@@ -725,6 +777,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs context-pack = export full RCK DAG context pack as JSON");
     Console.WriteLine("  rfs model get");
     Console.WriteLine("  rfs model set <model>");
+    Console.WriteLine("  rfs model list");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");

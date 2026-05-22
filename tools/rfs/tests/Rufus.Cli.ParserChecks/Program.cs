@@ -70,6 +70,10 @@ await RunTraceSliceCliCaseAsync(
     prompt: "Implement rfs show command",
     failures);
 
+await RunContextPackTraceSliceCliCaseAsync(
+    name: "context pack trace-slice cli renders scoped json",
+    prompt: "Implement rfs show command",
+    failures);
 if (failures.Count > 0)
 {
     foreach (var failure in failures)
@@ -371,6 +375,157 @@ static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
     var stderrTask = process.StandardError.ReadToEndAsync();
     await process.WaitForExitAsync();
     return (process.ExitCode, await stdoutTask, await stderrTask);
+}
+
+static async Task RunContextPackTraceSliceCliCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-context-pack-trace-slice-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var contextPackResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "context-pack", "--trace-slice", prompt);
+        if (contextPackResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {contextPackResult.ExitCode}. stderr: {contextPackResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(contextPackResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {contextPackResult.Stderr.Trim()}.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(contextPackResult.Stdout);
+            var root = document.RootElement;
+
+            if (!string.Equals(root.GetProperty("type").GetString(), "rck-dag-context-pack-v1", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected type rck-dag-context-pack-v1.");
+            }
+
+            if (!string.Equals(root.GetProperty("scope").GetString(), "trace-slice", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected scope=trace-slice.");
+            }
+
+            var traceSlice = root.GetProperty("traceSlice");
+            if (!string.Equals(traceSlice.GetProperty("type").GetString(), "rufus.trace-slice", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected embedded traceSlice.type=rufus.trace-slice.");
+            }
+
+            var selection = traceSlice.GetProperty("selection");
+            var maxStates = selection.GetProperty("maxStates").GetInt32();
+            var stateIds = selection.GetProperty("stateIds");
+            var deltaIds = selection.GetProperty("deltaIds");
+            var anchorIds = selection.GetProperty("anchorIds");
+
+            var states = root.GetProperty("states");
+            var deltas = root.GetProperty("deltas");
+            var anchors = root.GetProperty("anchors");
+            var artifacts = root.GetProperty("artifacts");
+            var materializationPolicy = root.GetProperty("materializationPolicy");
+
+            if (states.GetArrayLength() != stateIds.GetArrayLength())
+            {
+                failures.Add($"[{name}] expected states length to match traceSlice.selection.stateIds length.");
+            }
+
+            if (deltas.GetArrayLength() != deltaIds.GetArrayLength())
+            {
+                failures.Add($"[{name}] expected deltas length to match traceSlice.selection.deltaIds length.");
+            }
+
+            if (anchors.GetArrayLength() != anchorIds.GetArrayLength())
+            {
+                failures.Add($"[{name}] expected anchors length to match traceSlice.selection.anchorIds length.");
+            }
+
+            if (states.GetArrayLength() > maxStates)
+            {
+                failures.Add($"[{name}] expected states length <= traceSlice.selection.maxStates.");
+            }
+
+            if (materializationPolicy.GetProperty("includeArtifactContents").ValueKind != JsonValueKind.False)
+            {
+                failures.Add($"[{name}] expected includeArtifactContents=false.");
+            }
+
+            if (materializationPolicy.GetProperty("includeGitDiffs").ValueKind != JsonValueKind.False)
+            {
+                failures.Add($"[{name}] expected includeGitDiffs=false.");
+            }
+
+            if (materializationPolicy.GetProperty("includeStdoutStderr").ValueKind != JsonValueKind.False)
+            {
+                failures.Add($"[{name}] expected includeStdoutStderr=false.");
+            }
+
+            if (materializationPolicy.GetProperty("includeJsonl").ValueKind != JsonValueKind.False)
+            {
+                failures.Add($"[{name}] expected includeJsonl=false.");
+            }
+
+            foreach (var artifact in artifacts.EnumerateArray())
+            {
+                if (!string.Equals(artifact.GetProperty("includeMode").GetString(), "metadata-only", StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected artifacts to be metadata-only.");
+                    break;
+                }
+            }
+
+            var text = contextPackResult.Stdout;
+            foreach (var fragment in new[] { "diff --git", "AgentTaskResult" })
+            {
+                if (text.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] unexpected raw fragment '{fragment}' in context-pack --trace-slice output.");
+                    break;
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            failures.Add($"[{name}] context-pack --trace-slice output was not valid JSON: {ex.Message}");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
 }
 
 static async Task RunIntentInferenceCaseAsync(

@@ -8,7 +8,8 @@ TraceSlice v0 is not ContextPack, not memory, and not an agent.
 It does not call an LLM, does not write `.rfs/rck`, and does not include file contents or diffs.
 
 TraceSlice v0 remains valid as currently implemented.
-P14.2 does not widen the runtime behavior; it makes the contract explicit: TraceSlice is intent-first.
+P14.2 made the contract explicit: TraceSlice is intent-first.
+P15A+B does not widen the TraceSlice contract either; it adds a new read-only materialization path that consumes TraceSlice as a plan.
 
 ## TraceSlice is intent-first
 
@@ -132,7 +133,7 @@ The current v0 slice is built deterministically:
 5. include anchors associated with the selected states, if present
 6. collect metadata-only artifacts from existing payloads and workspace git status
 
-This is still valid in P14.2.
+This is still valid after P15A+B.
 The important clarification is conceptual: this deterministic selection is the current implementation of an intent-first TraceSlice, not a statement that TraceSlice should always be prompt-only.
 
 ## Materialization policy
@@ -149,6 +150,33 @@ A minimal policy is:
 
 This keeps the slice operational without turning it into a dump of raw workspace evidence.
 
+## ContextPack from TraceSlice
+
+P15A+B adds a new read-only consumer path:
+
+```text
+rfs context-pack --trace-slice "<prompt>"
+```
+
+That command does not replace `rfs context-pack` full export.
+Instead, it executes the intent-first TraceSlice path internally, then materializes a focused ContextPack from the resulting TraceSlice selection and materialization policy.
+
+Conceptually:
+
+```text
+Prompt + Intent + TraceSlice -> ContextPack
+```
+
+Operationally in v0:
+
+1. build deterministic TraceSlice v0 from the prompt
+2. read `selection.stateIds`, `selection.deltaIds`, and `selection.anchorIds`
+3. filter the full DAG projection to those selected objects
+4. preserve metadata-only artifacts
+5. emit a scoped ContextPack JSON document with `scope = "trace-slice"`
+
+The scoped ContextPack is therefore a materialization of the TraceSlice plan, not a replacement for TraceSlice itself.
+
 ## Future explicit intent
 
 Future phases may add explicit intent inputs without changing the intent-first rule.
@@ -163,7 +191,7 @@ Possible evolution points include:
 - intent sourced from a future Pi-backed `IntentAgent`
 
 Those are future contract directions only.
-They are not implemented in P14.2.
+They are not implemented in P15A+B.
 
 ## Relation to P15
 
@@ -179,30 +207,37 @@ Not:
 Prompt -> ContextPack
 ```
 
-TraceSlice remains the bounded projection layer between prompt/intent handling and eventual ContextPack materialization.
+TraceSlice remains the bounded projection layer between prompt/intent handling and ContextPack materialization.
+
+`rfs context-pack` without flags remains the full DAG export.
+`rfs context-pack --trace-slice "<prompt>"` is the new focused materialization mode.
 
 ## Stability rule
 
 TraceSlice v0 is a narrow contract.
 It should remain deterministic and simple, and any future widening should happen through a deliberate version bump rather than an ad hoc expansion.
 
-P14.2 does not unfreeze the shape from P14.1.
-It clarifies the interpretation of the existing contract.
+P14.2 did not unfreeze the shape from P14.1.
+P15A+B also does not unfreeze it.
+It reuses TraceSlice v0 as an input contract.
 
 The same architectural rule used for Core applies here in spirit: keep the boundary stable once it is defined.
 
-## Non-goals for P14.2
+## Non-goals for P14.2 + P15A+B
 
-This phase does not implement:
+These phases do not implement:
 
-- ContextPack from TraceSlice
 - TraceSliceAgent
 - TraceSliceProposal
-- `--intent` CLI support
+- `--intent` CLI support for TraceSlice
 - Pi-backed intent inference
 - any LLM path
 - changes in `Rufus.RCK.Core`
 - writes into `.rfs/rck`
+- reading artifact file contents
+- including git diffs
+- including stdout/stderr dumps
+- including raw JSONL traffic
 
 ## Notes
 
@@ -212,3 +247,4 @@ This phase does not implement:
 - It should not write new RCK data.
 - It should not replace `rfs context-pack`.
 - `rfs context-pack` remains the full DAG export.
+- `rfs context-pack --trace-slice` is a scoped materialization mode built from TraceSlice v0.

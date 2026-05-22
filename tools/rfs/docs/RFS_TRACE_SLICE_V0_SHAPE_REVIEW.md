@@ -8,14 +8,16 @@ Reviewed the live `lrfs trace-slice "Implement rfs show command"` output generat
 - command: `lrfs trace-slice "Implement rfs show command"`
 - post-checks: `python3 -m json.tool`, `lrfs status` before/after, and `lrfs context-pack`
 
-This review is documentation-first. No runtime behavior was changed.
+This review remains documentation-first for the TraceSlice contract itself.
+P15A+B adds a new scoped ContextPack materialization path that consumes this frozen TraceSlice shape without changing the TraceSlice top-level contract.
 
 ## Decision
 
-**Freeze TraceSlice v0 as-is.**
+**Keep TraceSlice v0 frozen.**
 
-The current shape is sufficiently clear and stable for P15 planning.
-P14.2 adds an interpretation rule, not a widened payload: TraceSlice v0 must be read as an intent-first contract.
+The current shape is sufficiently clear and stable for P15A+B.
+P14.2 added an interpretation rule, not a widened payload: TraceSlice v0 must be read as an intent-first contract.
+P15A+B uses that contract as input to `rfs context-pack --trace-slice`.
 
 ## Intent-first interpretation
 
@@ -111,7 +113,7 @@ The current output also includes these payload-bearing sections:
 - `deltas`
 - `anchors`
 
-For v0, these are useful and should stay. They are not noise; they are the concrete selection result that P15 can project into a ContextPack.
+For v0, these are useful and should stay. They are not noise; they are the concrete selection result that P15A+B can project into a ContextPack.
 
 ## Separation of concerns
 
@@ -220,19 +222,9 @@ The live output and builder both correctly avoid:
 
 Also important: TraceSlice v0 is not attempting to summarize the entire history. It is a bounded active-chain slice.
 
-## Limitations known and accepted in v0
+## P15A+B materialization criteria
 
-- Artifact extraction is metadata-only and conservative.
-- Intent is naive/deterministic.
-- `anchorIds` may be empty.
-- The selection is bounded by `active-chain-recent` and `maxStates = 5`.
-- The output is a projection, not a final ContextPack.
-
-These are acceptable v0 constraints.
-
-## P15 criteria
-
-TraceSlice v0 is ready to support P15 only if P15 continues to honor this chain:
+TraceSlice v0 is ready to support P15A+B only if that phase continues to honor this chain:
 
 ```text
 Prompt + Intent + TraceSlice -> ContextPack
@@ -242,18 +234,27 @@ That means:
 
 1. Treat TraceSlice as the input projection, not as storage.
 2. Preserve the explicit intent and selection metadata.
-3. Preserve metadata-only artifact observations unless P15 deliberately widens them.
+3. Preserve metadata-only artifact observations unless a later version deliberately widens them.
 4. Expand only through the materialization policy, not by changing the TraceSlice contract ad hoc.
 5. Keep `lrfs trace-slice` read-only and deterministic.
 6. Keep `lrfs context-pack` valid and independent.
 7. Do not require a TraceSlice-specific agent or LLM step.
 8. Do not skip the intent layer by treating ContextPack as `Prompt -> ContextPack`.
 
+For `lrfs context-pack --trace-slice`, the expected result is a scoped JSON export that:
+
+- keeps `type = "rck-dag-context-pack-v1"`
+- adds `scope = "trace-slice"`
+- embeds the TraceSlice used to build the pack
+- filters `states`, `deltas`, and `anchors` according to `TraceSlice.selection`
+- preserves artifacts as metadata-only
+- does not include file contents, git diffs, stdout/stderr dumps, or raw JSONL
+- remains read-only and does not write `.rfs/rck`
+
 ## Non-goals reinforced by this review
 
-This review does not implement:
+This review does not justify implementing:
 
-- ContextPack from TraceSlice
 - TraceSliceAgent
 - TraceSliceProposal
 - `--intent` CLI support
@@ -264,16 +265,18 @@ This review does not implement:
 
 ## Verification notes
 
-Observed checks during this review:
+Observed checks during this review baseline:
 
 - `lrfs status` before trace-slice: HEAD, states, and deltas were stable.
 - `lrfs status` after trace-slice: unchanged.
 - `python3 -m json.tool` succeeded on the trace-slice JSON.
 - `lrfs context-pack` also parsed successfully as JSON.
 
+P15A+B should preserve all of those invariants while adding `lrfs context-pack --trace-slice` as a new scoped export mode.
+
 ## Final assessment
 
 The v0 shape is good enough to remain frozen.
 
-No code change is required for the P14.2 contract clarification.
-If P15 needs more context, it should evolve from this policy boundary rather than by widening TraceSlice v0 now.
+P15A+B should consume it as an input contract rather than widening it.
+If later phases need more context, they should evolve from the materialization boundary rather than by widening TraceSlice v0 now.

@@ -62,6 +62,42 @@ if (args[0] == "log")
 
 if (args[0] == "context-pack")
 {
+    if (args.Length == 2 && string.Equals(args[1], "--trace-slice", StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine("Usage: rfs context-pack --trace-slice <prompt>");
+        return 1;
+    }
+
+    if (args.Length >= 2 && string.Equals(args[1], "--trace-slice", StringComparison.Ordinal))
+    {
+        var prompt = string.Join(" ", args.Skip(2)).Trim();
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            Console.Error.WriteLine("Missing prompt.");
+            return 1;
+        }
+
+        var traceSliceContextPackResult = RckTraceSliceContextPackBuilder.Build(prompt, Directory.GetCurrentDirectory(), 5);
+        if (!traceSliceContextPackResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(traceSliceContextPackResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(traceSliceContextPackResult.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        Console.WriteLine(traceSliceContextPackResult.Json);
+        return 0;
+    }
+
+    if (args.Length > 1)
+    {
+        Console.Error.WriteLine("Usage: rfs context-pack [--trace-slice <prompt>]");
+        return 1;
+    }
+
     var contextPackResult = RckWorkspaceContextPackReader.Read();
     if (!contextPackResult.Success)
     {
@@ -77,6 +113,7 @@ if (args[0] == "context-pack")
 
     return 0;
 }
+
 
 if (args[0] == "trace-slice")
 {
@@ -1058,6 +1095,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs status = show local rfs/RCK workspace status");
     Console.WriteLine("  rfs log    = show active RCK cognitive history");
     Console.WriteLine("  rfs context-pack = export full RCK DAG context pack as JSON");
+    Console.WriteLine("  rfs context-pack --trace-slice <prompt>");
     Console.WriteLine("  rfs trace-slice <prompt>");
     Console.WriteLine("  rfs model get");
     Console.WriteLine("  rfs model set <model>");
@@ -1077,6 +1115,7 @@ static void PrintHelp()
     Console.WriteLine("  agent-json = prototipo experimental con Pi JSON Event Stream; relies on Pi --tools enforcement for read-only behavior");
     Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico con opción --record para RCK");
     Console.WriteLine("  trace-slice = exporta un corte determinístico del RCK activo como JSON");
+    Console.WriteLine("  context-pack --trace-slice = materializa un context-pack focalizado desde TraceSlice v0 sin escribir RCK");
 }
 
 static bool IsLegacyAskBridgeEnabled()

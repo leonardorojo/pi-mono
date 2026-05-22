@@ -714,7 +714,7 @@ if (args[0] == "ask")
         return 1;
     }
 
-    if (recordInteraction || IsLegacyAskBridgeEnabled())
+    if (IsLegacyAskBridgeEnabled())
     {
         const string helperRelativePath = "rfs-ask.mjs";
         var helperPath = FindBridgeHelperPath(helperRelativePath);
@@ -842,6 +842,25 @@ if (args[0] == "ask")
         foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
         {
             Console.WriteLine(answerLine);
+        }
+    }
+
+    if (recordInteraction)
+    {
+        var recordResult = RckInteractionRecorder.RecordAsk(prompt, askJsonResult.Answer);
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        foreach (var line in recordResult.FormatConsoleLines())
+        {
+            Console.WriteLine(line);
         }
     }
 

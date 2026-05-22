@@ -29,7 +29,7 @@ High-level behavior:
 - `rfs model set <model>` stores the workspace default LLM model in `.rfs/config.json`
 - `rfs model list` queries Pi RPC mode for the currently available models without opening the Pi TUI
 - `rfs ask` is headless prompt execution through Pi's auth/provider/model stack using Pi JSON Event Stream by default
-- `rfs ask --record` records the ask interaction into local RCK and still uses the legacy bridge for now
+- `rfs ask --record` records the ask interaction into local RCK using the same Pi JSON Event Stream path by default; `RFS_USE_LEGACY_ASK_BRIDGE=1` keeps the legacy bridge as a temporary fallback
 - `rfs ask-json` is an experimental one-shot prototype that runs `pi --mode json`, parses stdout as JSONL, and prints a human answer without touching `.rfs/rck`
 - `rfs agent` is the headless streaming agent path
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
@@ -211,7 +211,7 @@ dotnet run --project tools/rfs/src/Rufus.Cli -- ask --record "Respond in one sho
 ```
 
 `rfs ask --record` executes the headless ask flow and records the interaction into local RCK.
-It still uses the legacy Node bridge for now.
+It now uses Pi JSON Event Stream by default and keeps the legacy Node bridge only when `RFS_USE_LEGACY_ASK_BRIDGE=1` is set.
 When the worktree has changed files, the recording captures `artifacts` for `ask --record` and `agent --record`.
 
 Recording shape:

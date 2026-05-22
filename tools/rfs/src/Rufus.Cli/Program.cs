@@ -78,6 +78,30 @@ if (args[0] == "context-pack")
     return 0;
 }
 
+if (args[0] == "trace-slice")
+{
+    var prompt = string.Join(" ", args.Skip(1)).Trim();
+    if (string.IsNullOrWhiteSpace(prompt))
+    {
+        Console.Error.WriteLine("Missing prompt.");
+        return 1;
+    }
+
+    var traceSliceResult = RckTraceSliceBuilder.Build(prompt, Directory.GetCurrentDirectory(), 5);
+    if (!traceSliceResult.Success)
+    {
+        if (!string.IsNullOrWhiteSpace(traceSliceResult.ErrorMessage))
+        {
+            Console.Error.WriteLine(traceSliceResult.ErrorMessage);
+        }
+
+        return 1;
+    }
+
+    Console.WriteLine(traceSliceResult.Json);
+    return 0;
+}
+
 if (args[0] == "model")
 {
     if (args.Length < 2 || args.Length > 3)
@@ -1034,6 +1058,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs status = show local rfs/RCK workspace status");
     Console.WriteLine("  rfs log    = show active RCK cognitive history");
     Console.WriteLine("  rfs context-pack = export full RCK DAG context pack as JSON");
+    Console.WriteLine("  rfs trace-slice <prompt>");
     Console.WriteLine("  rfs model get");
     Console.WriteLine("  rfs model set <model>");
     Console.WriteLine("  rfs model list");
@@ -1051,6 +1076,7 @@ static void PrintHelp()
     Console.WriteLine("  agent      = agente headless con tools read-only + streaming");
     Console.WriteLine("  agent-json = prototipo experimental con Pi JSON Event Stream; relies on Pi --tools enforcement for read-only behavior");
     Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico con opción --record para RCK");
+    Console.WriteLine("  trace-slice = exporta un corte determinístico del RCK activo como JSON");
 }
 
 static bool IsLegacyAskBridgeEnabled()

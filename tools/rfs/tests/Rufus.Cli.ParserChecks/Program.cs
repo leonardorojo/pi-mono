@@ -65,6 +65,11 @@ await RunIntentCliCaseAsync(
     expectedIntent: "general-operational-intent",
     failures);
 
+await RunTraceSliceCliCaseAsync(
+    name: "trace slice cli renders deterministic json",
+    prompt: "Implement rfs show command",
+    failures);
+
 if (failures.Count > 0)
 {
     foreach (var failure in failures)
@@ -193,6 +198,179 @@ static async Task RunCaseAsync(
         {
         }
     }
+}
+
+static async Task RunTraceSliceCliCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-trace-slice-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var traceSliceResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "trace-slice", prompt);
+        if (traceSliceResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {traceSliceResult.ExitCode}. stderr: {traceSliceResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(traceSliceResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {traceSliceResult.Stderr.Trim()}.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(traceSliceResult.Stdout);
+            var root = document.RootElement;
+
+            if (!string.Equals(root.GetProperty("type").GetString(), "rufus.trace-slice", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected type rufus.trace-slice.");
+            }
+
+            if (root.GetProperty("schemaVersion").GetInt32() != 1)
+            {
+                failures.Add($"[{name}] expected schemaVersion 1.");
+            }
+
+            var promptElement = root.GetProperty("prompt");
+            if (!string.Equals(promptElement.GetProperty("text").GetString(), prompt, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] prompt.text did not round-trip.");
+            }
+
+            if (promptElement.GetProperty("isExcerpt").ValueKind != JsonValueKind.False)
+            {
+                failures.Add($"[{name}] expected prompt.isExcerpt to be false.");
+            }
+
+            var intent = root.GetProperty("intent");
+            if (!string.Equals(intent.GetProperty("source").GetString(), "deterministic", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected deterministic intent source.");
+            }
+
+            var selection = root.GetProperty("selection");
+            if (!selection.TryGetProperty("headStateId", out var headStateId) || headStateId.ValueKind != JsonValueKind.String)
+            {
+                failures.Add($"[{name}] expected selection.headStateId.");
+            }
+
+            if (!selection.TryGetProperty("stateIds", out var stateIds) || stateIds.ValueKind != JsonValueKind.Array)
+            {
+                failures.Add($"[{name}] expected selection.stateIds array.");
+            }
+
+            if (!selection.TryGetProperty("deltaIds", out var deltaIds) || deltaIds.ValueKind != JsonValueKind.Array)
+            {
+                failures.Add($"[{name}] expected selection.deltaIds array.");
+            }
+
+            if (!root.TryGetProperty("materializationPolicy", out var materializationPolicy))
+            {
+                failures.Add($"[{name}] expected materializationPolicy.");
+            }
+            else
+            {
+                if (materializationPolicy.GetProperty("includeArtifactContents").ValueKind != JsonValueKind.False)
+                {
+                    failures.Add($"[{name}] expected includeArtifactContents=false.");
+                }
+
+                if (materializationPolicy.GetProperty("includeGitDiffs").ValueKind != JsonValueKind.False)
+                {
+                    failures.Add($"[{name}] expected includeGitDiffs=false.");
+                }
+            }
+
+            if (root.TryGetProperty("artifacts", out var artifacts) && artifacts.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var artifact in artifacts.EnumerateArray())
+                {
+                    if (!string.Equals(artifact.GetProperty("includeMode").GetString(), "metadata-only", StringComparison.Ordinal))
+                    {
+                        failures.Add($"[{name}] expected artifacts to be metadata-only.");
+                        break;
+                    }
+                }
+            }
+
+            var text = traceSliceResult.Stdout;
+            foreach (var fragment in new[] { "diff --git", "AgentTaskResult" })
+            {
+                if (text.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] unexpected raw fragment '{fragment}' in trace-slice output.");
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            failures.Add($"[{name}] trace-slice output was not valid JSON: {ex.Message}");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string workingDirectory, params string[] commandLine)
+{
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = commandLine[0],
+        WorkingDirectory = workingDirectory,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+    };
+
+    for (var i = 1; i < commandLine.Length; i++)
+    {
+        startInfo.ArgumentList.Add(commandLine[i]);
+    }
+
+    using var process = Process.Start(startInfo);
+    if (process is null)
+    {
+        return (-1, string.Empty, "failed to start process");
+    }
+
+    var stdoutTask = process.StandardOutput.ReadToEndAsync();
+    var stderrTask = process.StandardError.ReadToEndAsync();
+    await process.WaitForExitAsync();
+    return (process.ExitCode, await stdoutTask, await stderrTask);
 }
 
 static async Task RunIntentInferenceCaseAsync(

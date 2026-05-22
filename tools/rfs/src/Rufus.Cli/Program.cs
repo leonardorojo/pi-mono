@@ -201,6 +201,30 @@ if (args[0] == "trace-slice-proposal")
     return 0;
 }
 
+if (args[0] == "trace-slice-proposal-llm")
+{
+    var prompt = string.Join(" ", args.Skip(1)).Trim();
+    if (string.IsNullOrWhiteSpace(prompt))
+    {
+        Console.Error.WriteLine("Missing prompt.");
+        return 1;
+    }
+
+    var proposalResult = await Rufus.Cli.TraceSlice.TraceSliceProposalLlmRunner.BuildProposalAsync(prompt, Directory.GetCurrentDirectory());
+    if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
+    {
+        if (!string.IsNullOrWhiteSpace(proposalResult.ErrorMessage))
+        {
+            Console.Error.WriteLine(proposalResult.ErrorMessage);
+        }
+
+        return 1;
+    }
+
+    Console.WriteLine(proposalResult.ProposalJson);
+    return 0;
+}
+
 if (args[0] == "trace-slice-validate")
 {
     var prompt = string.Join(" ", args.Skip(1)).Trim();
@@ -211,6 +235,30 @@ if (args[0] == "trace-slice-validate")
     }
 
     var validationResult = await BuildValidatedTraceSliceJsonAsync(prompt, Directory.GetCurrentDirectory(), "rfs trace-slice-validate");
+    if (!validationResult.Success || string.IsNullOrWhiteSpace(validationResult.Json))
+    {
+        if (!string.IsNullOrWhiteSpace(validationResult.ErrorMessage))
+        {
+            Console.Error.WriteLine(validationResult.ErrorMessage);
+        }
+
+        return 1;
+    }
+
+    Console.WriteLine(validationResult.Json);
+    return 0;
+}
+
+if (args[0] == "trace-slice-validate-llm")
+{
+    var prompt = string.Join(" ", args.Skip(1)).Trim();
+    if (string.IsNullOrWhiteSpace(prompt))
+    {
+        Console.Error.WriteLine("Missing prompt.");
+        return 1;
+    }
+
+    var validationResult = await Rufus.Cli.TraceSlice.TraceSliceProposalLlmRunner.BuildValidatedAsync(prompt, Directory.GetCurrentDirectory());
     if (!validationResult.Success || string.IsNullOrWhiteSpace(validationResult.Json))
     {
         if (!string.IsNullOrWhiteSpace(validationResult.ErrorMessage))
@@ -1185,7 +1233,9 @@ static void PrintHelp()
     Console.WriteLine("  rfs context-pack --trace-slice-validated <prompt>");
     Console.WriteLine("  rfs trace-slice <prompt>");
     Console.WriteLine("  rfs trace-slice-proposal <prompt>");
+    Console.WriteLine("  rfs trace-slice-proposal-llm <prompt>");
     Console.WriteLine("  rfs trace-slice-validate <prompt>");
+    Console.WriteLine("  rfs trace-slice-validate-llm <prompt>");
     Console.WriteLine("  rfs model get");
     Console.WriteLine("  rfs model set <model>");
     Console.WriteLine("  rfs model list");
@@ -1205,7 +1255,9 @@ static void PrintHelp()
     Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico con opción --record para RCK");
     Console.WriteLine("  trace-slice = exporta un corte determinístico del RCK activo como JSON");
     Console.WriteLine("  trace-slice-proposal = prototipo experimental determinístico/anchor-aware; emite JSON puro sin escribir RCK");
+    Console.WriteLine("  trace-slice-proposal-llm = prototipo experimental Pi-backed; el LLM solo propone TraceSliceProposal JSON y RFS sigue validando después");
     Console.WriteLine("  trace-slice-validate = valida una TraceSliceProposal determinística y emite un TraceSlice final sin escribir RCK");
+    Console.WriteLine("  trace-slice-validate-llm = prototipo experimental Pi-backed; el LLM propone y RFS valida antes de emitir el TraceSlice final");
     Console.WriteLine("  context-pack --trace-slice = materializa un context-pack focalizado desde TraceSlice v0 sin escribir RCK");
     Console.WriteLine("  context-pack --trace-slice-validated = materializa un context-pack focalizado desde un TraceSlice validado sin escribir RCK");
 }

@@ -127,7 +127,7 @@ It:
 
 `ContextPack` is a deterministic materialization layer, not a planning layer.
 
-## 3. Contract status in P19
+## 3. Contract status in P19-P21
 
 P19 keeps the minimal deterministic/experimental runtime for:
 
@@ -141,6 +141,14 @@ and adds a separate validation runtime for:
 rfs trace-slice-validate "<prompt>"
 ```
 
+P21 introduces an experimental Pi-backed proposal-only path:
+
+```text
+rfs trace-slice-proposal-llm "<prompt>"
+```
+
+If enabled, `rfs trace-slice-validate-llm "<prompt>"` follows the same authority boundary: the LLM proposes and RFS validates.
+
 P20 extends that same deterministic chain into a focused ContextPack materialization mode:
 
 ```text
@@ -150,9 +158,10 @@ rfs context-pack --trace-slice-validated "<prompt>"
 Important scope notes for this implementation:
 
 - `rfs trace-slice-proposal` still emits `TraceSliceProposal` JSON to stdout;
-- the planner remains non-authoritative;
-- the implementation is deterministic/mock, not LLM-backed;
+- the deterministic planner remains non-authoritative;
+- `rfs trace-slice-proposal-llm` is proposal-only, returns JSON only, and does not finalize a TraceSlice or materialize a ContextPack;
 - `rfs trace-slice-validate` runs the same proposal pipeline internally and validates that proposal into a final `TraceSlice`;
+- if present, `rfs trace-slice-validate-llm` still validates the proposal through `RckTraceSliceProposalValidator` before emitting any final `TraceSlice` JSON;
 - proposal validation remains read-only and does not materialize `ContextPack`;
 - neither command writes `.rfs/rck`.
 

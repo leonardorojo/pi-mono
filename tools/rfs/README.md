@@ -190,7 +190,9 @@ High-level behavior:
 - `rfs ask` can temporarily fall back to the legacy bridge with `RFS_USE_LEGACY_ASK_BRIDGE=1`
 - `rfs trace-slice` stays the deterministic authoritative baseline selection path
 - `rfs trace-slice-proposal` is intentionally non-authoritative: the agent proposes, RFS validates later, and the command does not materialize a ContextPack or write `.rfs/rck`
+- `rfs trace-slice-proposal-llm` is an experimental Pi-backed proposal-only path: the LLM proposes a TraceSliceProposal JSON, and RFS still validates later
 - `rfs trace-slice-validate` runs the deterministic proposal pipeline plus runtime validation and emits the authoritative validated TraceSlice without writing `.rfs/rck`
+- `rfs trace-slice-validate-llm`, when enabled, runs the Pi-backed proposal path and still passes the result through RFS validation before emitting a final TraceSlice
 - `rfs context-pack --trace-slice-validated` materializes a scoped ContextPack from that validated TraceSlice without writing `.rfs/rck`
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.

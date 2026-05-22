@@ -99,6 +99,10 @@ The command prints provider + model id, includes the display name when Pi return
 It runs `pi --mode json --no-session --no-tools --no-extensions --no-context-files <prompt>` from the caller cwd, keeps stderr separate, parses stdout line-by-line as JSONL, accumulates `message_update.assistantMessageEvent.type == "text_delta"`, and prefers the structured final assistant text from `message_end`, `turn_end`, or `agent_end` when present.
 It does not modify `.rfs/rck`, does not replace `rfs ask`, and does not touch the legacy Node bridges.
 
+New experimental command (P7 prototype):
+
+- `rfs agent-json <task>`: prototype JSON Event Stream agent. This runs `pi --mode json` with a restricted read-only `--tools` list (`read,grep,find,ls`), parses JSONL events, captures observed tool_execution_* events, and prints a concise human-friendly summary. This is experimental: see tools/rfs/docs/RFS_PI_PROGRAMMATIC_INTEGRATION_AUDIT.md for audit notes.
+
 Example:
 
 ```text

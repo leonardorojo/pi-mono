@@ -39,8 +39,8 @@ High-level behavior:
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
 - `rfs agent-json` is an experimental prototype that runs `pi --mode json` for agent execution, prints a visible warning, and still relies on Pi `--tools` enforcement for read-only behavior without touching `.rfs/rck`
 - `rfs intent` executes `Rufus.Agenting.Intent.IntentInferenceAgent` with a deterministic `AgentTask` (`Kind = infer-intent`) and prints the agent result without calling Pi or writing `.rfs/rck`
-- `rfs trace-slice` builds a deterministic read-only JSON slice from the active RCK chain; conceptually it is intent-first, so the shorthand command internally uses an intent v0 and always emits an `intent` block without calling Pi, writing `.rfs/rck`, or materializing file contents/diffs
-- `rfs context-pack --trace-slice` keeps `rfs context-pack` full export intact while materializing a scoped JSON context-pack from deterministic TraceSlice v0 selection + materialization policy, without reading artifact contents, including diffs/stdout/stderr/JSONL, or writing `.rfs/rck`
+- `rfs trace-slice` builds a deterministic read-only JSON slice from the active RCK chain; conceptually it is intent-first and future anchor-aware, so the shorthand command internally uses an intent v0, may include `anchorIds`, and always emits an `intent` block without calling Pi, writing `.rfs/rck`, or materializing file contents/diffs
+- `rfs context-pack --trace-slice` keeps `rfs context-pack` full export intact while materializing a scoped JSON context-pack from deterministic TraceSlice v0 selection + materialization policy; selected anchors are treated as strong relevance signals/metadata, but they do not auto-include artifact contents, diffs/stdout/stderr/JSONL, or write `.rfs/rck`
 - `rfs ask` and `rfs agent` use the workspace default model when one is configured; otherwise they keep using the current Pi/RFS default
 - `rfs ask-json` also reads `.rfs/config.json` and prefers `--model provider/id` when the configured model includes a provider prefix; otherwise it falls back to `RUFUSCHAT_LLM_MODEL` for bare model ids
 - `rfs ask` can temporarily fall back to the legacy bridge with `RFS_USE_LEGACY_ASK_BRIDGE=1`
@@ -409,6 +409,7 @@ Markdown is not emitted by this command.
 
 `rfs context-pack --trace-slice "<prompt>"` is also read-only.
 It keeps the full export mode intact, but materializes a focused context-pack using deterministic TraceSlice v0 as the selection plan.
+Conceptually, TraceSlice planning is intent-first and should become anchor-aware over time: anchors are cognitive milestones and may be stronger relevance signals than recency alone, even though the current v0 runtime remains a simpler deterministic baseline.
 That scoped mode emits pure JSON with `scope = "trace-slice"`, includes the TraceSlice used to produce the pack, filters `states` / `deltas` / `anchors` to the TraceSlice selection, keeps artifacts metadata-only, and preserves the no file contents / no diffs / no stdout-stderr / no JSONL / no RCK writes boundary.
 
 Top-level fields:

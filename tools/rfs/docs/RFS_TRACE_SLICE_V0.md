@@ -24,7 +24,8 @@ The correct conceptual chain is:
 ```text
 Prompt
   -> Intent
-  -> TraceSlice
+  -> Anchor-aware TraceSlice planning
+  -> Validated TraceSlice
   -> ContextPack
   -> main LLM
 ```
@@ -45,6 +46,9 @@ In v0, that command is a shorthand for:
 
 So the command surface may stay short, but the contract is still intent-first.
 
+That also means TraceSlice should not be understood as "active-chain-recent only".
+Recency is the current deterministic baseline in v0, but the contract now recognizes that anchors are cognitive milestones and future planning must be anchor-aware.
+
 ## Boundary
 
 TraceSlice v0 lives above `Rufus.RCK.Core` and above the persistence layer.
@@ -55,6 +59,8 @@ A TraceSlice must be constructed from:
 - the current prompt
 - the inferred or supplied intent
 - the current RCK DAG state
+- relevant anchors
+- metadata-only artifact observations
 - the materialization policy
 
 What it may include:
@@ -103,6 +109,7 @@ It conditions how the TraceSlice should be built.
 Conceptually, intent influences:
 
 - which states and deltas should be searched or prioritized
+- which anchors should be searched, selected, or prioritized
 - which artifacts should be considered relevant
 - how much history depth should be used
 - which materialization policy should apply
@@ -110,6 +117,23 @@ Conceptually, intent influences:
 
 In v0, those decisions remain conservative and deterministic.
 The current builder is intentionally simple, but the contract now makes clear that the slice is still intent-conditioned, not prompt-only.
+
+## Anchors are cognitive milestones
+
+Anchors are cognitive milestones.
+
+They represent stable tags, milestones, or other durable points in the DAG that may remain strongly relevant even when the latest active-chain states are not the best guide for the current prompt.
+
+That means:
+
+- anchors are not decorative;
+- `anchorIds` in TraceSlice are part of the selection contract;
+- anchors can justify why certain states or deltas belong in a slice;
+- active-chain-recent remains a baseline heuristic, not the only conceptual rule.
+
+For TraceSlice v0 today, this does not require runtime changes.
+The current builder may still produce empty `anchorIds`, and that remains valid v0 behavior.
+But the future planning contract must remain anchor-aware so that later planners can treat anchors as strong relevance signals when appropriate.
 
 ## Wrapper and payload
 
@@ -135,6 +159,12 @@ The current v0 slice is built deterministically:
 
 This is still valid after P15A+B.
 The important clarification is conceptual: this deterministic selection is the current implementation of an intent-first TraceSlice, not a statement that TraceSlice should always be prompt-only.
+
+Additional v0 clarification:
+
+- `selection.anchorIds` may be empty in the current implementation;
+- that is valid for TraceSlice v0;
+- this does not weaken the future anchor-aware planning contract.
 
 ## Materialization policy
 
@@ -164,7 +194,7 @@ Instead, it executes the intent-first TraceSlice path internally, then materiali
 Conceptually:
 
 ```text
-Prompt + Intent + TraceSlice -> ContextPack
+Prompt + Intent + Anchor-aware TraceSlice planning + Validated TraceSlice -> ContextPack
 ```
 
 Operationally in v0:
@@ -176,6 +206,7 @@ Operationally in v0:
 5. emit a scoped ContextPack JSON document with `scope = "trace-slice"`
 
 The scoped ContextPack is therefore a materialization of the TraceSlice plan, not a replacement for TraceSlice itself.
+Selected anchors may be materialized as metadata, but they do not automatically authorize artifact contents, diffs, or policy widening.
 
 ## Future explicit intent
 
@@ -184,7 +215,7 @@ Possible evolution points include:
 
 - `rfs trace-slice --intent <intent-json> "<prompt>"`
 - `rfs context-pack --trace-slice "<prompt>"` internally executing intent inference before projection
-- a future `TraceSliceProposal` that receives `prompt + intent + DAG quick index`
+- a future `TraceSliceProposal` that receives `prompt + intent + DAG quick index + anchors metadata`
 - intent sourced from `IntentInferenceAgent`
 - intent sourced from a previously recorded intent
 - intent sourced from a JSON file
@@ -198,7 +229,7 @@ They are not implemented in P15A+B.
 P15 should use the chain:
 
 ```text
-Prompt + Intent + TraceSlice -> ContextPack
+Prompt + Intent + Anchor-aware TraceSlice planning + Validated TraceSlice -> ContextPack
 ```
 
 Not:
@@ -223,12 +254,20 @@ It reuses TraceSlice v0 as an input contract.
 
 The same architectural rule used for Core applies here in spirit: keep the boundary stable once it is defined.
 
+P17 adds a contractual clarification, not a runtime widening:
+
+- current TraceSlice v0 behavior remains valid;
+- current TraceSlice v0 may still emit empty `anchorIds`;
+- future planning should become anchor-aware;
+- P18 is the phase expected to make the deterministic planner emit anchor-aware `TraceSliceProposal` output.
+
 ## Non-goals for P14.2 + P15A+B
 
 These phases do not implement:
 
 - TraceSliceAgent
 - TraceSliceProposal
+- anchor-aware ranking runtime
 - `--intent` CLI support for TraceSlice
 - Pi-backed intent inference
 - any LLM path

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-P16 defines the contractual boundary between a future planning agent and RFS for TraceSlice selection.
+P17 defines the contractual boundary between a future planning agent and RFS for TraceSlice selection.
 
 This phase is documentation-only.
 It does not implement `TraceSlicePlannerAgent`.
@@ -10,24 +10,26 @@ It does not add an LLM path.
 It does not change runtime behavior.
 It does not modify `Rufus.RCK.Core`.
 
-The architectural rule is:
+The architectural rules are:
 
 - the agent proposes;
 - RFS validates;
-- RFS materializes.
+- RFS materializes;
+- anchors are cognitive milestones.
 
 Conceptually:
 
 ```text
 PromptN
   -> Intent
-  -> TraceSliceProposal
+  -> Anchor-aware TraceSlice planning
   -> validated TraceSlice
   -> ContextPack
   -> main LLM
 ```
 
 This document introduces the proposal/validation boundary without changing the current deterministic TraceSlice v0 flow.
+It also makes explicit that future TraceSlice planning must be anchor-aware, even when current TraceSlice v0 remains a simpler deterministic baseline.
 
 ## 1. Problem
 
@@ -50,6 +52,23 @@ RFS remains the authority that validates selection, enforces policy, and produce
 
 ## 2. Definitions
 
+### Anchors
+
+Anchors are cognitive milestones.
+
+They represent stable tags, milestones, or other durable points in the DAG that may remain relevant even when the most recent active-chain states are not the best explanation for the current prompt.
+
+Important implications:
+
+- anchors are not decorative labels;
+- anchors may be more relevant than the newest active-chain state;
+- TraceSlice planning must be able to select anchors explicitly;
+- `anchorIds` in `TraceSliceProposal` and validated `TraceSlice` are part of the selection contract, not presentation-only metadata;
+- selected anchors help justify why specific states, deltas, or metadata-only artifacts belong in the slice.
+
+So future planning must not reason only as "active-chain recent = relevant".
+It must be able to reason as "this prompt and intent point back to a meaningful milestone, and that milestone is a stronger relevance signal than recency alone".
+
 ### TraceSliceProposal
 
 `TraceSliceProposal` is the output of an agent.
@@ -59,6 +78,7 @@ It:
 - is a proposal, request, or suggestion;
 - may include rationale and confidence;
 - may contain proposed ids;
+- may contain proposed anchor ids;
 - may contain a requested `materializationPolicy`;
 - is not the source of truth;
 - does not have authority to select final context on its own.
@@ -66,13 +86,27 @@ It:
 A proposal can say "these states and deltas appear relevant".
 It cannot say "these are now the final accepted TraceSlice contents".
 
+Conceptually, the proposal is shaped by:
+
+```text
+PromptN
+  -> Intent
+  -> anchor-aware planning over active chain + anchors + metadata-only artifacts + materialization policy
+  -> TraceSliceProposal
+```
+
+That means the prompt does not map directly to ids.
+The prompt conditions intent.
+Intent helps determine which anchors to search or prioritize.
+Those anchors may then help justify which states, deltas, and metadata-only artifacts should be requested.
+
 ### TraceSlice
 
 `TraceSlice` is the validated selection produced by RFS.
 
 It:
 
-- is derived from prompt, intent, current DAG state, and validated proposal input when present;
+- is derived from prompt, intent, active chain, relevant anchors, metadata-only artifact context, materialization policy, and validated proposal input when present;
 - contains only existing ids and allowed policies;
 - may record accepted, rejected, or downgraded proposal parts;
 - is the real plan used for `ContextPack` materialization.
@@ -130,6 +164,10 @@ It is not a frozen runtime schema.
     {
       "target": "state:<id>",
       "reason": "..."
+    },
+    {
+      "target": "anchor:<id>",
+      "reason": "Milestone related to RCK Core boundary decision."
     }
   ],
   "confidence": 0.0,
@@ -143,13 +181,23 @@ Interpretation notes:
 - `schemaVersion = 1` is conceptual versioning for the proposal contract.
 - `prompt` captures the request that the planner evaluated.
 - `intent` carries the conditioning intent summary that the planner received.
-- `requestedSelection` contains candidate ids and refs only.
+- `requestedSelection` contains candidate ids and refs only, including candidate `anchorIds`.
 - `requestedMaterializationPolicy` expresses what the planner would like RFS to materialize.
-- `rationale` explains why specific targets were requested.
+- `rationale` explains why specific targets were requested, including why an anchor is considered a strong relevance signal.
 - `confidence` is advisory only.
 - `warnings` are planner-side caveats and do not replace RFS validation output.
 
 The important distinction is that every selection or policy field here is requested, not self-authorized.
+
+For future anchor-aware planning, `requestedSelection` should be understood as:
+
+- `stateIds`: candidate states to include;
+- `deltaIds`: candidate deltas to include;
+- `anchorIds`: candidate cognitive milestones that the planner believes are relevant;
+- `artifactRefs`: candidate metadata-only artifact references that may support the slice rationale.
+
+An agent may therefore propose `anchorIds` directly.
+RFS must still validate that those anchors exist and are acceptable.
 
 ## 4. Validation contract
 
@@ -160,6 +208,12 @@ Minimum validation rules:
 - `stateIds` must exist;
 - `deltaIds` must exist;
 - `anchorIds` must exist or be rejected explicitly;
+- each anchor type must be known or otherwise acceptable to RFS policy;
+- each proposed anchor must resolve to a valid state, commit, milestone, or other acceptable target within the DAG/workspace boundary;
+- a proposed anchor must not force inclusion of prohibited content;
+- a proposed anchor must not bypass `maxStates` or `maxDeltas` limits without explicit authorization;
+- if a proposed anchor suggests associated states or deltas, those ids must also be validated independently;
+- unresolved anchors must appear in `rejected` or validation warnings;
 - requested deltas must connect states reasonably within the active graph context;
 - the result must not exceed `maxStates`;
 - the result must not exceed `maxDeltas`;
@@ -181,10 +235,15 @@ Additional contract clarifications:
 - unknown ids are rejected, not auto-created;
 - structurally disconnected or weakly justified deltas may be rejected even if they exist;
 - anchor acceptance remains controlled by RFS, not by the planner;
+- anchor validation may accept, reject, or degrade an anchor request;
+- a degraded anchor may remain present as metadata even when it does not expand associated states or deltas;
 - materialization policy is not a capability grant from the agent to the runtime.
 
 The planner may ask for more than RFS is willing to allow.
 RFS is expected to narrow, reject, or downgrade such requests.
+
+Anchor-aware validation also means that active-chain recency remains a baseline heuristic, not the only rule.
+RFS may accept an anchor-centered rationale when the anchor is a stronger relevance signal than recent chain position alone.
 
 ## 5. Validation output
 
@@ -220,6 +279,12 @@ Example:
 - RFS degrades that request to `false`;
 - the downgrade is recorded in `downgraded` with an explanatory reason.
 
+Another example:
+
+- the agent requests `anchor:boundary-decision` because it marks a milestone related to the current intent;
+- RFS verifies that the anchor exists but decides it should remain metadata-only;
+- the anchor is accepted or downgraded accordingly, while any associated `stateIds` / `deltaIds` are validated separately.
+
 The validated `TraceSlice` is the authoritative downstream object.
 The proposal remains part of the audit story, not the source of truth.
 
@@ -232,7 +297,7 @@ Conceptual task contract:
 ### AgentTask
 
 - `Kind = "propose-trace-slice"`
-- `Input = prompt + intent + DAG quick index`
+- `Input = prompt + intent + DAG quick index + anchors metadata`
 - `ExpectedOutput = TraceSliceProposal JSON`
 
 ### AgentTaskResult
@@ -265,12 +330,20 @@ Current TraceSlice v0 remains the deterministic baseline.
 That means:
 
 - TraceSlice v0 can be treated as the current authoritative baseline selection behavior;
+- TraceSlice v0 may legitimately emit an empty `anchorIds` array today;
 - a future deterministic `TraceSlicePlannerAgent` may produce a `TraceSliceProposal` equivalent to the current v0 selection;
 - RFS would then validate that proposal and emit the final `TraceSlice`;
-- the current behavior of `rfs trace-slice` does not change in P16.
+- the current behavior of `rfs trace-slice` does not change in P17.
 
-So P16 does not replace or widen TraceSlice v0.
+So P17 does not replace or widen TraceSlice v0.
 It introduces a future-compatible proposal boundary around it.
+
+This is the intended compatibility rule:
+
+- empty `anchorIds` remains valid for TraceSlice v0 today;
+- the future planning contract is still anchor-aware;
+- no runtime change is required now if the current builder does not yet prioritize anchors;
+- P18 will be the phase that makes the deterministic planner emit anchor-aware proposals explicitly.
 
 The conceptual evolution is:
 
@@ -284,7 +357,7 @@ Prompt
 Later:
 Prompt
   -> Intent
-  -> TraceSliceProposal
+  -> Anchor-aware TraceSlice planning
   -> RFS validation
   -> validated TraceSlice
   -> ContextPack
@@ -295,14 +368,14 @@ Both flows preserve the rule that RFS owns the final TraceSlice.
 ## 8. Relationship with ContextPack from TraceSlice
 
 P15 already materializes `ContextPack` from `TraceSlice`.
-P16 does not change that.
+P17 does not change that.
 
 Future conceptual chain:
 
 ```text
 Prompt
   -> Intent
-  -> Proposal
+  -> Anchor-aware TraceSlice planning
   -> Validated TraceSlice
   -> ContextPack
 ```
@@ -311,6 +384,14 @@ Important rule:
 
 - `ContextPack` never consumes `TraceSliceProposal` directly;
 - `ContextPack` consumes only the validated `TraceSlice`.
+
+Anchor-specific materialization rules:
+
+- `ContextPack` may materialize selected anchors;
+- anchor metadata may be included even when the anchor does not expand additional states or deltas;
+- an accepted anchor does not automatically include artifact contents;
+- an accepted anchor does not automatically include diffs;
+- an accepted anchor does not bypass `materializationPolicy`.
 
 This preserves a clean separation of responsibilities:
 
@@ -342,15 +423,19 @@ This prevents the planning step from becoming an opaque black box that silently 
 
 ## 10. Non-goals
 
-P16 does not implement:
+P17 does not implement:
 
+- anchor ranking runtime;
 - `TraceSlicePlannerAgent`;
 - a Pi-backed agent;
 - a deterministic planner agent implementation;
 - validation runtime;
-- ContextPack changes;
+- changes to `rfs trace-slice`;
+- changes to `rfs context-pack --trace-slice`;
+- ContextPack runtime changes;
 - RCK writes;
 - Core changes;
+- new anchor persistence;
 - model routing;
 - agent migration;
 - bridge deprecation.
@@ -365,11 +450,13 @@ It also does not change:
 
 The next formal phase is:
 
-## P17 — TraceSlicePlannerAgent deterministic
+## P18 — TraceSlicePlannerAgent deterministic anchor-aware
 
 Future goal:
 
-- implement a deterministic agent that produces `TraceSliceProposal` equivalent to current TraceSlice v0 behavior;
+- implement a deterministic agent that produces `TraceSliceProposal`;
+- input: prompt + intent + DAG quick index + anchors metadata;
+- output: `TraceSliceProposal`;
 - let RFS validate that proposal;
 - do not use an LLM;
 - do not use Pi;
@@ -384,7 +471,7 @@ Restrictions for that future phase:
 - do not touch `packages/` or `.pi/`;
 - do not create `ModelRouter`.
 
-P16 therefore closes with a contract only:
+P17 therefore closes with a contract only:
 
 - planner output becomes `TraceSliceProposal`;
 - RFS remains the validation authority;

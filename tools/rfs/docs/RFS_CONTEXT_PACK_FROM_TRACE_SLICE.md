@@ -23,7 +23,8 @@ Conceptually:
 ```text
 Prompt
   -> Intent
-  -> TraceSlice
+  -> Anchor-aware TraceSlice planning
+  -> Validated TraceSlice
   -> ContextPack
   -> main LLM
 ```
@@ -59,6 +60,12 @@ This mode:
 4. preserves metadata-only artifact observations
 5. reuses TraceSlice `materializationPolicy`
 6. emits a scoped ContextPack JSON document
+
+Conceptual clarification:
+
+- active-chain recent remains the current deterministic baseline;
+- future planning is expected to be anchor-aware;
+- selected anchors are strong relevance signals, not decorative metadata.
 
 ## Output shape
 
@@ -107,6 +114,8 @@ The scoped export must filter according to `TraceSlice.selection`:
 - `deltaIds` -> included `deltas`
 - `anchorIds` -> included `anchors`
 
+Selected anchors may also justify why nearby states, deltas, or metadata-only artifact references appear in the pack, but the actual object inclusion must still come from validated selection and policy.
+
 The result may also include supporting metadata fields such as:
 
 - `workspace`
@@ -129,6 +138,14 @@ For v0 this means:
 - include git diffs: no
 - include stdout/stderr: no
 - include JSONL: no
+
+Anchor-specific materialization rules:
+
+- ContextPack may materialize selected anchor metadata;
+- an anchor does not automatically include artifact contents;
+- an anchor does not automatically include git diffs;
+- an anchor does not automatically expand associated states or deltas unless those ids are also selected and validated;
+- an anchor does not bypass `materializationPolicy`.
 
 ## Security / boundary rules
 
@@ -168,6 +185,7 @@ This phase does not implement:
 
 - TraceSliceAgent
 - TraceSliceProposal
+- anchor-aware ranking runtime
 - explicit `--intent` support
 - Pi-backed intent
 - LLM-backed selection

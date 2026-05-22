@@ -67,6 +67,27 @@ Conceptual clarification:
 - future planning is expected to be anchor-aware;
 - selected anchors are strong relevance signals, not decorative metadata.
 
+### Validated focused export
+
+```text
+rfs context-pack --trace-slice-validated "<prompt>"
+```
+
+This mode uses the full deterministic pipeline internally:
+
+1. deterministic intent inference
+2. deterministic TraceSlicePlannerAgent proposal
+3. TraceSliceProposal generation
+4. RFS validation
+5. validated TraceSlice emission
+6. ContextPack materialization from the validated TraceSlice
+
+It keeps the same read-only boundary as `--trace-slice` and still emits pure JSON.
+The only shape difference is the explicit scope:
+
+- `scope = "trace-slice"` for the direct TraceSlice v0 path
+- `scope = "trace-slice-validated"` for the validated proposal path
+
 ## Output shape
 
 The scoped export reuses the existing ContextPack top-level `type`:
@@ -100,7 +121,8 @@ The scoped export reuses the existing ContextPack top-level `type`:
 ### Shape notes
 
 - `type` stays `rck-dag-context-pack-v1` to avoid type proliferation.
-- `scope = "trace-slice"` explicitly distinguishes the focused export from the full export.
+- `scope = "trace-slice"` explicitly distinguishes the direct focused export from the full export.
+- `scope = "trace-slice-validated"` identifies the proposal-validated focused export.
 - `traceSlice` embeds the TraceSlice used to build the pack.
 - `states`, `deltas`, and `anchors` are filtered by TraceSlice selection.
 - `artifacts` stay metadata-only.

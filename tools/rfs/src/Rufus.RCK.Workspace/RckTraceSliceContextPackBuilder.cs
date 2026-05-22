@@ -26,15 +26,43 @@ public static class RckTraceSliceContextPackBuilder
                 traceSliceResult.ErrorMessage ?? "rfs context-pack --trace-slice: failed to build TraceSlice.");
         }
 
+        return BuildFromTraceSliceJson(
+            contextPackResult,
+            traceSliceResult.Json,
+            scope: "trace-slice",
+            errorPrefix: "rfs context-pack --trace-slice");
+    }
+
+    public static RckTraceSliceContextPackBuildResult BuildFromValidatedTraceSlice(string validatedTraceSliceJson, string? startingDirectory = null)
+    {
+        var contextPackResult = RckWorkspaceContextPackReader.Read(startingDirectory);
+        if (!contextPackResult.Success)
+        {
+            return RckTraceSliceContextPackBuildResult.Failure(
+                contextPackResult.ErrorMessage ?? "rfs context-pack --trace-slice-validated: failed to read RCK workspace state.");
+        }
+
+        return BuildFromTraceSliceJson(
+            contextPackResult,
+            validatedTraceSliceJson,
+            scope: "trace-slice-validated",
+            errorPrefix: "rfs context-pack --trace-slice-validated");
+    }
+
+    private static RckTraceSliceContextPackBuildResult BuildFromTraceSliceJson(
+        RckWorkspaceContextPackResult contextPackResult,
+        string traceSliceJson,
+        string scope,
+        string errorPrefix)
+    {
         try
         {
-            using var document = JsonDocument.Parse(traceSliceResult.Json);
+            using var document = JsonDocument.Parse(traceSliceJson);
             var traceSlice = document.RootElement.Clone();
 
             if (!TryGetObjectProperty(traceSlice, "selection", out var selection))
             {
-                return RckTraceSliceContextPackBuildResult.Failure(
-                    "rfs context-pack --trace-slice: trace slice is missing selection.");
+                return RckTraceSliceContextPackBuildResult.Failure($"{errorPrefix}: trace slice is missing selection.");
             }
 
             var stateIds = ReadRequiredStringArray(selection, "stateIds");
@@ -43,8 +71,7 @@ public static class RckTraceSliceContextPackBuilder
 
             if (!TryGetObjectProperty(traceSlice, "materializationPolicy", out var materializationPolicyElement))
             {
-                return RckTraceSliceContextPackBuildResult.Failure(
-                    "rfs context-pack --trace-slice: trace slice is missing materializationPolicy.");
+                return RckTraceSliceContextPackBuildResult.Failure($"{errorPrefix}: trace slice is missing materializationPolicy.");
             }
 
             var materializationPolicy = new RckTraceSliceContextPackMaterializationPolicy(
@@ -87,7 +114,7 @@ public static class RckTraceSliceContextPackBuilder
             {
                 ["schemaVersion"] = 1,
                 ["type"] = "rck-dag-context-pack-v1",
-                ["scope"] = "trace-slice",
+                ["scope"] = scope,
                 ["generatedAtUtc"] = DateTimeOffset.UtcNow,
                 ["traceSlice"] = traceSlice,
                 ["workspace"] = BuildWorkspace(contextPackResult),
@@ -114,7 +141,7 @@ public static class RckTraceSliceContextPackBuilder
         catch (Exception ex)
         {
             return RckTraceSliceContextPackBuildResult.Failure(
-                $"rfs context-pack --trace-slice: failed to project trace-slice context pack: {ex.Message}");
+                $"{errorPrefix}: failed to project trace-slice context pack: {ex.Message}");
         }
     }
 

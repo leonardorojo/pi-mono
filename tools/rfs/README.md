@@ -84,6 +84,13 @@ Each command lists: what it does, whether it writes `.rfs/rck`, whether it is re
   - Experimental: yes.
   - Pi / JSONL / RPC / legacy: none.
 
+- `rfs context-pack --trace-slice-validated "<prompt>"`
+  - Description: materializes a focused JSON context-pack from a validated TraceSlice produced by the deterministic intent -> proposal -> validation pipeline.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: yes.
+  - Pi / JSONL / RPC / legacy: none.
+
 ### Models
 
 - `rfs model get`
@@ -184,6 +191,7 @@ High-level behavior:
 - `rfs trace-slice` stays the deterministic authoritative baseline selection path
 - `rfs trace-slice-proposal` is intentionally non-authoritative: the agent proposes, RFS validates later, and the command does not materialize a ContextPack or write `.rfs/rck`
 - `rfs trace-slice-validate` runs the deterministic proposal pipeline plus runtime validation and emits the authoritative validated TraceSlice without writing `.rfs/rck`
+- `rfs context-pack --trace-slice-validated` materializes a scoped ContextPack from that validated TraceSlice without writing `.rfs/rck`
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
 

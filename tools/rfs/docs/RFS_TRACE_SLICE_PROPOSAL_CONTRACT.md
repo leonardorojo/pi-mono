@@ -141,6 +141,12 @@ and adds a separate validation runtime for:
 rfs trace-slice-validate "<prompt>"
 ```
 
+P20 extends that same deterministic chain into a focused ContextPack materialization mode:
+
+```text
+rfs context-pack --trace-slice-validated "<prompt>"
+```
+
 Important scope notes for this implementation:
 
 - `rfs trace-slice-proposal` still emits `TraceSliceProposal` JSON to stdout;

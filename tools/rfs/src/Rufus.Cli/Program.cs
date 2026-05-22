@@ -63,9 +63,10 @@ if (args[0] == "log")
 
 if (args[0] == "context-pack")
 {
-    if (args.Length == 2 && string.Equals(args[1], "--trace-slice", StringComparison.Ordinal))
+    if (args.Length == 2 && (string.Equals(args[1], "--trace-slice", StringComparison.Ordinal) || string.Equals(args[1], "--trace-slice-validated", StringComparison.Ordinal)))
     {
         Console.Error.WriteLine("Usage: rfs context-pack --trace-slice <prompt>");
+        Console.Error.WriteLine("Usage: rfs context-pack --trace-slice-validated <prompt>");
         return 1;
     }
 
@@ -93,9 +94,45 @@ if (args[0] == "context-pack")
         return 0;
     }
 
+    if (args.Length >= 2 && string.Equals(args[1], "--trace-slice-validated", StringComparison.Ordinal))
+    {
+        var prompt = string.Join(" ", args.Skip(2)).Trim();
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            Console.Error.WriteLine("Missing prompt.");
+            return 1;
+        }
+
+        var validatedTraceSliceResult = await BuildValidatedTraceSliceJsonAsync(prompt, Directory.GetCurrentDirectory(), "rfs context-pack --trace-slice-validated");
+        if (!validatedTraceSliceResult.Success || string.IsNullOrWhiteSpace(validatedTraceSliceResult.Json))
+        {
+            if (!string.IsNullOrWhiteSpace(validatedTraceSliceResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(validatedTraceSliceResult.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        var traceSliceContextPackResult = RckTraceSliceContextPackBuilder.BuildFromValidatedTraceSlice(validatedTraceSliceResult.Json, Directory.GetCurrentDirectory());
+        if (!traceSliceContextPackResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(traceSliceContextPackResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(traceSliceContextPackResult.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        Console.WriteLine(traceSliceContextPackResult.Json);
+        return 0;
+    }
+
     if (args.Length > 1)
     {
         Console.Error.WriteLine("Usage: rfs context-pack [--trace-slice <prompt>]");
+        Console.Error.WriteLine("Usage: rfs context-pack [--trace-slice-validated <prompt>]");
         return 1;
     }
 
@@ -173,18 +210,7 @@ if (args[0] == "trace-slice-validate")
         return 1;
     }
 
-    var proposalResult = await BuildTraceSliceProposalJsonAsync(prompt, Directory.GetCurrentDirectory(), "rfs trace-slice-validate");
-    if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
-    {
-        if (!string.IsNullOrWhiteSpace(proposalResult.ErrorMessage))
-        {
-            Console.Error.WriteLine(proposalResult.ErrorMessage);
-        }
-
-        return 1;
-    }
-
-    var validationResult = RckTraceSliceProposalValidator.Validate(proposalResult.ProposalJson, Directory.GetCurrentDirectory(), maxStates: 5, maxDeltas: 5);
+    var validationResult = await BuildValidatedTraceSliceJsonAsync(prompt, Directory.GetCurrentDirectory(), "rfs trace-slice-validate");
     if (!validationResult.Success || string.IsNullOrWhiteSpace(validationResult.Json))
     {
         if (!string.IsNullOrWhiteSpace(validationResult.ErrorMessage))
@@ -1156,6 +1182,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs log    = show active RCK cognitive history");
     Console.WriteLine("  rfs context-pack = export full RCK DAG context pack as JSON");
     Console.WriteLine("  rfs context-pack --trace-slice <prompt>");
+    Console.WriteLine("  rfs context-pack --trace-slice-validated <prompt>");
     Console.WriteLine("  rfs trace-slice <prompt>");
     Console.WriteLine("  rfs trace-slice-proposal <prompt>");
     Console.WriteLine("  rfs trace-slice-validate <prompt>");
@@ -1180,6 +1207,7 @@ static void PrintHelp()
     Console.WriteLine("  trace-slice-proposal = prototipo experimental determinístico/anchor-aware; emite JSON puro sin escribir RCK");
     Console.WriteLine("  trace-slice-validate = valida una TraceSliceProposal determinística y emite un TraceSlice final sin escribir RCK");
     Console.WriteLine("  context-pack --trace-slice = materializa un context-pack focalizado desde TraceSlice v0 sin escribir RCK");
+    Console.WriteLine("  context-pack --trace-slice-validated = materializa un context-pack focalizado desde un TraceSlice validado sin escribir RCK");
 }
 
 static bool IsLegacyAskBridgeEnabled()
@@ -1454,6 +1482,18 @@ static async Task<TraceSliceProposalPipelineResult> BuildTraceSliceProposalJsonA
     }
 
     return TraceSliceProposalPipelineResult.SuccessResult(plannerResult.Output);
+}
+
+static async Task<RckTraceSliceProposalValidationResult> BuildValidatedTraceSliceJsonAsync(string prompt, string currentDirectory, string errorPrefix)
+{
+    var proposalResult = await BuildTraceSliceProposalJsonAsync(prompt, currentDirectory, errorPrefix);
+    if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
+    {
+        return RckTraceSliceProposalValidationResult.Failure(
+            proposalResult.ErrorMessage ?? $"{errorPrefix}: failed to build TraceSliceProposal.");
+    }
+
+    return RckTraceSliceProposalValidator.Validate(proposalResult.ProposalJson, currentDirectory, maxStates: 5, maxDeltas: 5);
 }
 
 sealed record TraceSliceProposalPipelineResult(bool Success, string? ErrorMessage, string? ProposalJson)

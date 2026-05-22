@@ -13,6 +13,8 @@ Implemented commands:
 - `rfs status`
 - `rfs log`
 - `rfs pi [message]`
+- `rfs model get`
+- `rfs model set <model>`
 - `rfs ask <prompt>`
 - `rfs ask --record <prompt>`
 - `rfs agent <task>`
@@ -21,15 +23,53 @@ Implemented commands:
 High-level behavior:
 
 - `rfs init` initializes the local Rufus workspace and seeds the local RCK DAG with a genesis State and Anchor
+- `rfs model get` reads the workspace default LLM model when it has been configured in `.rfs/config.json`
+- `rfs model set <model>` stores the workspace default LLM model in `.rfs/config.json`
 - `rfs ask` is headless prompt execution through Pi's auth/provider/model stack
 - `rfs ask --record` records the ask interaction into local RCK as State + Delta
 - `rfs agent` is the headless streaming agent path
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
+- `rfs ask` and `rfs agent` use the workspace default model when one is configured; otherwise they keep using the current Pi/RFS default
 - `rfs status` is read-only and reports workspace, RCK, and Git context
 - `rfs log` is read-only and walks the active RCK chain from `.rfs/rck/HEAD` backward through reachable Deltas
 - `rfs context-pack` is read-only and exports the full RCK DAG as JSON
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
+
+## Model config
+
+`.rfs/config.json` can persist the workspace default model under `llm.defaultModel`.
+
+Example:
+
+```json
+{
+  "schemaVersion": 1,
+  "llm": {
+    "defaultModel": "gpt-5.4-mini"
+  }
+}
+```
+
+Commands:
+
+```bash
+rfs model get
+rfs model set gpt-5.4-mini
+```
+
+If you are using the local wrapper from another repository, the same commands work there too:
+
+```bash
+cd /home/rufus/DEV/leonardorojo/ChessBoardApp
+lrfs model get
+lrfs model set gpt-5.4-mini
+lrfs ask "Respond with a short sentence confirming RFS model config is being used."
+```
+
+`rfs model list` is intentionally deferred for now. Pi's interactive model picker is not a reliable non-interactive source yet.
+
+This workspace default is the base for future subagent-specific routing, but that routing is not implemented yet.
 
 Rufus no ES Pi.
 Rufus USA Pi cuando conviene.

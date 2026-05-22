@@ -75,6 +75,75 @@ if (args[0] == "context-pack")
     return 0;
 }
 
+if (args[0] == "model")
+{
+    if (args.Length != 2 && args.Length != 3)
+    {
+        Console.Error.WriteLine("Usage: rfs model get|set <model>");
+        return 1;
+    }
+
+    if (args[1] == "get")
+    {
+        if (args.Length != 2)
+        {
+            Console.Error.WriteLine("Usage: rfs model get");
+            return 1;
+        }
+
+        var modelConfig = RckWorkspaceModelConfigStore.Read();
+        if (!modelConfig.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(modelConfig.ErrorMessage))
+            {
+                Console.Error.WriteLine(modelConfig.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        Console.WriteLine("rfs model get");
+        Console.WriteLine($"  source: {(modelConfig.HasConfiguredDefaultModel ? "workspace" : "default (Pi/RFS)")}");
+        Console.WriteLine($"  model: {(modelConfig.HasConfiguredDefaultModel ? modelConfig.DefaultModel : "(inherited)")}");
+        return 0;
+    }
+
+    if (args[1] == "set")
+    {
+        if (args.Length != 3)
+        {
+            Console.Error.WriteLine("Usage: rfs model set <model>");
+            return 1;
+        }
+
+        var setResult = RckWorkspaceModelConfigStore.SetDefaultModel(args[2]);
+        if (!setResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(setResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(setResult.ErrorMessage);
+            }
+
+            return 1;
+        }
+
+        Console.WriteLine("rfs model set");
+        Console.WriteLine("  source: workspace");
+        Console.WriteLine($"  model: {setResult.DefaultModel}");
+        Console.WriteLine("  config: .rfs/config.json");
+        return 0;
+    }
+
+    if (args[1] == "list")
+    {
+        Console.Error.WriteLine("rfs model list is not implemented yet.");
+        return 1;
+    }
+
+    Console.Error.WriteLine("Unknown model command.");
+    return 1;
+}
+
 if (args[0] == "pi")
 {
     var message = string.Join(" ", args.Skip(1));
@@ -89,6 +158,8 @@ if (args[0] == "pi")
     {
         psi.ArgumentList.Add(message);
     }
+
+    ApplyWorkspaceModelEnvironment(psi);
 
     Process? process;
 
@@ -148,6 +219,7 @@ if (args[0] == "agent")
     };
 
     psi.Environment["RFS_REPO_ROOT"] = Directory.GetCurrentDirectory();
+    ApplyWorkspaceModelEnvironment(psi);
     psi.ArgumentList.Add(helperPath);
     psi.ArgumentList.Add(task);
 
@@ -563,6 +635,7 @@ if (args[0] == "ask")
 
     psi.ArgumentList.Add(helperPath);
     psi.ArgumentList.Add(prompt);
+    ApplyWorkspaceModelEnvironment(psi);
 
     Process? process;
 
@@ -650,6 +723,8 @@ static void PrintHelp()
     Console.WriteLine("  rfs status = show local rfs/RCK workspace status");
     Console.WriteLine("  rfs log    = show active RCK cognitive history");
     Console.WriteLine("  rfs context-pack = export full RCK DAG context pack as JSON");
+    Console.WriteLine("  rfs model get");
+    Console.WriteLine("  rfs model set <model>");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");
@@ -658,6 +733,15 @@ static void PrintHelp()
     Console.WriteLine("  pi     = passthrough interactivo a Pi TUI");
     Console.WriteLine("  ask    = prompt único headless sin tools");
     Console.WriteLine("  agent  = agente headless con tools read-only + streaming");
+}
+
+static void ApplyWorkspaceModelEnvironment(ProcessStartInfo processStartInfo)
+{
+    var workspaceModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(Directory.GetCurrentDirectory());
+    if (!string.IsNullOrWhiteSpace(workspaceModel))
+    {
+        processStartInfo.Environment["RUFUSCHAT_LLM_MODEL"] = workspaceModel;
+    }
 }
 
 static string? FindBridgeHelperPath(string helperFileName)

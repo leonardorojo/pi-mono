@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Rufus.Cli.PiIntegration;
+using Rufus.RCK.Core.Agents;
+using Rufus.RCK.Core.Agents.Intent;
 
 var failures = new List<string>();
 
@@ -32,6 +35,28 @@ await RunCaseAsync(
     expectedProvider: null,
     expectedModel: null,
     expectedErrorContains: "Invalid JSONL on line 1",
+    failures);
+
+await RunIntentInferenceCaseAsync(
+    name: "intent inference success",
+    task: new AgentTask(
+        id: "task-1",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Build a TraceSlice for the current diff and summarize evidence.",
+        expectedOutput: "PromptIntent JSON"),
+    expectedIntent: "build-trace-slice",
+    failures);
+
+await RunIntentInferenceFailureCaseAsync(
+    name: "intent inference rejects unsupported kind",
+    task: new AgentTask(
+        id: "task-2",
+        kind: "summarize-evidence",
+        goal: "Summarize evidence for the diff.",
+        input: "Summarize the diff evidence.",
+        expectedOutput: null),
+    expectedErrorContains: "Kind='infer-intent'",
     failures);
 
 if (failures.Count > 0)
@@ -161,5 +186,141 @@ static async Task RunCaseAsync(
         catch
         {
         }
+    }
+}
+
+static async Task RunIntentInferenceCaseAsync(
+    string name,
+    AgentTask task,
+    string expectedIntent,
+    List<string> failures)
+{
+    try
+    {
+        var agent = new IntentInferenceAgent();
+        var result = await agent.ExecuteAsync(task);
+
+        if (result.Status != AgentTaskStatus.Succeeded)
+        {
+            failures.Add($"[{name}] expected Status=Succeeded but got {result.Status}.");
+        }
+
+        if (!string.Equals(result.TaskId, task.Id, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected TaskId '{task.Id}' but got '{result.TaskId}'.");
+        }
+
+        if (!string.Equals(result.AgentId, "intent-inference", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected AgentId 'intent-inference' but got '{result.AgentId}'.");
+        }
+
+        if (!string.Equals(result.ExecutionModel.Provider, "mock", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected execution provider 'mock' but got '{result.ExecutionModel.Provider}'.");
+        }
+
+        if (!string.Equals(result.ExecutionModel.Model, "deterministic-v1", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected execution model 'deterministic-v1' but got '{result.ExecutionModel.Model}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.Output))
+        {
+            failures.Add($"[{name}] expected Output to be populated.");
+        }
+        else
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(result.Output);
+                var root = document.RootElement;
+                var actualIntent = root.TryGetProperty("Intent", out var intentElement) ? intentElement.GetString() : null;
+
+                if (!string.Equals(actualIntent, expectedIntent, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected PromptIntent.Intent '{expectedIntent}' but got '{actualIntent ?? "(missing)"}'.");
+                }
+
+                if (!root.TryGetProperty("Summary", out var summaryElement) || string.IsNullOrWhiteSpace(summaryElement.GetString()))
+                {
+                    failures.Add($"[{name}] expected PromptIntent.Summary to be populated.");
+                }
+
+                if (!root.TryGetProperty("Entities", out var entitiesElement) || entitiesElement.ValueKind != JsonValueKind.Array)
+                {
+                    failures.Add($"[{name}] expected PromptIntent.Entities to be present.");
+                }
+
+                if (!root.TryGetProperty("Constraints", out var constraintsElement) || constraintsElement.ValueKind != JsonValueKind.Array)
+                {
+                    failures.Add($"[{name}] expected PromptIntent.Constraints to be present.");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"[{name}] output was not valid PromptIntent JSON: {ex.Message}");
+            }
+        }
+
+        if (result.Evidence.Count == 0)
+        {
+            failures.Add($"[{name}] expected Evidence to be populated.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+}
+
+static async Task RunIntentInferenceFailureCaseAsync(
+    string name,
+    AgentTask task,
+    string expectedErrorContains,
+    List<string> failures)
+{
+    try
+    {
+        var agent = new IntentInferenceAgent();
+        var result = await agent.ExecuteAsync(task);
+
+        if (result.Status != AgentTaskStatus.Failed)
+        {
+            failures.Add($"[{name}] expected Status=Failed but got {result.Status}.");
+        }
+
+        if (!string.Equals(result.TaskId, task.Id, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected TaskId '{task.Id}' but got '{result.TaskId}'.");
+        }
+
+        if (!string.Equals(result.AgentId, "intent-inference", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected AgentId 'intent-inference' but got '{result.AgentId}'.");
+        }
+
+        if (!string.Equals(result.ExecutionModel.Provider, "mock", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected execution provider 'mock' but got '{result.ExecutionModel.Provider}'.");
+        }
+
+        if (!string.Equals(result.ExecutionModel.Model, "deterministic-v1", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected execution model 'deterministic-v1' but got '{result.ExecutionModel.Model}'.");
+        }
+
+        if (result.Errors.Count == 0)
+        {
+            failures.Add($"[{name}] expected Errors to be populated.");
+        }
+        else if (!result.Errors[0].Contains(expectedErrorContains, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected Errors to contain '{expectedErrorContains}' but got '{result.Errors[0]}'.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
     }
 }

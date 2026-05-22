@@ -8,5 +8,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Rufus.Cli\Rufus.Cli.csproj" />
+    <ProjectReference Include="..\..\src\Rufus.RCK.Core\Rufus.RCK.Core.csproj" />
   </ItemGroup>
 </Project>

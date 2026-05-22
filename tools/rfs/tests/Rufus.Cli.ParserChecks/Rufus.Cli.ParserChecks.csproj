@@ -9,5 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Rufus.Cli\Rufus.Cli.csproj" />
     <ProjectReference Include="..\..\src\Rufus.Agenting\Rufus.Agenting.csproj" />
+    <ProjectReference Include="..\..\src\Rufus.RCK.Workspace\Rufus.RCK.Workspace.csproj" />
   </ItemGroup>
 </Project>

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Rufus.Cli.PiIntegration;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
+using Rufus.RCK.Workspace;
 
 var failures = new List<string>();
 
@@ -25,6 +26,26 @@ await RunCaseAsync(
     expectedProvider: null,
     expectedModel: null,
     expectedErrorContains: null,
+    failures);
+
+await RunCaseAsync(
+    name: "final answer beats prior delta",
+    fixtureMode: "delta-then-final",
+    expectedSuccess: true,
+    expectedAnswer: "structured answer",
+    expectedProvider: "test-provider",
+    expectedModel: "test-model",
+    expectedErrorContains: null,
+    failures);
+
+await RunCaseAsync(
+    name: "no answer fails explicitly",
+    fixtureMode: "no-answer",
+    expectedSuccess: false,
+    expectedAnswer: null,
+    expectedProvider: null,
+    expectedModel: null,
+    expectedErrorContains: "Pi JSON stream ended before a final assistant answer was observed",
     failures);
 
 await RunCaseAsync(
@@ -97,6 +118,14 @@ await RunTraceSliceProposalLlmCliCaseAsync(
     expectSuccess: false,
     expectedErrorContains: "missing materialization policy field");
 
+await RunTraceSliceProposalLlmCliCaseAsync(
+    name: "trace slice proposal llm cli rejects contaminated llm output",
+    prompt: "Implement rfs show command",
+    failures: failures,
+    fixtureMode: "contaminated",
+    expectSuccess: false,
+    expectedErrorContains: "forbidden content");
+
 await RunTraceSliceValidateCliCaseAsync(
     name: "trace slice validate cli renders validated trace slice json",
     prompt: "Implement rfs show command",
@@ -115,6 +144,8 @@ await RunTraceSliceValidateLlmCliCaseAsync(
     fixtureMode: "unsafe-policy",
     expectSuccess: false,
     expectedErrorContains: "expected restricted materialization policy flags to be false");
+
+await RunRckTraceSliceProposalValidatorCriticalCasesAsync(failures);
 
 await RunContextPackTraceSliceCliCaseAsync(
     name: "context pack trace-slice cli renders scoped json",
@@ -167,6 +198,17 @@ static async Task RunCaseAsync(
                  "    echo '{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"hello \"}}'\n" +
                  "    echo '{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"world\"}}'\n" +
                  "    echo 'stderr line' >&2\n" +
+                 "    ;;\n" +
+                 "  delta-then-final)\n" +
+                 "    cat <<'EOF'\n" +
+                 "{\"type\":\"session\"}\n" +
+                 "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"hello \"}}\n" +
+                 "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"ignored delta\"}}\n" +
+                 "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"structured answer\"}]}}\n" +
+                 "EOF\n" +
+                 "    ;;\n" +
+                 "  no-answer)\n" +
+                 "    echo '{\"type\":\"session\"}'\n" +
                  "    ;;\n" +
                  "  invalid)\n" +
                  "    echo 'not-json'\n" +
@@ -576,9 +618,11 @@ static string BuildPiFixtureScript(string prompt)
     var validAnswerJson = BuildTraceSliceProposalAnswer(prompt, includeUnsafePolicy: false, includeMissingPolicyField: false);
     var invalidShapeAnswerJson = BuildTraceSliceProposalAnswer(prompt, includeUnsafePolicy: false, includeMissingPolicyField: true);
     var unsafePolicyAnswerJson = BuildTraceSliceProposalAnswer(prompt, includeUnsafePolicy: true, includeMissingPolicyField: false);
+    var contaminatedAnswerJson = BuildTraceSliceProposalContaminatedAnswer(prompt);
     var validAnswerLiteral = JsonSerializer.Serialize(validAnswerJson);
     var invalidShapeAnswerLiteral = JsonSerializer.Serialize(invalidShapeAnswerJson);
     var unsafePolicyAnswerLiteral = JsonSerializer.Serialize(unsafePolicyAnswerJson);
+    var contaminatedAnswerLiteral = JsonSerializer.Serialize(contaminatedAnswerJson);
 
     return
         "#!/usr/bin/env bash\n" +
@@ -606,6 +650,12 @@ static string BuildPiFixtureScript(string prompt)
         "    cat <<'EOF'\n" +
         "{\"type\":\"session\"}\n" +
         "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":" + unsafePolicyAnswerLiteral + "}]}}\n" +
+        "EOF\n" +
+        "    ;;\n" +
+        "  contaminated)\n" +
+        "    cat <<'EOF'\n" +
+        "{\"type\":\"session\"}\n" +
+        "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":" + contaminatedAnswerLiteral + "}]}}\n" +
         "EOF\n" +
         "    ;;\n" +
         "  *)\n" +
@@ -659,6 +709,58 @@ static string BuildTraceSliceProposalAnswer(string prompt, bool includeUnsafePol
         ["rationale"] = Array.Empty<string>(),
         ["confidence"] = 1.0,
         ["warnings"] = Array.Empty<string>(),
+    };
+
+    return JsonSerializer.Serialize(proposal);
+}
+
+static string BuildTraceSliceProposalContaminatedAnswer(string prompt)
+{
+    var proposal = new Dictionary<string, object?>
+    {
+        ["type"] = "rufus.trace-slice-proposal",
+        ["schemaVersion"] = 1,
+        ["prompt"] = new Dictionary<string, object?>
+        {
+            ["text"] = prompt + " ```json",
+            ["isExcerpt"] = false,
+        },
+        ["intent"] = new Dictionary<string, object?>
+        {
+            ["kind"] = "build-trace-slice",
+            ["summary"] = "Fixture proposal with diff --git and message_update contamination.",
+            ["source"] = "intent-inference-agent",
+        },
+        ["requestedSelection"] = new Dictionary<string, object?>
+        {
+            ["stateIds"] = Array.Empty<string>(),
+            ["deltaIds"] = Array.Empty<string>(),
+            ["anchorIds"] = Array.Empty<string>(),
+            ["artifactRefs"] = Array.Empty<string>(),
+        },
+        ["requestedMaterializationPolicy"] = new Dictionary<string, object?>
+        {
+            ["includeStatePayloads"] = false,
+            ["includeDeltaDecodedOps"] = false,
+            ["includeArtifactContents"] = false,
+            ["includeGitDiffs"] = false,
+            ["includeStdoutStderr"] = false,
+            ["includeJsonl"] = false,
+        },
+        ["rationale"] = new[]
+        {
+            "diff --git a/a b/b",
+            "message_update",
+            "assistantMessageEvent",
+            ".rfs/rck",
+        },
+        ["confidence"] = 0.1,
+        ["warnings"] = new[]
+        {
+            "message_end",
+            "stdout",
+            "stderr",
+        },
     };
 
     return JsonSerializer.Serialize(proposal);
@@ -1245,6 +1347,445 @@ static async Task RunTraceSliceValidateLlmCliCaseAsync(
     }
 }
 
+
+static async Task RunRckTraceSliceProposalValidatorCriticalCasesAsync(List<string> failures)
+{
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-trace-slice-validator-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[RckTraceSliceProposalValidator] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        CreateValidatorWorkspaceFixture(tempRoot);
+
+        string BuildProposal(
+            IReadOnlyList<string> stateIds,
+            IReadOnlyList<string> deltaIds,
+            IReadOnlyList<string> anchorIds,
+            IReadOnlyList<string> artifactRefs,
+            bool unsafePolicy)
+        {
+            var proposal = new Dictionary<string, object?>
+            {
+                ["type"] = "rufus.trace-slice-proposal",
+                ["schemaVersion"] = 1,
+                ["prompt"] = new Dictionary<string, object?>
+                {
+                    ["text"] = "Trace slice validation fixture prompt.",
+                    ["isExcerpt"] = false,
+                },
+                ["intent"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "build-trace-slice",
+                    ["summary"] = "Validator fixture",
+                    ["source"] = "intent-inference-agent",
+                },
+                ["requestedSelection"] = new Dictionary<string, object?>
+                {
+                    ["stateIds"] = stateIds,
+                    ["deltaIds"] = deltaIds,
+                    ["anchorIds"] = anchorIds,
+                    ["artifactRefs"] = artifactRefs,
+                },
+                ["requestedMaterializationPolicy"] = new Dictionary<string, object?>
+                {
+                    ["includeStatePayloads"] = true,
+                    ["includeDeltaDecodedOps"] = true,
+                    ["includeArtifactContents"] = unsafePolicy,
+                    ["includeGitDiffs"] = unsafePolicy,
+                    ["includeStdoutStderr"] = unsafePolicy,
+                    ["includeJsonl"] = unsafePolicy,
+                },
+                ["rationale"] = Array.Empty<string>(),
+                ["warnings"] = Array.Empty<string>(),
+                ["confidence"] = 1.0,
+            };
+
+            return JsonSerializer.Serialize(proposal);
+        }
+
+        void AssertValidationCase(string name, string proposalJson, int maxStates, int maxDeltas, Action<JsonElement> verify)
+        {
+            try
+            {
+                var result = RckTraceSliceProposalValidator.Validate(proposalJson, tempRoot, maxStates, maxDeltas);
+                if (!result.Success || string.IsNullOrWhiteSpace(result.Json))
+                {
+                    failures.Add($"[{name}] expected validation success but got failure: {result.ErrorMessage ?? "(null)"}.");
+                    return;
+                }
+
+                using var document = JsonDocument.Parse(result.Json);
+                verify(document.RootElement);
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        static List<string> ExtractTargets(JsonElement root, string propertyName)
+        {
+            var validation = root.GetProperty("validation");
+            return validation.GetProperty(propertyName)
+                .EnumerateArray()
+                .Select(item => item.GetProperty("target").GetString() ?? string.Empty)
+                .ToList();
+        }
+
+        AssertValidationCase(
+            name: "proposal accepted",
+            proposalJson: BuildProposal(
+                stateIds: new[] { "state-head" },
+                deltaIds: new[] { "delta-main" },
+                anchorIds: new[] { "anchor-head" },
+                artifactRefs: Array.Empty<string>(),
+                unsafePolicy: false),
+            maxStates: 5,
+            maxDeltas: 5,
+            verify: root =>
+            {
+                var validation = root.GetProperty("validation");
+                if (!string.Equals(validation.GetProperty("status").GetString(), "accepted", StringComparison.Ordinal))
+                {
+                    failures.Add("[proposal accepted] expected validation.status=accepted.");
+                }
+
+                foreach (var propertyName in new[] { "includeArtifactContents", "includeGitDiffs", "includeStdoutStderr", "includeJsonl" })
+                {
+                    if (root.GetProperty("materializationPolicy").GetProperty(propertyName).ValueKind != JsonValueKind.False)
+                    {
+                        failures.Add($"[proposal accepted] expected {propertyName}=false.");
+                    }
+                }
+
+                if (!ExtractTargets(root, "accepted").Contains("state:state-head", StringComparer.Ordinal))
+                {
+                    failures.Add("[proposal accepted] expected accepted state:state-head.");
+                }
+
+                if (!ExtractTargets(root, "accepted").Contains("delta:delta-main", StringComparer.Ordinal))
+                {
+                    failures.Add("[proposal accepted] expected accepted delta:delta-main.");
+                }
+
+                if (!ExtractTargets(root, "accepted").Contains("anchor:anchor-head", StringComparer.Ordinal))
+                {
+                    failures.Add("[proposal accepted] expected accepted anchor:anchor-head.");
+                }
+            });
+
+        AssertValidationCase(
+            name: "missing state rejected",
+            proposalJson: BuildProposal(
+                stateIds: new[] { "missing-state" },
+                deltaIds: Array.Empty<string>(),
+                anchorIds: Array.Empty<string>(),
+                artifactRefs: Array.Empty<string>(),
+                unsafePolicy: false),
+            maxStates: 5,
+            maxDeltas: 5,
+            verify: root =>
+            {
+                var validation = root.GetProperty("validation");
+                if (!string.Equals(validation.GetProperty("status").GetString(), "rejected", StringComparison.Ordinal))
+                {
+                    failures.Add("[missing state rejected] expected validation.status=rejected.");
+                }
+
+                if (!ExtractTargets(root, "rejected").Contains("state:missing-state", StringComparer.Ordinal))
+                {
+                    failures.Add("[missing state rejected] expected rejected state:missing-state.");
+                }
+            });
+
+        AssertValidationCase(
+            name: "missing delta rejected",
+            proposalJson: BuildProposal(
+                stateIds: Array.Empty<string>(),
+                deltaIds: new[] { "missing-delta" },
+                anchorIds: Array.Empty<string>(),
+                artifactRefs: Array.Empty<string>(),
+                unsafePolicy: false),
+            maxStates: 5,
+            maxDeltas: 5,
+            verify: root =>
+            {
+                var validation = root.GetProperty("validation");
+                if (!string.Equals(validation.GetProperty("status").GetString(), "rejected", StringComparison.Ordinal))
+                {
+                    failures.Add("[missing delta rejected] expected validation.status=rejected.");
+                }
+
+                if (!ExtractTargets(root, "rejected").Contains("delta:missing-delta", StringComparer.Ordinal))
+                {
+                    failures.Add("[missing delta rejected] expected rejected delta:missing-delta.");
+                }
+            });
+
+        AssertValidationCase(
+            name: "unsafe policy downgraded",
+            proposalJson: BuildProposal(
+                stateIds: new[] { "state-head" },
+                deltaIds: new[] { "delta-main" },
+                anchorIds: new[] { "anchor-head" },
+                artifactRefs: Array.Empty<string>(),
+                unsafePolicy: true),
+            maxStates: 5,
+            maxDeltas: 5,
+            verify: root =>
+            {
+                var validation = root.GetProperty("validation");
+                if (!string.Equals(validation.GetProperty("status").GetString(), "partial", StringComparison.Ordinal))
+                {
+                    failures.Add("[unsafe policy downgraded] expected validation.status=partial.");
+                }
+
+                var downgradedTargets = ExtractTargets(root, "downgraded");
+                foreach (var propertyName in new[] { "materializationPolicy.includeArtifactContents", "materializationPolicy.includeGitDiffs", "materializationPolicy.includeStdoutStderr", "materializationPolicy.includeJsonl" })
+                {
+                    if (!downgradedTargets.Contains(propertyName, StringComparer.Ordinal))
+                    {
+                        failures.Add($"[unsafe policy downgraded] expected downgraded {propertyName}.");
+                    }
+
+                    if (root.GetProperty("materializationPolicy").GetProperty(propertyName.Split('.')[1]).ValueKind != JsonValueKind.False)
+                    {
+                        failures.Add($"[unsafe policy downgraded] expected {propertyName} to be false.");
+                    }
+                }
+            });
+
+        AssertValidationCase(
+            name: "limits reject overflow",
+            proposalJson: BuildProposal(
+                stateIds: new[] { "state-head", "state-base" },
+                deltaIds: new[] { "delta-main", "delta-extra" },
+                anchorIds: new[] { "anchor-head" },
+                artifactRefs: Array.Empty<string>(),
+                unsafePolicy: false),
+            maxStates: 1,
+            maxDeltas: 1,
+            verify: root =>
+            {
+                var validation = root.GetProperty("validation");
+                if (!string.Equals(validation.GetProperty("status").GetString(), "partial", StringComparison.Ordinal)
+                    && !string.Equals(validation.GetProperty("status").GetString(), "rejected", StringComparison.Ordinal))
+                {
+                    failures.Add("[limits reject overflow] expected validation.status partial or rejected.");
+                }
+
+                if (!ExtractTargets(root, "accepted").Contains("state:state-head", StringComparer.Ordinal))
+                {
+                    failures.Add("[limits reject overflow] expected accepted state:state-head.");
+                }
+
+                if (!ExtractTargets(root, "rejected").Contains("state:state-base", StringComparer.Ordinal))
+                {
+                    failures.Add("[limits reject overflow] expected rejected state:state-base.");
+                }
+
+                if (!ExtractTargets(root, "accepted").Contains("delta:delta-main", StringComparer.Ordinal))
+                {
+                    failures.Add("[limits reject overflow] expected accepted delta:delta-main.");
+                }
+
+                if (!ExtractTargets(root, "rejected").Contains("delta:delta-extra", StringComparer.Ordinal))
+                {
+                    failures.Add("[limits reject overflow] expected rejected delta:delta-extra.");
+                }
+            });
+
+        AssertValidationCase(
+            name: "artifact exclusions reject protected paths",
+            proposalJson: BuildProposal(
+                stateIds: new[] { "state-head" },
+                deltaIds: new[] { "delta-main" },
+                anchorIds: new[] { "anchor-head" },
+                artifactRefs: new[] { ".rfs/rck/HEAD", "bin/generated.txt", "obj/generated.txt", "notes/selected.md" },
+                unsafePolicy: false),
+            maxStates: 5,
+            maxDeltas: 5,
+            verify: root =>
+            {
+                var rejectedTargets = ExtractTargets(root, "rejected");
+                foreach (var target in new[] { "artifact:.rfs/rck/HEAD", "artifact:bin/generated.txt", "artifact:obj/generated.txt" })
+                {
+                    if (!rejectedTargets.Contains(target, StringComparer.Ordinal))
+                    {
+                        failures.Add($"[artifact exclusions reject protected paths] expected rejected {target}.");
+                    }
+                }
+            });
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[RckTraceSliceProposalValidator] threw {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static void CreateValidatorWorkspaceFixture(string tempRoot)
+{
+    var rfsRoot = Path.Combine(tempRoot, ".rfs");
+    var rckRoot = Path.Combine(rfsRoot, "rck");
+    var statesRoot = Path.Combine(rckRoot, "states");
+    var deltasRoot = Path.Combine(rckRoot, "deltas");
+    var anchorsRoot = Path.Combine(rckRoot, "anchors");
+
+    Directory.CreateDirectory(statesRoot);
+    Directory.CreateDirectory(deltasRoot);
+    Directory.CreateDirectory(anchorsRoot);
+
+    File.WriteAllText(Path.Combine(rckRoot, "HEAD"), "state-head" + Environment.NewLine);
+
+    var stateBasePayload = JsonSerializer.Serialize(new
+    {
+        type = "fixture.state",
+        artifacts = Array.Empty<object>(),
+    });
+
+    var stateHeadPayload = JsonSerializer.Serialize(new
+    {
+        type = "fixture.state",
+        artifacts = new[]
+        {
+            new
+            {
+                path = "notes/selected.md",
+                changeType = "modified",
+                source = "fixture",
+            },
+        },
+    });
+
+    File.WriteAllText(
+        Path.Combine(statesRoot, "state-base.json"),
+        JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = 1,
+            ["type"] = "rufus.rck.state",
+            ["id"] = "state-base",
+            ["payloadCanonicalJson"] = stateBasePayload,
+            ["refs"] = Array.Empty<object>(),
+            ["meta"] = new Dictionary<string, object?>
+            {
+                ["createdAtUtc"] = "2026-01-01T00:00:00.0000000+00:00",
+                ["CreatedBy"] = "fixture",
+                ["Label"] = "base",
+                ["Reason"] = "validator fixture",
+            },
+        }));
+
+    File.WriteAllText(
+        Path.Combine(statesRoot, "state-head.json"),
+        JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = 1,
+            ["type"] = "rufus.rck.state",
+            ["id"] = "state-head",
+            ["payloadCanonicalJson"] = stateHeadPayload,
+            ["refs"] = Array.Empty<object>(),
+            ["meta"] = new Dictionary<string, object?>
+            {
+                ["createdAtUtc"] = "2026-01-01T00:00:00.0000000+00:00",
+                ["CreatedBy"] = "fixture",
+                ["Label"] = "head",
+                ["Reason"] = "validator fixture",
+            },
+        }));
+
+    File.WriteAllText(
+        Path.Combine(deltasRoot, "delta-main.json"),
+        JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = 1,
+            ["type"] = "rufus.rck.delta",
+            ["id"] = "delta-main",
+            ["fromStateId"] = "state-base",
+            ["toStateId"] = "state-head",
+            ["ops"] = new[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["kind"] = "replace",
+                    ["path"] = "notes/selected.md",
+                    ["valueJson"] = JsonSerializer.Serialize(new { text = "selected" }),
+                },
+            },
+            ["refs"] = Array.Empty<object>(),
+            ["evidenceRefs"] = Array.Empty<object>(),
+            ["meta"] = new Dictionary<string, object?>
+            {
+                ["createdAtUtc"] = "2026-01-01T00:00:00.0000000+00:00",
+                ["CreatedBy"] = "fixture",
+                ["Label"] = "delta main",
+                ["Reason"] = "validator fixture",
+            },
+        }));
+
+    File.WriteAllText(
+        Path.Combine(deltasRoot, "delta-extra.json"),
+        JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = 1,
+            ["type"] = "rufus.rck.delta",
+            ["id"] = "delta-extra",
+            ["fromStateId"] = "state-head",
+            ["toStateId"] = "state-base",
+            ["ops"] = new[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["kind"] = "replace",
+                    ["path"] = "notes/other.md",
+                    ["valueJson"] = JsonSerializer.Serialize(new { text = "other" }),
+                },
+            },
+            ["refs"] = Array.Empty<object>(),
+            ["evidenceRefs"] = Array.Empty<object>(),
+            ["meta"] = new Dictionary<string, object?>
+            {
+                ["createdAtUtc"] = "2026-01-01T00:00:00.0000000+00:00",
+                ["CreatedBy"] = "fixture",
+                ["Label"] = "delta extra",
+                ["Reason"] = "validator fixture",
+            },
+        }));
+
+    File.WriteAllText(
+        Path.Combine(anchorsRoot, "anchor-head.json"),
+        JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = 1,
+            ["type"] = "rufus.rck.anchor",
+            ["id"] = "anchor-head",
+            ["stateId"] = "state-head",
+            ["parentAnchorIds"] = Array.Empty<object>(),
+            ["meta"] = new Dictionary<string, object?>
+            {
+                ["createdAtUtc"] = "2026-01-01T00:00:00.0000000+00:00",
+                ["CreatedBy"] = "fixture",
+                ["Label"] = "anchor head",
+                ["Reason"] = "validator fixture",
+            },
+        }));
+}
 
 static async Task RunContextPackTraceSliceCliCaseAsync(
     string name,

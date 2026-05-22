@@ -8,6 +8,7 @@ Short version:
 
 - `Rufus.Agenting` executes.
 - `Rufus.RCK.Core` remembers and models.
+- `RFS` orchestrates.
 
 `Rufus.Agenting` owns agent execution, task input/output, evidence, and fixed provider/model selection for each agent.
 `Rufus.RCK.Core` stays focused on persistent cognitive structures such as State, Delta, Anchor, DAG, and Trace.
@@ -21,6 +22,7 @@ Current separation:
 - `Rufus.RCK.Core` does not know provider/model details.
 - `Rufus.RCK.Core` does not depend on `Rufus.Agenting`.
 - `Rufus.Agenting` does not depend on `Rufus.RCK.Core`.
+- `Rufus.Agenting` does not write `.rfs/rck`.
 
 Operational flow:
 
@@ -118,6 +120,40 @@ Conceptual examples:
   - provider: `pi` or `openai`
   - model: a stronger model
 
+## CLI surfaces in this phase
+
+### `rfs intent "<prompt>"`
+
+`rfs intent` is the minimal CLI harness for `IntentInferenceAgent`.
+
+Behavior:
+
+- creates an `AgentTask` with:
+  - `Kind = "infer-intent"`
+  - `Goal = "inferir intent operativo del prompt"`
+  - `Input = <prompt>`
+- executes `Rufus.Agenting.Intent.IntentInferenceAgent`
+- prints `Status`, `AgentId`, `ExecutionModel`, `Summary`, `Output`, `Evidence`, `Warnings`, and `Errors` when present
+- does not call Pi
+- does not use JSONL or RPC
+- does not write `.rfs/rck`
+
+### `rfs agent-json <task>`
+
+`rfs agent-json` remains a prototype JSON Event Stream path.
+
+Behavior in this phase:
+
+- remains separate from `rfs agent`
+- remains separate from `rfs agent --record`
+- is explicitly experimental in runtime and docs
+- prints this warning when executed:
+
+`Experimental: relies on Pi --tools enforcement for read-only behavior.`
+
+- does not write `.rfs/rck`
+- still relies on Pi JSON Event Stream plus Pi `--tools` restriction for read-only execution
+
 ## `IntentInferenceAgent`
 
 `IntentInferenceAgent` is the first example agent.
@@ -145,12 +181,13 @@ Not part of this layer:
 - real Pi/OpenAI/Codex integration
 - RCK writes from the agent itself
 - TraceSlice execution
+- migration of `rfs agent`
+- migration of `rfs agent --record`
 
 ## Possible next steps
 
 Future work could include:
 
-- using `IntentInferenceAgent` from the CLI
 - connecting `AgentTaskResult` to RCK `State` / `Delta`
 - adding agents for `TraceSlice` and `ContextPack`
 - swapping `mock` agents for provider-backed agents where needed

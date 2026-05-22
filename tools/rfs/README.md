@@ -21,6 +21,8 @@ Implemented commands:
 - `rfs ask-json <prompt>`
 - `rfs agent <task>`
 - `rfs agent --record <task>`
+- `rfs agent-json <task>`
+- `rfs intent <prompt>`
 
 High-level behavior:
 
@@ -33,6 +35,8 @@ High-level behavior:
 - `rfs ask-json` is an experimental one-shot prototype that runs `pi --mode json`, parses stdout as JSONL, and prints a human answer without touching `.rfs/rck`
 - `rfs agent` is the headless streaming agent path
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
+- `rfs agent-json` is an experimental prototype that runs `pi --mode json` for agent execution, prints a visible warning, and still relies on Pi `--tools` enforcement for read-only behavior without touching `.rfs/rck`
+- `rfs intent` executes `Rufus.Agenting.Intent.IntentInferenceAgent` with a deterministic `AgentTask` (`Kind = infer-intent`) and prints the agent result without calling Pi or writing `.rfs/rck`
 - `rfs ask` and `rfs agent` use the workspace default model when one is configured; otherwise they keep using the current Pi/RFS default
 - `rfs ask-json` also reads `.rfs/config.json` and prefers `--model provider/id` when the configured model includes a provider prefix; otherwise it falls back to `RUFUSCHAT_LLM_MODEL` for bare model ids
 - `rfs ask` can temporarily fall back to the legacy bridge with `RFS_USE_LEGACY_ASK_BRIDGE=1`
@@ -102,7 +106,8 @@ It does not modify `.rfs/rck`, does not replace `rfs ask`, and does not touch th
 
 New experimental command (P7 prototype):
 
-- `rfs agent-json <task>`: prototype JSON Event Stream agent. This runs `pi --mode json` with a restricted read-only `--tools` list (`read,grep,find,ls`), parses JSONL events, captures observed tool_execution_* events, and prints a concise human-friendly summary. This is experimental: see tools/rfs/docs/RFS_PI_PROGRAMMATIC_INTEGRATION_AUDIT.md for audit notes.
+- `rfs agent-json <task>`: prototype JSON Event Stream agent. This runs `pi --mode json` with a restricted read-only `--tools` list (`read,grep,find,ls`), parses JSONL events, captures observed tool_execution_* events, and prints a concise human-friendly summary. This command is explicitly experimental at runtime and in documentation. Each execution prints: `Experimental: relies on Pi --tools enforcement for read-only behavior.` See tools/rfs/docs/RFS_PI_PROGRAMMATIC_INTEGRATION_AUDIT.md for audit notes.
+- `rfs intent <prompt>`: minimal CLI harness for `Rufus.Agenting.Intent.IntentInferenceAgent`. It creates an `AgentTask` with `Kind = infer-intent`, `Goal = inferir intent operativo del prompt`, and `Input = <prompt>`, then prints `Status`, `AgentId`, `ExecutionModel`, `Summary`, `Output`, `Evidence`, `Warnings`, and `Errors` when present. It does not call Pi and does not write `.rfs/rck`.
 
 Example:
 

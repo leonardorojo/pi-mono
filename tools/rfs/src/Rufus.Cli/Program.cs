@@ -2,6 +2,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Rufus.Agenting;
+using Rufus.Agenting.Intent;
 using Rufus.Cli.PiIntegration;
 using Rufus.RCK.Workspace;
 
@@ -657,6 +659,9 @@ if (args[0] == "agent")
 
 if (args[0] == "agent-json")
 {
+    const string experimentalWarning = "Experimental: relies on Pi --tools enforcement for read-only behavior.";
+    Console.Error.WriteLine(experimentalWarning);
+
     var task = string.Join(" ", args.Skip(1));
     if (string.IsNullOrWhiteSpace(task))
     {
@@ -684,6 +689,9 @@ if (args[0] == "agent-json")
     Console.WriteLine("────────────────────────────");
     Console.WriteLine("Task:");
     Console.WriteLine($"  {agentResult.Task}");
+    Console.WriteLine();
+    Console.WriteLine("Warning:");
+    Console.WriteLine($"  {experimentalWarning}");
     Console.WriteLine();
 
     if (agentResult.ToolEvents != null && agentResult.ToolEvents.Count > 0)
@@ -733,6 +741,51 @@ if (args[0] == "agent-json")
     }
 
     return 0;
+}
+
+if (args[0] == "intent")
+{
+    var prompt = string.Join(" ", args.Skip(1)).Trim();
+    if (string.IsNullOrWhiteSpace(prompt))
+    {
+        Console.Error.WriteLine("Missing prompt.");
+        return 1;
+    }
+
+    var intentAgent = new IntentInferenceAgent();
+    var task = new AgentTask(
+        id: $"intent-{Guid.NewGuid():N}",
+        kind: "infer-intent",
+        goal: "inferir intent operativo del prompt",
+        input: prompt,
+        expectedOutput: "PromptIntent JSON");
+    var result = await intentAgent.ExecuteAsync(task);
+
+    Console.WriteLine();
+    Console.WriteLine("Rufus Intent");
+    Console.WriteLine("────────────");
+    Console.WriteLine("Prompt:");
+    Console.WriteLine($"  {prompt}");
+    Console.WriteLine();
+    Console.WriteLine("Result:");
+    Console.WriteLine($"  Status: {result.Status}");
+    Console.WriteLine($"  AgentId: {result.AgentId}");
+    Console.WriteLine($"  ExecutionModel: {result.ExecutionModel.Provider}/{result.ExecutionModel.Model}");
+    Console.WriteLine($"  Summary: {FormatOptional(result.Summary)}");
+    Console.WriteLine("  Output:");
+    WriteIndentedBlock(result.Output, "    ");
+    Console.WriteLine("  Evidence:");
+    WriteEvidenceBlock(result.Evidence, "    ");
+    Console.WriteLine("  Warnings:");
+    WriteStringListBlock(result.Warnings, "    ");
+
+    if (result.Errors.Count > 0)
+    {
+        Console.WriteLine("  Errors:");
+        WriteStringListBlock(result.Errors, "    ");
+    }
+
+    return result.Status == AgentTaskStatus.Failed ? 1 : 0;
 }
 
 if (args[0] == "ask-json")
@@ -966,17 +1019,82 @@ static void PrintHelp()
     Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs ask-json <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");
+    Console.WriteLine("  rfs agent-json <task>");
+    Console.WriteLine("  rfs intent <prompt>");
     Console.WriteLine();
     Console.WriteLine("Modos:");
-    Console.WriteLine("  pi       = passthrough interactivo a Pi TUI");
-    Console.WriteLine("  ask      = prompt único headless con JSON Event Stream; fallback legacy vía RFS_USE_LEGACY_ASK_BRIDGE=1");
-    Console.WriteLine("  ask-json = prototipo experimental con Pi JSON Event Stream");
-    Console.WriteLine("  agent    = agente headless con tools read-only + streaming");
+    Console.WriteLine("  pi         = passthrough interactivo a Pi TUI");
+    Console.WriteLine("  ask        = prompt único headless con JSON Event Stream; fallback legacy vía RFS_USE_LEGACY_ASK_BRIDGE=1");
+    Console.WriteLine("  ask-json   = prototipo experimental con Pi JSON Event Stream");
+    Console.WriteLine("  agent      = agente headless con tools read-only + streaming");
+    Console.WriteLine("  agent-json = prototipo experimental con Pi JSON Event Stream; relies on Pi --tools enforcement for read-only behavior");
+    Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico sin Pi ni RCK");
 }
 
 static bool IsLegacyAskBridgeEnabled()
 {
     return string.Equals(Environment.GetEnvironmentVariable("RFS_USE_LEGACY_ASK_BRIDGE"), "1", StringComparison.Ordinal);
+}
+
+static string FormatOptional(string? value)
+{
+    return string.IsNullOrWhiteSpace(value) ? "(none)" : value;
+}
+
+static void WriteIndentedBlock(string? value, string indent)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        Console.WriteLine($"{indent}(none)");
+        return;
+    }
+
+    foreach (var line in value.Split('\n', StringSplitOptions.None))
+    {
+        Console.WriteLine($"{indent}{line}");
+    }
+}
+
+static void WriteStringListBlock(System.Collections.IEnumerable values, string indent)
+{
+    var count = 0;
+    foreach (var value in values)
+    {
+        if (value is string text)
+        {
+            Console.WriteLine($"{indent}- {text}");
+            count++;
+        }
+    }
+
+    if (count == 0)
+    {
+        Console.WriteLine($"{indent}(none)");
+    }
+}
+
+static void WriteEvidenceBlock(System.Collections.IEnumerable evidenceItems, string indent)
+{
+    var count = 0;
+    foreach (var item in evidenceItems)
+    {
+        var kind = (string?)item.GetType().GetProperty("Kind")?.GetValue(item);
+        var source = (string?)item.GetType().GetProperty("Source")?.GetValue(item);
+        var detail = (string?)item.GetType().GetProperty("Detail")?.GetValue(item);
+        var line = $"{indent}- {FormatOptional(kind)} | {FormatOptional(source)}";
+        if (!string.IsNullOrWhiteSpace(detail))
+        {
+            line += $" | {detail}";
+        }
+
+        Console.WriteLine(line);
+        count++;
+    }
+
+    if (count == 0)
+    {
+        Console.WriteLine($"{indent}(none)");
+    }
 }
 
 static void ApplyWorkspaceModelEnvironment(ProcessStartInfo processStartInfo)

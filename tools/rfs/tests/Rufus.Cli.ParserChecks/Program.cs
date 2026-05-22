@@ -59,6 +59,12 @@ await RunIntentInferenceFailureCaseAsync(
     expectedErrorContains: "Kind='infer-intent'",
     failures);
 
+await RunIntentCliCaseAsync(
+    name: "intent cli renders result",
+    prompt: "Implement rfs show command",
+    expectedIntent: "general-operational-intent",
+    failures);
+
 if (failures.Count > 0)
 {
     foreach (var failure in failures)
@@ -317,6 +323,91 @@ static async Task RunIntentInferenceFailureCaseAsync(
         else if (!result.Errors[0].Contains(expectedErrorContains, StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected Errors to contain '{expectedErrorContains}' but got '{result.Errors[0]}'.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+}
+
+static async Task RunIntentCliCaseAsync(
+    string name,
+    string prompt,
+    string expectedIntent,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = "dotnet",
+        WorkingDirectory = repoRoot,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false
+    };
+
+    startInfo.ArgumentList.Add("run");
+    startInfo.ArgumentList.Add("--project");
+    startInfo.ArgumentList.Add(cliProjectPath);
+    startInfo.ArgumentList.Add("--");
+    startInfo.ArgumentList.Add("intent");
+    startInfo.ArgumentList.Add(prompt);
+
+    try
+    {
+        using var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            failures.Add($"[{name}] failed to start dotnet run for rfs intent.");
+            return;
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        if (process.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {process.ExitCode}. stderr: {stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {stderr.Trim()}.");
+        }
+
+        var requiredFragments = new[]
+        {
+            "Rufus Intent",
+            $"  {prompt}",
+            "  Status: Succeeded",
+            "  AgentId: intent-inference",
+            "  ExecutionModel: mock/deterministic-v1",
+            "  Summary:",
+            "  Output:",
+            $"\"Intent\":\"{expectedIntent}\"",
+            "  Evidence:",
+            "  Warnings:",
+            "    (none)"
+        };
+
+        foreach (var fragment in requiredFragments)
+        {
+            if (!stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        if (stdout.Contains("  Errors:", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] did not expect an Errors section for successful intent inference.");
         }
     }
     catch (Exception ex)

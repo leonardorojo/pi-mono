@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Rufus.RCK.Core.Agents;
+using Rufus.Agenting;
 
-namespace Rufus.RCK.Core.Agents.Intent;
+namespace Rufus.Agenting.Intent;
 
 public sealed class IntentInferenceAgent : IAgent
 {

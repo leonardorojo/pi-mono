@@ -2,8 +2,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Rufus.Cli.PiIntegration;
-using Rufus.RCK.Core.Agents;
-using Rufus.RCK.Core.Agents.Intent;
+using Rufus.Agenting;
+using Rufus.Agenting.Intent;
 
 var failures = new List<string>();
 

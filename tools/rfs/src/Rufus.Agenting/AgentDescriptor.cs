@@ -1,4 +1,4 @@
-namespace Rufus.RCK.Core.Agents;
+namespace Rufus.Agenting;
 
 public sealed record AgentDescriptor
 {

@@ -1,4 +1,4 @@
-namespace Rufus.RCK.Core.Agents.Intent;
+namespace Rufus.Agenting.Intent;
 
 public sealed record PromptIntent
 {

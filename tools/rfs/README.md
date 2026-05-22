@@ -44,7 +44,8 @@ High-level behavior:
 
 ## Agent / Task abstraction
 
-`Rufus.RCK.Core` now includes a minimal agent/task layer for future RFS/RCK work.
+`Rufus.Agenting` defines the operational agent/task layer used by RFS.
+`Rufus.RCK.Core` stays focused on the persistent cognitive model: State, Delta, Anchor, DAG, Trace, and other traceable RCK models.
 
 - An `IAgent` executes a single `AgentTask`.
 - Each `Agent` has a fixed `AgentExecutionModel` with provider + model baked into the descriptor.
@@ -52,6 +53,7 @@ High-level behavior:
 - `AgentTaskResult` records `AgentId`, `ExecutionModel`, `Output`, `Summary`, `Evidence`, `Warnings`, and `Errors`.
 - `IntentInferenceAgent` is the first mock example.
 - It accepts `Kind = infer-intent` and returns a deterministic `PromptIntent` JSON payload.
+- RFS can run agents and later persist or project their results into RCK, but RCK Core does not execute agents.
 - This is the base for future task kinds such as TraceSlice, ContextPack, diff inspection, and evidence summaries.
 
 ## Model config

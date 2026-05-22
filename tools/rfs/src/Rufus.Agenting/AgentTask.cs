@@ -1,18 +1,24 @@
-namespace Rufus.RCK.Core.Agents;
+namespace Rufus.Agenting;
 
-public sealed record AgentEvidence
+public sealed record AgentTask
 {
+    public string Id { get; }
+
     public string Kind { get; }
 
-    public string Source { get; }
+    public string Goal { get; }
 
-    public string? Detail { get; }
+    public string? Input { get; }
 
-    public AgentEvidence(string kind, string source, string? detail = null)
+    public string? ExpectedOutput { get; }
+
+    public AgentTask(string id, string kind, string goal, string? input = null, string? expectedOutput = null)
     {
+        Id = Normalize(id, nameof(id));
         Kind = Normalize(kind, nameof(kind));
-        Source = Normalize(source, nameof(source));
-        Detail = NormalizeOptional(detail, nameof(detail));
+        Goal = Normalize(goal, nameof(goal));
+        Input = NormalizeOptional(input, nameof(input));
+        ExpectedOutput = NormalizeOptional(expectedOutput, nameof(expectedOutput));
     }
 
     private static string Normalize(string value, string paramName)

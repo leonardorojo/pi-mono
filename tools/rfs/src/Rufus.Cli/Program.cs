@@ -655,6 +655,53 @@ if (args[0] == "agent")
     return process.ExitCode;
 }
 
+if (args[0] == "ask-json")
+{
+    var prompt = string.Join(" ", args.Skip(1));
+    if (string.IsNullOrWhiteSpace(prompt))
+    {
+        Console.Error.WriteLine("Missing prompt.");
+        return 1;
+    }
+
+    var askJsonResult = await PiJsonEventRunner.RunAskAsync(
+        Directory.GetCurrentDirectory(),
+        prompt,
+        RckWorkspaceModelConfigStore.TryReadDefaultModel(Directory.GetCurrentDirectory()));
+
+    if (!askJsonResult.Success)
+    {
+        if (!string.IsNullOrWhiteSpace(askJsonResult.ErrorMessage))
+        {
+            Console.Error.WriteLine(askJsonResult.ErrorMessage);
+        }
+
+        return 1;
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Rufus Ask JSON Prototype");
+    Console.WriteLine("────────────────────────");
+    Console.WriteLine("Prompt:");
+    Console.WriteLine($"  {askJsonResult.Prompt}");
+    Console.WriteLine();
+    Console.WriteLine("Answer:");
+    foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
+    {
+        Console.WriteLine(answerLine.Length == 0 ? string.Empty : $"  {answerLine}");
+    }
+
+    if (!string.IsNullOrWhiteSpace(askJsonResult.Provider) || !string.IsNullOrWhiteSpace(askJsonResult.Model))
+    {
+        Console.WriteLine();
+        Console.WriteLine("Source:");
+        Console.WriteLine($"  provider: {(string.IsNullOrWhiteSpace(askJsonResult.Provider) ? "(unknown)" : askJsonResult.Provider)}");
+        Console.WriteLine($"  model: {(string.IsNullOrWhiteSpace(askJsonResult.Model) ? "(unknown)" : askJsonResult.Model)}");
+    }
+
+    return 0;
+}
+
 if (args[0] == "ask")
 {
     var askArgs = args.Skip(1).ToArray();
@@ -780,12 +827,14 @@ static void PrintHelp()
     Console.WriteLine("  rfs model list");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
+    Console.WriteLine("  rfs ask-json <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");
     Console.WriteLine();
     Console.WriteLine("Modos:");
-    Console.WriteLine("  pi     = passthrough interactivo a Pi TUI");
-    Console.WriteLine("  ask    = prompt único headless sin tools");
-    Console.WriteLine("  agent  = agente headless con tools read-only + streaming");
+    Console.WriteLine("  pi       = passthrough interactivo a Pi TUI");
+    Console.WriteLine("  ask      = prompt único headless legacy sin tools");
+    Console.WriteLine("  ask-json = prototipo experimental con Pi JSON Event Stream");
+    Console.WriteLine("  agent    = agente headless con tools read-only + streaming");
 }
 
 static void ApplyWorkspaceModelEnvironment(ProcessStartInfo processStartInfo)

@@ -18,6 +18,7 @@ Implemented commands:
 - `rfs model list`
 - `rfs ask <prompt>`
 - `rfs ask --record <prompt>`
+- `rfs ask-json <prompt>`
 - `rfs agent <task>`
 - `rfs agent --record <task>`
 
@@ -29,9 +30,11 @@ High-level behavior:
 - `rfs model list` queries Pi RPC mode for the currently available models without opening the Pi TUI
 - `rfs ask` is headless prompt execution through Pi's auth/provider/model stack
 - `rfs ask --record` records the ask interaction into local RCK as State + Delta
+- `rfs ask-json` is an experimental one-shot prototype that runs `pi --mode json`, parses stdout as JSONL, and prints a human answer without touching `.rfs/rck`
 - `rfs agent` is the headless streaming agent path
 - `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
 - `rfs ask` and `rfs agent` use the workspace default model when one is configured; otherwise they keep using the current Pi/RFS default
+- `rfs ask-json` also reads `.rfs/config.json` and prefers `--model provider/id` when the configured model includes a provider prefix; otherwise it falls back to `RUFUSCHAT_LLM_MODEL` for bare model ids
 - `rfs status` is read-only and reports workspace, RCK, and Git context
 - `rfs log` is read-only and walks the active RCK chain from `.rfs/rck/HEAD` backward through reachable Deltas
 - `rfs context-pack` is read-only and exports the full RCK DAG as JSON
@@ -69,12 +72,17 @@ lrfs model get
 lrfs model list
 lrfs model set gpt-5.4-mini
 lrfs model list
+lrfs ask-json "Respond with one short sentence confirming JSON mode works."
 lrfs ask "Respond with a short sentence confirming RFS model config is being used."
 ```
 
 `rfs model list` uses `pi --mode rpc --no-session` with a single `get_available_models` request.
 RFS disables extensions and context files for this RPC call so stdout stays dedicated to JSONL protocol traffic.
 The command prints provider + model id, includes the display name when Pi returns one, and marks the current workspace model with `*` when it matches `.rfs/config.json`.
+
+`rfs ask-json` is an experimental validation path for Pi JSON Event Stream mode.
+It runs `pi --mode json --no-session --no-tools --no-extensions --no-context-files <prompt>` from the caller cwd, keeps stderr separate, parses stdout line-by-line as JSONL, accumulates `message_update.assistantMessageEvent.type == "text_delta"`, and prefers the structured final assistant text from `message_end`, `turn_end`, or `agent_end` when present.
+It does not modify `.rfs/rck`, does not replace `rfs ask`, and does not touch the legacy Node bridges.
 
 Example:
 

@@ -163,6 +163,8 @@ It must not:
 - call an LLM
 - require RPC
 
+P18 adds a separate experimental command, `rfs trace-slice-proposal "<prompt>"`, that produces a non-authoritative deterministic proposal JSON using the same high-level boundaries. That proposal command is planning-only; this `context-pack --trace-slice` mode still consumes validated deterministic TraceSlice output, not proposal output.
+
 ## RCK Core boundary
 
 `Rufus.RCK.Core` must not be modified for this phase.

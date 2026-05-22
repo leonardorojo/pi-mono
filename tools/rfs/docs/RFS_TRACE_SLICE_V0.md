@@ -90,7 +90,8 @@ TraceSlice v0 always exposes an `intent` block.
 
 The current v0 intent is intentionally naive and deterministic:
 
-- `source = deterministic` for the current shorthand path
+- `source = deterministic` for the current shorthand path used by `rfs trace-slice`
+- `source = intent-inference-agent` for `rfs trace-slice-proposal`, which still uses the deterministic/mock `IntentInferenceAgent`
 - `kind` may remain a naive operational label
 - `summary` may be a normalized excerpt of the prompt
 - no LLM is used

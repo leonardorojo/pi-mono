@@ -5,48 +5,177 @@ It is intentionally still a POC, not a finished product.
 
 ## Current shape
 
-Implemented commands:
+## Command catalog
+
+The current CLI surface is grouped below by category.
+Each command lists: what it does, whether it writes `.rfs/rck`, whether it is read-only, and whether it depends on Pi / JSONL / RPC / legacy behavior.
+
+### General
 
 - `rfs help`
+  - Description: prints the current command surface.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
 - `rfs --version`
+  - Description: prints the current `rfs` version string.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
+### Workspace / RCK
+
 - `rfs init`
+  - Description: initializes the local Rufus workspace and seeds the local RCK DAG with a genesis State and Anchor.
+  - Writes RCK: yes.
+  - Read-only: no.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
 - `rfs status`
+  - Description: reports workspace, RCK, and Git context.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
 - `rfs log`
-- `rfs pi [message]`
+  - Description: walks the active RCK chain from `.rfs/rck/HEAD` backward through reachable Deltas.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
+- `rfs context-pack`
+  - Description: exports the full active RCK DAG as JSON.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
+- `rfs context-pack --trace-slice "<prompt>"`
+  - Description: materializes a focused JSON context-pack from deterministic TraceSlice v0 selection + materialization policy.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
+- `rfs trace-slice "<prompt>"`
+  - Description: builds a deterministic read-only JSON slice from the active RCK chain.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
+- `rfs trace-slice-proposal "<prompt>"`
+  - Description: emits a deterministic, anchor-aware, non-authoritative `TraceSliceProposal` JSON built from prompt + inferred intent + DAG quick index.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: yes.
+  - Pi / JSONL / RPC / legacy: none.
+
+### Models
+
 - `rfs model get`
+  - Description: reads the workspace default LLM model from `.rfs/config.json` when configured.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
 - `rfs model set <model>`
+  - Description: stores the workspace default LLM model in `.rfs/config.json`.
+  - Writes RCK: no.
+  - Read-only: no.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
 - `rfs model list`
+  - Description: queries the currently available models without opening the Pi TUI.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: Pi RPC.
+
+### Ask
+
 - `rfs ask <prompt>`
+  - Description: executes a headless prompt through Pi auth/provider/model using Pi JSON Event Stream by default.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: Pi + JSONL by default; optional legacy fallback via `RFS_USE_LEGACY_ASK_BRIDGE=1`.
+
 - `rfs ask --record <prompt>`
+  - Description: executes the same headless ask flow and records the interaction into local RCK.
+  - Writes RCK: yes.
+  - Read-only: no.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: Pi + JSONL by default; optional legacy fallback via `RFS_USE_LEGACY_ASK_BRIDGE=1`.
+
 - `rfs ask-json <prompt>`
-- `rfs agent <task>`
-- `rfs agent --record <task>`
-- `rfs agent-json <task>`
+  - Description: experimental one-shot prototype that runs `pi --mode json`, parses stdout as JSONL, and prints a human answer.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: yes / diagnostic.
+  - Pi / JSONL / RPC / legacy: Pi + JSONL.
+
+### Agenting
+
 - `rfs intent <prompt>`
-- `rfs trace-slice <prompt>`
-- `rfs context-pack --trace-slice <prompt>`
+  - Description: runs `Rufus.Agenting.Intent.IntentInferenceAgent` with a deterministic `AgentTask` (`Kind = infer-intent`) and prints the result.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
+- `rfs intent --record <prompt>`
+  - Description: runs the same deterministic intent inference path and records the controlled result into local RCK.
+  - Writes RCK: yes.
+  - Read-only: no.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: none.
+
+- `rfs agent-json <task>`
+  - Description: experimental JSON Event Stream agent path that runs `pi --mode json`, captures observed events, and prints a human summary.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: yes.
+  - Pi / JSONL / RPC / legacy: Pi + JSONL; relies on Pi `--tools` enforcement.
+
+- `rfs agent <task>`
+  - Description: headless streaming agent path for a task.
+  - Writes RCK: no.
+  - Read-only: yes.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: legacy Node helper.
+
+- `rfs agent --record <task>`
+  - Description: runs the same headless streaming agent path and records the interaction into local RCK as State + Delta.
+  - Writes RCK: yes.
+  - Read-only: no.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: legacy Node helper.
+
+### Pi
+
+- `rfs pi [message]`
+  - Description: interactive passthrough to the Pi TUI.
+  - Writes RCK: no.
+  - Read-only: no.
+  - Experimental: no.
+  - Pi / JSONL / RPC / legacy: Pi interactive passthrough.
 
 High-level behavior:
 
-- `rfs init` initializes the local Rufus workspace and seeds the local RCK DAG with a genesis State and Anchor
-- `rfs model get` reads the workspace default LLM model when it has been configured in `.rfs/config.json`
-- `rfs model set <model>` stores the workspace default LLM model in `.rfs/config.json`
-- `rfs model list` queries Pi RPC mode for the currently available models without opening the Pi TUI
-- `rfs ask` is headless prompt execution through Pi's auth/provider/model stack using Pi JSON Event Stream by default
-- `rfs ask --record` records the ask interaction into local RCK using the same Pi JSON Event Stream path by default; `RFS_USE_LEGACY_ASK_BRIDGE=1` keeps the legacy bridge as a temporary fallback
-- `rfs ask-json` is an experimental one-shot prototype that runs `pi --mode json`, parses stdout as JSONL, and prints a human answer without touching `.rfs/rck`
-- `rfs agent` is the headless streaming agent path
-- `rfs agent --record` records the streamed agent interaction into local RCK as State + Delta
-- `rfs agent-json` is an experimental prototype that runs `pi --mode json` for agent execution, prints a visible warning, and still relies on Pi `--tools` enforcement for read-only behavior without touching `.rfs/rck`
-- `rfs intent` executes `Rufus.Agenting.Intent.IntentInferenceAgent` with a deterministic `AgentTask` (`Kind = infer-intent`) and prints the agent result without calling Pi or writing `.rfs/rck`
-- `rfs trace-slice` builds a deterministic read-only JSON slice from the active RCK chain; conceptually it is intent-first and future anchor-aware, so the shorthand command internally uses an intent v0, may include `anchorIds`, and always emits an `intent` block without calling Pi, writing `.rfs/rck`, or materializing file contents/diffs
-- `rfs context-pack --trace-slice` keeps `rfs context-pack` full export intact while materializing a scoped JSON context-pack from deterministic TraceSlice v0 selection + materialization policy; selected anchors are treated as strong relevance signals/metadata, but they do not auto-include artifact contents, diffs/stdout/stderr/JSONL, or write `.rfs/rck`
 - `rfs ask` and `rfs agent` use the workspace default model when one is configured; otherwise they keep using the current Pi/RFS default
 - `rfs ask-json` also reads `.rfs/config.json` and prefers `--model provider/id` when the configured model includes a provider prefix; otherwise it falls back to `RUFUSCHAT_LLM_MODEL` for bare model ids
 - `rfs ask` can temporarily fall back to the legacy bridge with `RFS_USE_LEGACY_ASK_BRIDGE=1`
-- `rfs status` is read-only and reports workspace, RCK, and Git context
-- `rfs log` is read-only and walks the active RCK chain from `.rfs/rck/HEAD` backward through reachable Deltas
-- `rfs context-pack` is read-only and exports the full RCK DAG as JSON
+- `rfs trace-slice` stays the deterministic authoritative baseline selection path
+- `rfs trace-slice-proposal` is intentionally non-authoritative: the agent proposes, RFS validates later, and the command does not materialize a ContextPack or write `.rfs/rck`
 
 `rfs` is still a POC. The higher-level RCK workspace layer owns `.rfs/` layout, local persistence, Git context capture, and status reporting.
 

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
+using Rufus.Agenting.TraceSlice;
 using Rufus.Cli.PiIntegration;
 using Rufus.RCK.Workspace;
 
@@ -136,6 +137,82 @@ if (args[0] == "trace-slice")
     }
 
     Console.WriteLine(traceSliceResult.Json);
+    return 0;
+}
+
+if (args[0] == "trace-slice-proposal")
+{
+    var prompt = string.Join(" ", args.Skip(1)).Trim();
+    if (string.IsNullOrWhiteSpace(prompt))
+    {
+        Console.Error.WriteLine("Missing prompt.");
+        return 1;
+    }
+
+    var quickIndexResult = RckTraceSliceProposalInputBuilder.Build(Directory.GetCurrentDirectory(), 5);
+    if (!quickIndexResult.Success || quickIndexResult.DagQuickIndex is null)
+    {
+        if (!string.IsNullOrWhiteSpace(quickIndexResult.ErrorMessage))
+        {
+            Console.Error.WriteLine(quickIndexResult.ErrorMessage);
+        }
+
+        return 1;
+    }
+
+    var intentAgent = new IntentInferenceAgent();
+    var intentTask = new AgentTask(
+        id: $"intent-{Guid.NewGuid():N}",
+        kind: "infer-intent",
+        goal: "infer deterministic operational intent for a trace slice proposal",
+        input: prompt,
+        expectedOutput: "PromptIntent JSON");
+    var intentResult = await intentAgent.ExecuteAsync(intentTask);
+    if (intentResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(intentResult.Output))
+    {
+        foreach (var error in intentResult.Errors)
+        {
+            Console.Error.WriteLine(error);
+        }
+
+        return 1;
+    }
+
+    if (!TryBuildTraceSliceProposalIntent(intentResult.Output, out var proposalIntent, out var intentErrorMessage))
+    {
+        Console.Error.WriteLine(intentErrorMessage);
+        return 1;
+    }
+
+    var plannerInputJson = JsonSerializer.Serialize(new
+    {
+        prompt,
+        intent = proposalIntent,
+        dagQuickIndex = quickIndexResult.DagQuickIndex,
+    }, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    });
+
+    var plannerAgent = new TraceSlicePlannerAgent();
+    var plannerTask = new AgentTask(
+        id: $"trace-slice-proposal-{Guid.NewGuid():N}",
+        kind: "propose-trace-slice",
+        goal: "build a deterministic anchor-aware trace slice proposal",
+        input: plannerInputJson,
+        expectedOutput: "TraceSliceProposal JSON");
+    var plannerResult = await plannerAgent.ExecuteAsync(plannerTask);
+    if (plannerResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(plannerResult.Output))
+    {
+        foreach (var error in plannerResult.Errors)
+        {
+            Console.Error.WriteLine(error);
+        }
+
+        return 1;
+    }
+
+    Console.WriteLine(plannerResult.Output);
     return 0;
 }
 
@@ -1097,6 +1174,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs context-pack = export full RCK DAG context pack as JSON");
     Console.WriteLine("  rfs context-pack --trace-slice <prompt>");
     Console.WriteLine("  rfs trace-slice <prompt>");
+    Console.WriteLine("  rfs trace-slice-proposal <prompt>");
     Console.WriteLine("  rfs model get");
     Console.WriteLine("  rfs model set <model>");
     Console.WriteLine("  rfs model list");
@@ -1115,6 +1193,7 @@ static void PrintHelp()
     Console.WriteLine("  agent-json = prototipo experimental con Pi JSON Event Stream; relies on Pi --tools enforcement for read-only behavior");
     Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico con opción --record para RCK");
     Console.WriteLine("  trace-slice = exporta un corte determinístico del RCK activo como JSON");
+    Console.WriteLine("  trace-slice-proposal = prototipo experimental determinístico/anchor-aware; emite JSON puro sin escribir RCK");
     Console.WriteLine("  context-pack --trace-slice = materializa un context-pack focalizado desde TraceSlice v0 sin escribir RCK");
 }
 
@@ -1312,4 +1391,28 @@ static string? FindRfsBridgeRoot()
 static bool IsHelpCommand(string command)
 {
     return command is "help" or "--help" or "-h";
+}
+
+static bool TryBuildTraceSliceProposalIntent(string intentOutputJson, out object intentProjection, out string? errorMessage)
+{
+    intentProjection = null!;
+    errorMessage = null;
+
+    try
+    {
+        using var document = JsonDocument.Parse(intentOutputJson);
+        var root = document.RootElement;
+        intentProjection = new
+        {
+            kind = GetRequiredString(root, "Intent"),
+            summary = GetRequiredString(root, "Summary"),
+            source = "intent-inference-agent",
+        };
+        return true;
+    }
+    catch (Exception ex)
+    {
+        errorMessage = $"rfs trace-slice-proposal: failed to project intent result: {ex.Message}";
+        return false;
+    }
 }

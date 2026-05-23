@@ -12,6 +12,12 @@ public sealed record RckInteractionRecord
 
     public string AnswerSummary { get; }
 
+    public RckInteractionPipelineSummary? PipelineSummary { get; }
+
+    public string? Provider { get; }
+
+    public string? Model { get; }
+
     public IReadOnlyList<RckInteractionTool> Tools { get; }
 
     private RckInteractionRecord(
@@ -19,6 +25,9 @@ public sealed record RckInteractionRecord
         string prompt,
         string answer,
         string answerSummary,
+        RckInteractionPipelineSummary? pipelineSummary,
+        string? provider,
+        string? model,
         IReadOnlyList<RckInteractionTool> tools)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mode);
@@ -28,20 +37,30 @@ public sealed record RckInteractionRecord
         Prompt = prompt;
         Answer = answer ?? string.Empty;
         AnswerSummary = answerSummary;
+        PipelineSummary = pipelineSummary;
+        Provider = provider;
+        Model = model;
         Tools = tools;
     }
 
     public static RckInteractionRecord CreateAsk(string prompt, string answer)
     {
         var summary = CreateAnswerSummary(answer);
-        return new RckInteractionRecord("ask", prompt, answer, summary, Array.Empty<RckInteractionTool>());
+        return new RckInteractionRecord("ask", prompt, answer, summary, null, null, null, Array.Empty<RckInteractionTool>());
     }
 
     public static RckInteractionRecord CreateAgent(string prompt, string answer, IEnumerable<RckInteractionTool>? tools = null)
     {
         var summary = CreateAnswerSummary(answer);
         var recordedTools = tools?.ToArray() ?? Array.Empty<RckInteractionTool>();
-        return new RckInteractionRecord("agent", prompt, answer, summary, recordedTools);
+        return new RckInteractionRecord("agent", prompt, answer, summary, null, null, null, recordedTools);
+    }
+
+    public static RckInteractionRecord CreateTuiDirect(string prompt, string answer, string? provider = null, string? model = null)
+    {
+        var summary = CreateAnswerSummary(answer);
+        var pipelineSummary = new RckInteractionPipelineSummary("direct", usesRckContext: false, usesTraceSlice: false, usesContextPack: false, validationStatus: null);
+        return new RckInteractionRecord("tui-direct", prompt, answer, summary, pipelineSummary, provider, model, Array.Empty<RckInteractionTool>());
     }
 
     private static string CreateAnswerSummary(string answer)

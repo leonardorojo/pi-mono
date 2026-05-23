@@ -1,3 +1,4 @@
+using Rufus.Cli.PiIntegration;
 using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.Tui;
@@ -5,9 +6,10 @@ namespace Rufus.Cli.Tui;
 internal static class RfsTuiSession
 {
     public static int Run(string? startingDirectory = null)
-    {
-        var inputDirectory = startingDirectory ?? Directory.GetCurrentDirectory();
+        => RunAsync(startingDirectory ?? Directory.GetCurrentDirectory()).GetAwaiter().GetResult();
 
+    private static async Task<int> RunAsync(string inputDirectory)
+    {
         RckWorkspaceStatus status;
         try
         {
@@ -41,7 +43,7 @@ internal static class RfsTuiSession
         }
 
         RenderHeader(status, RckWorkspaceModelConfigStore.TryReadDefaultModel(status.RepoRoot));
-        RunPromptLoop(status.RepoRoot);
+        await RunPromptLoopAsync(status.RepoRoot);
         return 0;
     }
 
@@ -75,7 +77,7 @@ internal static class RfsTuiSession
         Console.WriteLine();
     }
 
-    private static void RunPromptLoop(string repoRoot)
+    private static async Task RunPromptLoopAsync(string repoRoot)
     {
         Console.CancelKeyPress += HandleCancelKeyPress;
         try
@@ -112,7 +114,7 @@ internal static class RfsTuiSession
                     continue;
                 }
 
-                if (RunPromptModeSelection(input))
+                if (await RunPromptModeSelectionAsync(input, repoRoot))
                 {
                     break;
                 }
@@ -124,7 +126,7 @@ internal static class RfsTuiSession
         }
     }
 
-    private static bool RunPromptModeSelection(string prompt)
+    private static async Task<bool> RunPromptModeSelectionAsync(string prompt, string repoRoot)
     {
         RenderModeSelectionMenu();
 
@@ -153,8 +155,7 @@ internal static class RfsTuiSession
             switch (selection)
             {
                 case RfsTuiModeSelection.Direct:
-                    RenderModeSelectionStub("Direct mode", prompt, "PT5");
-                    return false;
+                    return await RunDirectModeAsync(repoRoot, prompt);
                 case RfsTuiModeSelection.Simple:
                     RenderModeSelectionStub("Simple mode", prompt, "PT6");
                     return false;
@@ -174,6 +175,63 @@ internal static class RfsTuiSession
                     break;
             }
         }
+    }
+
+    private static async Task<bool> RunDirectModeAsync(string repoRoot, string prompt)
+    {
+        Console.WriteLine("[Direct mode]");
+        Console.WriteLine();
+
+        var askJsonResult = await PiJsonEventRunner.RunAskAsync(
+            repoRoot,
+            prompt,
+            RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot));
+
+        if (!askJsonResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(askJsonResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(askJsonResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine("Respuesta:");
+        Console.WriteLine("────────────────────────────────────────────");
+
+        if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
+        {
+            Console.WriteLine("(no assistant output)");
+        }
+        else
+        {
+            foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
+            {
+                Console.WriteLine(answerLine);
+            }
+        }
+
+        var recordResult = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(prompt, askJsonResult.Answer, askJsonResult.Provider, askJsonResult.Model),
+            repoRoot);
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("State created:");
+        Console.WriteLine($"  {recordResult.StateId?.ToString() ?? "(unknown)"}");
+        Console.WriteLine("Delta created:");
+        Console.WriteLine($"  {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
+
+        return false;
     }
 
     private static void RenderModeSelectionMenu()

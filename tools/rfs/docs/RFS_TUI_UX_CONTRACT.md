@@ -1,6 +1,6 @@
 # RFS TUI UX Contract
 
-PT3 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and clear stubs for Direct / Simple / Complete / Plan. PT4 defines the finalized TUI recording contract for the main-LLM response path.
+PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path.
 
 ## 1. North Star
 

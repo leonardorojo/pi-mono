@@ -2,14 +2,12 @@
 
 ## Status
 
-PT4.
-Design-only.
-No runtime changes in this phase.
+PT5.
+Implemented.
+This document now describes the live direct-mode TUI recording shape.
 
 This document defines how a finalized TUI interaction is recorded once the main LLM responds.
-It does not implement recording.
 It does not touch `Rufus.RCK.Core`.
-It does not write RCK.
 It does not introduce a new Core payload.
 
 ## 1. Purpose

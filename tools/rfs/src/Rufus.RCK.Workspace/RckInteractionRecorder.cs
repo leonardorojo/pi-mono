@@ -20,6 +20,9 @@ public static class RckInteractionRecorder
         string? startingDirectory = null)
         => Record(RckInteractionRecord.CreateAgent(prompt, answer, tools), startingDirectory);
 
+    public static RckInteractionRecordResult RecordTui(RckTuiInteractionRecordInput input, string? startingDirectory = null)
+        => Record(RckInteractionRecord.CreateTuiDirect(input.Prompt, input.Answer, input.Provider, input.Model), startingDirectory);
+
     public static RckInteractionRecordResult Record(RckInteractionRecord record, string? startingDirectory = null)
     {
         var repoRoot = FindRepoRoot(startingDirectory ?? Directory.GetCurrentDirectory());
@@ -159,7 +162,20 @@ public static class RckInteractionRecorder
             {
                 mode = record.Mode,
                 prompt = record.Prompt,
+                answer = record.Answer,
                 answerSummary = record.AnswerSummary,
+                provider = record.Provider,
+                model = record.Model,
+                pipelineSummary = record.PipelineSummary is null
+                    ? null
+                    : new
+                    {
+                        kind = record.PipelineSummary.Kind,
+                        usesRckContext = record.PipelineSummary.UsesRckContext,
+                        usesTraceSlice = record.PipelineSummary.UsesTraceSlice,
+                        usesContextPack = record.PipelineSummary.UsesContextPack,
+                        validationStatus = record.PipelineSummary.ValidationStatus,
+                    },
             },
             git = new
             {
@@ -205,6 +221,16 @@ public static class RckInteractionRecorder
             });
         }
 
+        if (record.PipelineSummary is not null)
+        {
+            changes.Add(new
+            {
+                path = "/interaction/pipelineSummary",
+                kind = "updated",
+                summary = "Captured the direct TUI pipeline summary.",
+            });
+        }
+
         var tools = record.Mode == "agent"
             ? record.Tools.Select(tool => new
             {
@@ -240,6 +266,18 @@ public static class RckInteractionRecorder
                 mode = record.Mode,
                 prompt = record.Prompt,
                 answer = record.AnswerSummary,
+                provider = record.Provider,
+                model = record.Model,
+                pipelineSummary = record.PipelineSummary is null
+                    ? null
+                    : new
+                    {
+                        kind = record.PipelineSummary.Kind,
+                        usesRckContext = record.PipelineSummary.UsesRckContext,
+                        usesTraceSlice = record.PipelineSummary.UsesTraceSlice,
+                        usesContextPack = record.PipelineSummary.UsesContextPack,
+                        validationStatus = record.PipelineSummary.ValidationStatus,
+                    },
             },
             evidence = new
             {
@@ -460,6 +498,7 @@ public static class RckInteractionRecorder
         => mode switch
         {
             "agent" => "rfs agent --record",
+            "tui-direct" => "rfs tui --record",
             _ => "rfs ask --record",
         };
 

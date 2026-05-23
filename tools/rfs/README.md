@@ -11,7 +11,7 @@ Canonical TUI recording reference: [`docs/RFS_TUI_RECORDING_CONTRACT.md`](docs/R
 
 Short version:
 
-- `rfs` with no arguments enters the RFS TUI session.
+- `rfs` with no arguments enters the RFS TUI session, including the live Direct mode path.
 - Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`.
 - Deterministic baseline pipeline: `rfs trace-slice "<prompt>"` -> `rfs context-pack --trace-slice "<prompt>"`.
 - Governed deterministic pipeline: `rfs trace-slice-proposal "<prompt>"` -> `rfs trace-slice-validate "<prompt>"` -> `rfs context-pack --trace-slice-validated "<prompt>"`.
@@ -19,7 +19,7 @@ Short version:
 - Experimental / diagnostic commands: `rfs ask-json`, `rfs agent-json`, `rfs trace-slice-proposal`, `rfs trace-slice-validate`, `rfs trace-slice-proposal-llm`, `rfs trace-slice-validate-llm`, `rfs context-pack --trace-slice-validated`.
 - Legacy current commands: `rfs agent`, `rfs agent --record`.
 - RCK writers: `rfs ask --record`, `rfs intent --record`, `rfs agent --record`.
-- The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT4 defines the final-response recording contract, but runtime auto-record still remains pending.
+- The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI.
 - Do not confuse proposal with the final TraceSlice, or TraceSlice with ContextPack.
 - Do not add new commands before closing the current cycle.
 

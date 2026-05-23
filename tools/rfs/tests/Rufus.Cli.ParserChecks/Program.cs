@@ -160,17 +160,8 @@ await RunContextPackTraceSliceValidatedCliCaseAsync(
 
 RunRfsTuiModeSelectionParserCases(failures);
 
-await RunRfsTuiPromptModeSelectionSessionCaseAsync(
-    name: "bare rfs prompt selects direct mode stub",
-    prompt: "Implement reset board action",
-    input: "Implement reset board action\n1\n/exit\n",
-    expectedFragments: new[]
-    {
-        "¿Cómo querés procesar este prompt?",
-        "[Direct mode]",
-        "Mode execution will be implemented in PT5.",
-    },
-    expectPromptEcho: true,
+await RunRckTuiDirectRecordingCaseAsync(
+    name: "tui direct recording stores direct pipeline summary",
     failures);
 
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
@@ -365,7 +356,7 @@ static async Task RunCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -513,7 +504,7 @@ static async Task RunTraceSliceCliCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -701,7 +692,7 @@ static async Task RunTraceSliceValidateCliCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -1028,7 +1019,7 @@ static async Task RunTraceSliceProposalCliCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -1244,7 +1235,7 @@ static async Task RunTraceSliceProposalLlmCliCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -1432,7 +1423,7 @@ static async Task RunTraceSliceValidateLlmCliCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -2026,7 +2017,7 @@ static async Task RunContextPackTraceSliceCliCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -2202,7 +2193,7 @@ static async Task RunContextPackTraceSliceValidatedCliCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -2297,7 +2288,7 @@ static async Task RunIntentInferenceCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
 }
 
@@ -2348,7 +2339,7 @@ static async Task RunIntentInferenceFailureCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
 }
 
@@ -2433,7 +2424,7 @@ static async Task RunIntentCliCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
 }
 
@@ -2524,7 +2515,7 @@ static async Task RunRfsTuiPromptModeSelectionSessionCaseAsync(
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -2606,7 +2597,7 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -2689,7 +2680,7 @@ static async Task RunRfsTuiAutoInitSessionCaseAsync(string name, List<string> fa
     }
     catch (Exception ex)
     {
-        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+        failures.Add($"[{name}] threw {ex}");
     }
     finally
     {
@@ -2700,5 +2691,135 @@ static async Task RunRfsTuiAutoInitSessionCaseAsync(string name, List<string> fa
         catch
         {
         }
+    }
+}
+
+static async Task RunRckTuiDirectRecordingCaseAsync(string name, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-direct-recording-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var recordResult = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(
+                "Respond with one short sentence confirming TUI direct mode works.",
+                "Direct mode works.",
+                provider: "test-provider",
+                model: "test-model"),
+            tempRoot);
+
+        if (!recordResult.Success)
+        {
+            failures.Add($"[{name}] expected RecordTui to succeed but got error: {recordResult.ErrorMessage}");
+            return;
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfter.StateCount != statusBefore.StateCount + 1)
+        {
+            failures.Add($"[{name}] expected state count to increase by 1 but changed from {statusBefore.StateCount} to {statusAfter.StateCount}.");
+        }
+
+        if (statusAfter.DeltaCount != statusBefore.DeltaCount + 1)
+        {
+            failures.Add($"[{name}] expected delta count to increase by 1 but changed from {statusBefore.DeltaCount} to {statusAfter.DeltaCount}.");
+        }
+
+        var headPath = Path.Combine(tempRoot, ".rfs", "rck", "HEAD");
+        var headText = File.ReadAllText(headPath).Trim();
+        if (!string.Equals(headText, recordResult.StateId?.ToString(), StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected HEAD to match the recorded state id but found '{headText}' and '{recordResult.StateId}'.");
+        }
+
+        var statePath = Path.Combine(tempRoot, ".rfs", "rck", "states", $"{recordResult.StateId}.json");
+        var stateJson = File.ReadAllText(statePath);
+        using var stateDocument = JsonDocument.Parse(stateJson);
+        var stateRoot = stateDocument.RootElement;
+        var payloadJson = stateRoot.GetProperty("payloadCanonicalJson").GetString() ?? string.Empty;
+        using var payloadDocument = JsonDocument.Parse(payloadJson);
+        var payloadRoot = payloadDocument.RootElement;
+        var interaction = payloadRoot.GetProperty("interaction");
+
+        AssertStringEqual(name, failures, "interaction.type", "rufus.interaction-state", payloadRoot.GetProperty("type").GetString());
+        AssertStringEqual(name, failures, "interaction.mode", "tui-direct", interaction.GetProperty("mode").GetString());
+        AssertStringEqual(name, failures, "interaction.prompt", "Respond with one short sentence confirming TUI direct mode works.", interaction.GetProperty("prompt").GetString());
+        AssertStringEqual(name, failures, "interaction.answer", "Direct mode works.", interaction.GetProperty("answer").GetString());
+        AssertStringEqual(name, failures, "interaction.answerSummary", "Direct mode works.", interaction.GetProperty("answerSummary").GetString());
+        AssertStringEqual(name, failures, "interaction.pipelineSummary.kind", "direct", interaction.GetProperty("pipelineSummary").GetProperty("kind").GetString());
+        AssertBooleanEqual(name, failures, "interaction.pipelineSummary.usesRckContext", false, interaction.GetProperty("pipelineSummary").GetProperty("usesRckContext").GetBoolean());
+        AssertBooleanEqual(name, failures, "interaction.pipelineSummary.usesTraceSlice", false, interaction.GetProperty("pipelineSummary").GetProperty("usesTraceSlice").GetBoolean());
+        AssertBooleanEqual(name, failures, "interaction.pipelineSummary.usesContextPack", false, interaction.GetProperty("pipelineSummary").GetProperty("usesContextPack").GetBoolean());
+
+        if (!interaction.TryGetProperty("provider", out var providerElement) || providerElement.GetString() != "test-provider")
+        {
+            failures.Add($"[{name}] expected interaction.provider to be 'test-provider'.");
+        }
+
+        if (!interaction.TryGetProperty("model", out var modelElement) || modelElement.GetString() != "test-model")
+        {
+            failures.Add($"[{name}] expected interaction.model to be 'test-model'.");
+        }
+
+        var deltaPath = Path.Combine(tempRoot, ".rfs", "rck", "deltas", $"{recordResult.DeltaId}.json");
+        var deltaJson = File.ReadAllText(deltaPath);
+        using var deltaDocument = JsonDocument.Parse(deltaJson);
+        var deltaRoot = deltaDocument.RootElement;
+        var ops = deltaRoot.GetProperty("ops");
+        var firstOp = ops[0];
+        var valueJson = firstOp.GetProperty("valueJson").GetString() ?? string.Empty;
+        using var deltaPayloadDocument = JsonDocument.Parse(valueJson);
+        var deltaPayloadRoot = deltaPayloadDocument.RootElement;
+        var cause = deltaPayloadRoot.GetProperty("cause");
+        AssertStringEqual(name, failures, "delta.cause.mode", "tui-direct", cause.GetProperty("mode").GetString());
+        AssertStringEqual(name, failures, "delta.cause.pipelineSummary.kind", "direct", cause.GetProperty("pipelineSummary").GetProperty("kind").GetString());
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static void AssertStringEqual(string name, List<string> failures, string field, string expected, string? actual)
+{
+    if (!string.Equals(expected, actual, StringComparison.Ordinal))
+    {
+        failures.Add($"[{name}] expected {field} to equal '{expected}' but found '{actual}'.");
+    }
+}
+
+static void AssertBooleanEqual(string name, List<string> failures, string field, bool expected, bool actual)
+{
+    if (expected != actual)
+    {
+        failures.Add($"[{name}] expected {field} to equal '{expected}' but found '{actual}'.");
     }
 }

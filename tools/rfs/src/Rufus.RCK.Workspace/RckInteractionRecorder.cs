@@ -29,7 +29,11 @@ public static class RckInteractionRecorder
                 usesRckContext: true,
                 usesTraceSlice: false,
                 usesContextPack: false,
-                validationStatus: null);
+                validationStatus: null,
+                modelBudgetTokens: null,
+                contextUsageRatio: null,
+                transportSizeChars: null,
+                transportRisk: null);
 
             return Record(RckInteractionRecord.CreateTuiSimple(input.Prompt, input.Answer, simplePipelineSummary, input.Provider, input.Model), startingDirectory);
         }
@@ -42,7 +46,11 @@ public static class RckInteractionRecorder
                 usesTraceSlice: false,
                 usesContextPack: false,
                 validationStatus: null,
-                contextMode: "simple");
+                contextMode: "simple",
+                modelBudgetTokens: null,
+                contextUsageRatio: null,
+                transportSizeChars: null,
+                transportRisk: null);
 
             return Record(RckInteractionRecord.CreateTuiPlan(input.Prompt, input.Answer, planPipelineSummary, input.Provider, input.Model), startingDirectory);
         }
@@ -54,7 +62,11 @@ public static class RckInteractionRecorder
                 usesRckContext: true,
                 usesTraceSlice: true,
                 usesContextPack: true,
-                validationStatus: null);
+                validationStatus: null,
+                modelBudgetTokens: null,
+                contextUsageRatio: null,
+                transportSizeChars: null,
+                transportRisk: null);
 
             return Record(RckInteractionRecord.CreateTuiComplete(input.Prompt, input.Answer, completePipelineSummary, input.Provider, input.Model), startingDirectory);
         }
@@ -337,6 +349,10 @@ public static class RckInteractionRecorder
             artifactRefCount = pipelineSummary.ArtifactRefCount,
             estimatedChars = pipelineSummary.EstimatedChars,
             estimatedTokens = pipelineSummary.EstimatedTokens,
+            modelBudgetTokens = pipelineSummary.ModelBudgetTokens,
+            contextUsageRatio = pipelineSummary.ContextUsageRatio,
+            transportSizeChars = pipelineSummary.TransportSizeChars,
+            transportRisk = pipelineSummary.TransportRisk,
             truncated = pipelineSummary.Truncated,
             warnings = pipelineSummary.Warnings,
             omissions = pipelineSummary.Omissions,

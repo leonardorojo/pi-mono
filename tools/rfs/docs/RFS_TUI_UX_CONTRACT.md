@@ -1,6 +1,6 @@
 # RFS TUI UX Contract
 
-PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the Simple Context contract for Simple mode, PT7 implements the live Simple mode path on top of that contract, PT8 implements the live Complete mode path on top of proposal/validation/context-pack reuse, and PT9 implements the live Plan mode path on top of Simple Context reuse.
+PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the Simple Context contract for Simple mode, PT7 implements the live Simple mode path on top of that contract, PT8 implements the live Complete mode path on top of proposal/validation/context-pack reuse, PT9 implements the live Plan mode path on top of Simple Context reuse, and PT9.5 adds context budget usage reporting without changing transport behavior.
 
 ## 1. North Star
 
@@ -209,6 +209,37 @@ Characteristics:
 - does not create commits
 - does not run an autonomous writing agent
 - is for planning only
+
+### 5.5 Context budget usage reporting
+
+Simple, Complete, and Plan modes now surface a small context-usage report when they build a context:
+
+- estimated chars
+- estimated tokens
+- model budget, when a clean source exists
+- context usage ratio, when a budget exists
+- transport size in chars
+- transport risk heuristic: low / medium / high
+- truncated
+
+Context window usage and process-argument transport risk are different problems.
+The model may have a large window and still fail if the OS argument length limit is exceeded.
+
+Current PT9.5 behavior:
+
+- report `model budget: unknown` when no clean budget source exists in repo metadata
+- report `context usage: unknown` when budget is unknown
+- keep transport risk as a simple char-based heuristic
+- do not change transport, prompt passing, or pipeline behavior yet
+
+Future mitigations remain out of scope for PT9.5:
+
+- pass prompt by stdin
+- pass prompt through a controlled temporary file
+- compact the ContextPack
+- warn before transport overflow
+- degrade Complete to Simple when needed
+- add per-model budget metadata in config
 
 ## 6. Automatic recording
 

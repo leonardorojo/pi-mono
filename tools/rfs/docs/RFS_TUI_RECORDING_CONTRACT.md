@@ -160,6 +160,10 @@ PT7 uses this shape after building Simple Context v0 and receiving the main-LLM 
 - `artifactRefCount`
 - `estimatedChars`
 - `estimatedTokens`
+- `modelBudgetTokens` when available
+- `contextUsageRatio` when available
+- `transportSizeChars`
+- `transportRisk`
 - `truncated`
 - `contextSummary`
 
@@ -175,12 +179,26 @@ PT7 uses this shape after building Simple Context v0 and receiving the main-LLM 
 - `selectedDeltaIds`
 - `selectedAnchorIds`
 - `materializationPolicy`
+- `estimatedChars`
+- `estimatedTokens`
+- `modelBudgetTokens` when available
+- `contextUsageRatio` when available
+- `transportSizeChars`
+- `transportRisk`
+- `truncated`
 - warnings and errors summarized if needed
 
 ### `tui-plan`
 
 - `pipelineKind = plan`
 - `contextMode = simple`
+- `estimatedChars`
+- `estimatedTokens`
+- `modelBudgetTokens` when available
+- `contextUsageRatio` when available
+- `transportSizeChars`
+- `transportRisk`
+- `truncated`
 - concise plan captured in `answerSummary`
 - no code changes
 - no patch applied
@@ -206,9 +224,9 @@ Minimum conceptual fields:
 Mode-specific additions:
 
 - direct: only a short summary of the single-shot response path
-- simple: recent interaction count, selected ids, artifact ref count, estimated budget, and truncation status
-- complete: intent, proposal, validation, trace-slice selection, context-pack scope, and materialization policy summaries
-- plan: concise plan summary in `answerSummary` plus the chosen context mode
+- simple: recent interaction count, selected ids, artifact ref count, estimated budget, truncation status, and optional budget/transport heuristics
+- complete: intent, proposal, validation, trace-slice selection, context-pack scope, materialization policy summaries, and optional budget/transport heuristics
+- plan: concise plan summary in `answerSummary`, the chosen context mode, and optional budget/transport heuristics
 
 Do not store:
 

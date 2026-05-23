@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Rufus.Cli.PiIntegration;
 using Rufus.RCK.Workspace;
@@ -182,13 +183,22 @@ internal static class RfsTuiSession
 
         var simpleContextBuildResult = RckSimpleContextBuilder.Build(repoRoot, prompt);
         var simpleContext = simpleContextBuildResult.Context;
+        var contextUsageReport = BuildContextUsageReport(
+            simpleContext.Budget.EstimatedChars,
+            simpleContext.Budget.EstimatedTokens,
+            modelBudgetTokens: null,
+            simpleContext.Budget.Truncated);
 
         Console.WriteLine($"  recent interactions: {simpleContext.RecentInteractions.Count}");
         Console.WriteLine($"  anchors: {simpleContext.Anchors.Count}");
         Console.WriteLine($"  artifacts: {simpleContext.Artifacts.Count}");
-        Console.WriteLine($"  estimated chars: {simpleContext.Budget.EstimatedChars}");
-        Console.WriteLine($"  estimated tokens: {simpleContext.Budget.EstimatedTokens}");
-        Console.WriteLine($"  truncated: {simpleContext.Budget.Truncated.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"  estimated chars: {contextUsageReport.EstimatedChars}");
+        Console.WriteLine($"  estimated tokens: {contextUsageReport.EstimatedTokens}");
+        Console.WriteLine($"  model budget: {FormatNullableInt(contextUsageReport.ModelBudgetTokens)}");
+        Console.WriteLine($"  context usage: {FormatNullablePercentage(contextUsageReport.ContextUsageRatio)}");
+        Console.WriteLine($"  transport size: {contextUsageReport.TransportSizeChars} chars");
+        Console.WriteLine($"  transport risk: {contextUsageReport.TransportRisk}");
+        Console.WriteLine($"  truncated: {contextUsageReport.Truncated.ToString().ToLowerInvariant()}");
 
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(
             repoRoot,
@@ -231,9 +241,13 @@ internal static class RfsTuiSession
             selectedDeltaIds: simpleContext.RecentInteractions.Where(interaction => !string.IsNullOrWhiteSpace(interaction.DeltaId)).Select(interaction => interaction.DeltaId!).ToArray(),
             selectedAnchorIds: simpleContext.Anchors.Select(anchor => anchor.Id).ToArray(),
             artifactRefCount: simpleContext.Artifacts.Count,
-            estimatedChars: simpleContext.Budget.EstimatedChars,
-            estimatedTokens: simpleContext.Budget.EstimatedTokens,
-            truncated: simpleContext.Budget.Truncated,
+            estimatedChars: contextUsageReport.EstimatedChars,
+            estimatedTokens: contextUsageReport.EstimatedTokens,
+            modelBudgetTokens: contextUsageReport.ModelBudgetTokens,
+            contextUsageRatio: contextUsageReport.ContextUsageRatio,
+            transportSizeChars: contextUsageReport.TransportSizeChars,
+            transportRisk: contextUsageReport.TransportRisk,
+            truncated: contextUsageReport.Truncated,
             omissions: simpleContextBuildResult.Omissions.ToArray());
 
         var recordResult = RckInteractionRecorder.RecordTui(
@@ -332,6 +346,11 @@ internal static class RfsTuiSession
         Console.WriteLine();
 
         var completeResult = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot);
+        var completeContextUsageReport = BuildContextUsageReport(
+            completeResult.EstimatedChars,
+            completeResult.EstimatedTokens,
+            modelBudgetTokens: null,
+            completeResult.Truncated);
         if (!completeResult.Success || string.IsNullOrWhiteSpace(completeResult.PromptToSend))
         {
             if (!string.IsNullOrWhiteSpace(completeResult.ErrorMessage))
@@ -351,6 +370,10 @@ internal static class RfsTuiSession
         Console.WriteLine($"  artifact refs: {completeResult.ArtifactRefCount}");
         Console.WriteLine($"  estimated chars: {completeResult.EstimatedChars}");
         Console.WriteLine($"  estimated tokens: {completeResult.EstimatedTokens}");
+        Console.WriteLine($"  model budget: {FormatNullableInt(completeContextUsageReport.ModelBudgetTokens)}");
+        Console.WriteLine($"  context usage: {FormatNullablePercentage(completeContextUsageReport.ContextUsageRatio)}");
+        Console.WriteLine($"  transport size: {completeContextUsageReport.TransportSizeChars} chars");
+        Console.WriteLine($"  transport risk: {completeContextUsageReport.TransportRisk}");
         Console.WriteLine($"  truncated: {completeResult.Truncated.ToString().ToLowerInvariant()}");
 
         if (completeResult.Warnings.Count > 0)
@@ -420,9 +443,13 @@ internal static class RfsTuiSession
             selectedDeltaIds: completeResult.SelectedDeltaIds,
             selectedAnchorIds: completeResult.SelectedAnchorIds,
             artifactRefCount: completeResult.ArtifactRefCount,
-            estimatedChars: completeResult.EstimatedChars,
-            estimatedTokens: completeResult.EstimatedTokens,
-            truncated: completeResult.Truncated,
+            estimatedChars: completeContextUsageReport.EstimatedChars,
+            estimatedTokens: completeContextUsageReport.EstimatedTokens,
+            modelBudgetTokens: completeContextUsageReport.ModelBudgetTokens,
+            contextUsageRatio: completeContextUsageReport.ContextUsageRatio,
+            transportSizeChars: completeContextUsageReport.TransportSizeChars,
+            transportRisk: completeContextUsageReport.TransportRisk,
+            truncated: completeContextUsageReport.Truncated,
             warnings: completeResult.Warnings,
             omissions: completeResult.Omissions);
 
@@ -461,6 +488,11 @@ internal static class RfsTuiSession
 
         var simpleContextBuildResult = RckSimpleContextBuilder.Build(repoRoot, prompt);
         var simpleContext = simpleContextBuildResult.Context;
+        var contextUsageReport = BuildContextUsageReport(
+            simpleContext.Budget.EstimatedChars,
+            simpleContext.Budget.EstimatedTokens,
+            modelBudgetTokens: null,
+            simpleContext.Budget.Truncated);
         var planPromptToSend = BuildPlanPromptToSend(simpleContext);
 
         var recentInteractionCount = simpleContext.RecentInteractions.Count;
@@ -472,9 +504,13 @@ internal static class RfsTuiSession
         Console.WriteLine($"  recent interactions: {recentInteractionCount}");
         Console.WriteLine($"  anchors: {selectedAnchorIds.Length}");
         Console.WriteLine($"  artifacts: {simpleContext.Artifacts.Count}");
-        Console.WriteLine($"  estimated chars: {simpleContext.Budget.EstimatedChars}");
-        Console.WriteLine($"  estimated tokens: {simpleContext.Budget.EstimatedTokens}");
-        Console.WriteLine($"  truncated: {simpleContext.Budget.Truncated.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"  estimated chars: {contextUsageReport.EstimatedChars}");
+        Console.WriteLine($"  estimated tokens: {contextUsageReport.EstimatedTokens}");
+        Console.WriteLine($"  model budget: {FormatNullableInt(contextUsageReport.ModelBudgetTokens)}");
+        Console.WriteLine($"  context usage: {FormatNullablePercentage(contextUsageReport.ContextUsageRatio)}");
+        Console.WriteLine($"  transport size: {contextUsageReport.TransportSizeChars} chars");
+        Console.WriteLine($"  transport risk: {contextUsageReport.TransportRisk}");
+        Console.WriteLine($"  truncated: {contextUsageReport.Truncated.ToString().ToLowerInvariant()}");
 
         if (simpleContextBuildResult.Warnings.Count > 0)
         {
@@ -538,9 +574,13 @@ internal static class RfsTuiSession
             selectedDeltaIds: selectedDeltaIds,
             selectedAnchorIds: selectedAnchorIds,
             artifactRefCount: simpleContext.Artifacts.Count,
-            estimatedChars: simpleContext.Budget.EstimatedChars,
-            estimatedTokens: simpleContext.Budget.EstimatedTokens,
-            truncated: simpleContext.Budget.Truncated,
+            estimatedChars: contextUsageReport.EstimatedChars,
+            estimatedTokens: contextUsageReport.EstimatedTokens,
+            modelBudgetTokens: contextUsageReport.ModelBudgetTokens,
+            contextUsageRatio: contextUsageReport.ContextUsageRatio,
+            transportSizeChars: contextUsageReport.TransportSizeChars,
+            transportRisk: contextUsageReport.TransportRisk,
+            truncated: contextUsageReport.Truncated,
             warnings: simpleContextBuildResult.Warnings,
             omissions: simpleContextBuildResult.Omissions);
 
@@ -571,6 +611,21 @@ internal static class RfsTuiSession
 
         return false;
     }
+
+    private static RckContextUsageReport BuildContextUsageReport(
+        int estimatedChars,
+        int estimatedTokens,
+        int? modelBudgetTokens,
+        bool truncated)
+    {
+        return RckContextUsageEstimator.Create(estimatedChars, estimatedTokens, modelBudgetTokens, truncated);
+    }
+
+    private static string FormatNullableInt(int? value)
+        => value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "unknown";
+
+    private static string FormatNullablePercentage(double? value)
+        => value.HasValue ? value.Value.ToString("P1", CultureInfo.InvariantCulture) : "unknown";
 
     private static string BuildPlanPromptToSend(RckSimpleContext simpleContext)
     {

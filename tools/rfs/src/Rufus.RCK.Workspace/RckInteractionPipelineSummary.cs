@@ -42,6 +42,14 @@ public sealed record RckInteractionPipelineSummary
 
     public int? EstimatedTokens { get; }
 
+    public int? ModelBudgetTokens { get; }
+
+    public double? ContextUsageRatio { get; }
+
+    public int? TransportSizeChars { get; }
+
+    public string? TransportRisk { get; }
+
     public bool? Truncated { get; }
 
     public IReadOnlyList<string>? Warnings { get; }
@@ -69,6 +77,10 @@ public sealed record RckInteractionPipelineSummary
         int? artifactRefCount = null,
         int? estimatedChars = null,
         int? estimatedTokens = null,
+        int? modelBudgetTokens = null,
+        double? contextUsageRatio = null,
+        int? transportSizeChars = null,
+        string? transportRisk = null,
         bool? truncated = null,
         IReadOnlyList<string>? warnings = null,
         IReadOnlyList<string>? omissions = null)
@@ -95,6 +107,10 @@ public sealed record RckInteractionPipelineSummary
         ArtifactRefCount = artifactRefCount;
         EstimatedChars = estimatedChars;
         EstimatedTokens = estimatedTokens;
+        ModelBudgetTokens = modelBudgetTokens;
+        ContextUsageRatio = contextUsageRatio;
+        TransportSizeChars = transportSizeChars;
+        TransportRisk = transportRisk;
         Truncated = truncated;
         Warnings = warnings;
         Omissions = omissions;

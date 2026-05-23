@@ -2901,6 +2901,10 @@ static async Task RunRfsTuiSimpleModeRecordingSessionCaseAsync(string name, stri
                 "artifacts:",
                 "estimated chars:",
                 "estimated tokens:",
+                "model budget:",
+                "context usage:",
+                "transport size:",
+                "transport risk:",
                 "truncated:",
                 "Respuesta:",
                 "State created:",
@@ -2997,6 +3001,27 @@ static async Task RunRfsTuiSimpleModeRecordingSessionCaseAsync(string name, stri
             {
                 failures.Add($"[{name}] expected estimatedTokens to be populated.");
             }
+
+            if (!pipelineSummary.TryGetProperty("modelBudgetTokens", out var modelBudgetTokensElement) || modelBudgetTokensElement.ValueKind != JsonValueKind.Null)
+            {
+                failures.Add($"[{name}] expected modelBudgetTokens to be null when no budget source is available.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("contextUsageRatio", out var contextUsageRatioElement) || contextUsageRatioElement.ValueKind != JsonValueKind.Null)
+            {
+                failures.Add($"[{name}] expected contextUsageRatio to be null when no budget source is available.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("transportSizeChars", out var transportSizeCharsElement) || transportSizeCharsElement.GetInt32() <= 0)
+            {
+                failures.Add($"[{name}] expected transportSizeChars to be populated.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("transportRisk", out var transportRiskElement) || transportRiskElement.GetString() is not ("low" or "medium" or "high"))
+            {
+                failures.Add($"[{name}] expected transportRisk to be one of low, medium, or high.");
+            }
+
         }
         finally
         {
@@ -3111,6 +3136,10 @@ static async Task RunRfsTuiPlanModeRecordingSessionCaseAsync(string name, string
                 "artifacts:",
                 "estimated chars:",
                 "estimated tokens:",
+                "model budget:",
+                "context usage:",
+                "transport size:",
+                "transport risk:",
                 "truncated:",
                 "Respuesta:",
                 "State created:",
@@ -3217,6 +3246,46 @@ static async Task RunRfsTuiPlanModeRecordingSessionCaseAsync(string name, string
             if (!pipelineSummary.TryGetProperty("estimatedTokens", out var estimatedTokensElement) || estimatedTokensElement.GetInt32() <= 0)
             {
                 failures.Add($"[{name}] expected estimatedTokens to be populated.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("modelBudgetTokens", out var modelBudgetTokensElement) || modelBudgetTokensElement.ValueKind != JsonValueKind.Null)
+            {
+                failures.Add($"[{name}] expected modelBudgetTokens to be null when no budget source is available.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("contextUsageRatio", out var contextUsageRatioElement) || contextUsageRatioElement.ValueKind != JsonValueKind.Null)
+            {
+                failures.Add($"[{name}] expected contextUsageRatio to be null when no budget source is available.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("transportSizeChars", out var transportSizeCharsElement) || transportSizeCharsElement.GetInt32() <= 0)
+            {
+                failures.Add($"[{name}] expected transportSizeChars to be populated.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("transportRisk", out var transportRiskElement) || transportRiskElement.GetString() is not ("low" or "medium" or "high"))
+            {
+                failures.Add($"[{name}] expected transportRisk to be one of low, medium, or high.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("modelBudgetTokens", out var planModelBudgetTokensElement) || planModelBudgetTokensElement.ValueKind != JsonValueKind.Null)
+            {
+                failures.Add($"[{name}] expected modelBudgetTokens to be null when no budget source is available.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("contextUsageRatio", out var planContextUsageRatioElement) || planContextUsageRatioElement.ValueKind != JsonValueKind.Null)
+            {
+                failures.Add($"[{name}] expected contextUsageRatio to be null when no budget source is available.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("transportSizeChars", out var planTransportSizeCharsElement) || planTransportSizeCharsElement.GetInt32() <= 0)
+            {
+                failures.Add($"[{name}] expected transportSizeChars to be populated.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("transportRisk", out var planTransportRiskElement) || planTransportRiskElement.GetString() is not ("low" or "medium" or "high"))
+            {
+                failures.Add($"[{name}] expected transportRisk to be one of low, medium, or high.");
             }
 
             if (!interaction.TryGetProperty("provider", out var providerElement) || providerElement.GetString() != "test-provider")

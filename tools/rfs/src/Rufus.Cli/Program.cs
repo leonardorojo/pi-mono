@@ -6,9 +6,15 @@ using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.Agenting.TraceSlice;
 using Rufus.Cli.PiIntegration;
+using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
 
-if (args.Length == 0 || IsHelpCommand(args[0]))
+if (args.Length == 0)
+{
+    return RfsTuiSession.Run(Directory.GetCurrentDirectory());
+}
+
+if (IsHelpCommand(args[0]))
 {
     PrintHelp();
     return 0;
@@ -1223,6 +1229,7 @@ static void PrintHelp()
 {
     Console.WriteLine("rfs - Rufus CLI proof of concept");
     Console.WriteLine("Usage:");
+    Console.WriteLine("  rfs                = enter the RFS TUI session");
     Console.WriteLine("  rfs --version");
     Console.WriteLine("  rfs help");
     Console.WriteLine("  rfs init   = bootstrap .rfs + RCK genesis state/anchor");

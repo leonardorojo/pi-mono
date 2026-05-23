@@ -157,6 +157,14 @@ await RunContextPackTraceSliceValidatedCliCaseAsync(
     prompt: "Implement rfs show command",
     failures);
 
+await RunRfsTuiInitializedSessionCaseAsync(
+    name: "bare rfs enters tui and handles basic commands on initialized repo",
+    failures);
+
+await RunRfsTuiAutoInitSessionCaseAsync(
+    name: "bare rfs auto-initializes an empty repo and enters tui",
+    failures);
+
 if (failures.Count > 0)
 {
     foreach (var failure in failures)
@@ -443,7 +451,12 @@ static async Task RunTraceSliceCliCaseAsync(
     }
 }
 
-static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string workingDirectory, params string[] commandLine)
+static Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string workingDirectory, params string[] commandLine)
+{
+    return RunProcessAsyncWithInput(workingDirectory, null, commandLine);
+}
+
+static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsyncWithInput(string workingDirectory, string? standardInput, params string[] commandLine)
 {
     var startInfo = new ProcessStartInfo
     {
@@ -451,6 +464,7 @@ static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
         WorkingDirectory = workingDirectory,
         RedirectStandardOutput = true,
         RedirectStandardError = true,
+        RedirectStandardInput = standardInput is not null,
         UseShellExecute = false,
     };
 
@@ -465,8 +479,20 @@ static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
         return (-1, string.Empty, "failed to start process");
     }
 
+    Task? stdinTask = null;
+    if (standardInput is not null)
+    {
+        stdinTask = process.StandardInput.WriteAsync(standardInput);
+        process.StandardInput.Close();
+    }
+
     var stdoutTask = process.StandardOutput.ReadToEndAsync();
     var stderrTask = process.StandardError.ReadToEndAsync();
+    if (stdinTask is not null)
+    {
+        await stdinTask;
+    }
+
     await process.WaitForExitAsync();
     return (process.ExitCode, await stdoutTask, await stderrTask);
 }
@@ -2332,5 +2358,171 @@ static async Task RunIntentCliCaseAsync(
     catch (Exception ex)
     {
         failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+}
+
+
+static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-initialized-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/status\n/help\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        if (tuiResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+        }
+
+        var repoName = Path.GetFileName(Path.TrimEndingDirectorySeparator(tempRoot));
+        var requiredFragments = new[]
+        {
+            $"RFS · {repoName}",
+            "Model:",
+            "RCK: states",
+            "Git:",
+            "rfs status",
+            "Prompt processing modes will be implemented in later PT phases.",
+        };
+
+        foreach (var fragment in requiredFragments)
+        {
+            if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        if (tuiResult.Stdout.Contains("Workspace not initialized.", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected initialized session to skip auto-init messaging.");
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfter.StateCount != statusBefore.StateCount || statusAfter.DeltaCount != statusBefore.DeltaCount || statusAfter.AnchorCount != statusBefore.AnchorCount)
+        {
+            failures.Add($"[{name}] expected bare session to leave RCK counts unchanged.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunRfsTuiAutoInitSessionCaseAsync(string name, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-autoinit-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusBefore.Initialized)
+        {
+            failures.Add($"[{name}] expected the repo to start without an RFS workspace.");
+            return;
+        }
+
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        if (tuiResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+        }
+
+        var requiredFragments = new[]
+        {
+            "Workspace not initialized.",
+            "Initializing RFS workspace...",
+            "✓ .rfs created",
+            "✓ RCK initialized",
+            "✓ genesis state created",
+            "✓ genesis anchor created",
+            "Entering RFS session.",
+        };
+
+        foreach (var fragment in requiredFragments)
+        {
+            if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        if (!statusAfter.Initialized || statusAfter.StateCount < 1 || statusAfter.AnchorCount < 1)
+        {
+            failures.Add($"[{name}] expected auto-init to create the RFS workspace and genesis objects.");
+        }
+
+        var rfsRoot = Path.Combine(tempRoot, ".rfs");
+        var headPath = Path.Combine(rfsRoot, "rck", "HEAD");
+        if (!Directory.Exists(rfsRoot) || !File.Exists(headPath))
+        {
+            failures.Add($"[{name}] expected .rfs and .rck/HEAD to be created.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
     }
 }

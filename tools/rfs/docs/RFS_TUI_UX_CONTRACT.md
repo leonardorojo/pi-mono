@@ -1,5 +1,7 @@
 # RFS TUI UX Contract
 
+PT1 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, and `/status` / `/help` / `/exit` only.
+
 ## 1. North Star
 
 RFS debe ser una sesión cognitiva del repo.

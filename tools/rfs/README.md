@@ -10,6 +10,7 @@ Canonical TUI UX reference: [`docs/RFS_TUI_UX_CONTRACT.md`](docs/RFS_TUI_UX_CONT
 
 Short version:
 
+- `rfs` with no arguments enters the RFS TUI session.
 - Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`.
 - Deterministic baseline pipeline: `rfs trace-slice "<prompt>"` -> `rfs context-pack --trace-slice "<prompt>"`.
 - Governed deterministic pipeline: `rfs trace-slice-proposal "<prompt>"` -> `rfs trace-slice-validate "<prompt>"` -> `rfs context-pack --trace-slice-validated "<prompt>"`.

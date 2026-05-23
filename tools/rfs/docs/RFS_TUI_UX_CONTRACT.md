@@ -1,6 +1,6 @@
 # RFS TUI UX Contract
 
-PT3 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and clear stubs for Direct / Simple / Complete / Plan. PT4+ pipeline execution and State + Delta recording remain pending.
+PT3 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and clear stubs for Direct / Simple / Complete / Plan. PT4 defines the finalized TUI recording contract for the main-LLM response path.
 
 ## 1. North Star
 
@@ -215,17 +215,19 @@ Inside the TUI there is no question:
 
 Rule:
 
-- every processed interaction generates State + Delta automatically
+- every finalized interaction generates one State + one Delta automatically
+- the recording happens only when the main LLM responds
+- prompt entry, mode selection, and internal pipeline steps do not create intermediate persisted states
 
 Record at least:
 
 - prompt
 - selected mode
-- response
-- summary
+- final response summary
+- answer summary
 - git context
 - artifacts metadata
-- model or agent used
+- model or agent used, if available
 - context used, if applicable
 - validation summary, if applicable
 
@@ -243,6 +245,8 @@ Do record State/Delta for:
 - prompt + Simple
 - prompt + Completo
 - prompt + Plan
+
+PT4 recording contract details live in [`RFS_TUI_RECORDING_CONTRACT.md`](RFS_TUI_RECORDING_CONTRACT.md).
 
 ## 7. Anchors
 

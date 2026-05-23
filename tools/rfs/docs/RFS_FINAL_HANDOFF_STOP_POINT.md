@@ -7,10 +7,11 @@
   - working tree clean
   - `origin/feature/rufus-cli-design` updated
 - Current focus:
-  - PT0: RFS TUI UX Contract
+  - PT4: RFS TUI Recording Contract / Payload Audit
   - governed prompt -> Intent -> TraceSlice -> ContextPack pipeline remains documented as backend policy
+  - TUI final-response recording reuses the existing interaction payload family
 
-This document is the PT0 closeout note for the current documentation cycle.
+This document is the PT4 closeout note for the current documentation cycle.
 It is documentation-only.
 It does not add features.
 It does not add commands.
@@ -19,6 +20,7 @@ It does not touch `Rufus.RCK.Core`.
 It does not write RCK.
 
 The canonical TUI UX contract lives in `RFS_TUI_UX_CONTRACT.md`.
+The canonical TUI recording contract lives in `RFS_TUI_RECORDING_CONTRACT.md`.
 
 ## 2. North Star
 

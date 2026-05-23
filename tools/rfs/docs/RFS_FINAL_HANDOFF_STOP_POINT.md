@@ -7,15 +7,18 @@
   - working tree clean
   - `origin/feature/rufus-cli-design` updated
 - Current focus:
-  - RFS / RCK / TraceSlice / ContextPack pipeline governance
+  - PT0: RFS TUI UX Contract
+  - governed prompt -> Intent -> TraceSlice -> ContextPack pipeline remains documented as backend policy
 
-This document is the P24 closeout note for the current command-governance cycle.
+This document is the PT0 closeout note for the current documentation cycle.
 It is documentation-only.
 It does not add features.
 It does not add commands.
 It does not modify runtime behavior.
 It does not touch `Rufus.RCK.Core`.
 It does not write RCK.
+
+The canonical TUI UX contract lives in `RFS_TUI_UX_CONTRACT.md`.
 
 ## 2. North Star
 

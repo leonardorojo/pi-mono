@@ -2,7 +2,7 @@
 
 ## Purpose
 
-P22 consolidates the command surface and makes the governance boundary explicit.
+PT0 establishes the TUI UX contract and keeps the command-surface boundary explicit.
 This phase is documentation-only.
 It does not add commands.
 It does not change runtime behavior.
@@ -11,7 +11,11 @@ It does not migrate legacy agenting.
 It does not deprecate bridges yet.
 It does not create a `ModelRouter`.
 
-North Star:
+Canonical UX reference: [`RFS_TUI_UX_CONTRACT.md`](RFS_TUI_UX_CONTRACT.md).
+
+The governed backend pipeline remains relevant behind the future TUI, but it is not the primary UX anymore.
+
+North Star for the governed pipeline:
 
 ```text
 Prompt

@@ -6,6 +6,7 @@ It is intentionally still a POC, not a finished product.
 ## Command governance
 
 Canonical policy reference: [`docs/RFS_COMMAND_GOVERNANCE.md`](docs/RFS_COMMAND_GOVERNANCE.md).
+Canonical TUI UX reference: [`docs/RFS_TUI_UX_CONTRACT.md`](docs/RFS_TUI_UX_CONTRACT.md).
 
 Short version:
 
@@ -16,8 +17,14 @@ Short version:
 - Experimental / diagnostic commands: `rfs ask-json`, `rfs agent-json`, `rfs trace-slice-proposal`, `rfs trace-slice-validate`, `rfs trace-slice-proposal-llm`, `rfs trace-slice-validate-llm`, `rfs context-pack --trace-slice-validated`.
 - Legacy current commands: `rfs agent`, `rfs agent --record`.
 - RCK writers: `rfs ask --record`, `rfs intent --record`, `rfs agent --record`.
+- The future primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection -> automatic State + Delta.
 - Do not confuse proposal with the final TraceSlice, or TraceSlice with ContextPack.
 - Do not add new commands before closing the current cycle.
+
+## TUI UX contract
+
+The future `rfs` experience is documented in [`docs/RFS_TUI_UX_CONTRACT.md`](docs/RFS_TUI_UX_CONTRACT.md).
+That contract defines `rfs` without arguments as the primary entrypoint, automatic workspace initialization when `.rfs` is missing, prompt-first mode selection, automatic State + Delta recording, and anchors as milestones only.
 
 ## Current shape
 

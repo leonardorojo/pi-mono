@@ -159,7 +159,14 @@ Important:
 
 ### Does not write RCK
 
-- `rfs ask`
+- `/status`
+- `/log`
+- `/model`
+- `/context`
+- `/trace`
+- `/help`
+- `/exit`
+- `/model <model>` updates `.rfs/config.json` only
 - `rfs ask-json`
 - `rfs intent`
 - `rfs trace-slice`

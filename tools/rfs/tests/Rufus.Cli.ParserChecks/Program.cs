@@ -235,6 +235,10 @@ await RunRfsTuiInitializedSessionCaseAsync(
     name: "bare rfs enters tui and handles basic commands on initialized repo",
     failures: failures);
 
+await RunRfsTuiInternalCommandsPolishSessionCaseAsync(
+    name: "bare rfs internal commands polish session covers status log model context trace and help",
+    failures: failures);
+
 
 await RunRfsTuiAutoInitSessionCaseAsync(
     name: "bare rfs auto-initializes an empty repo and enters tui",
@@ -2586,8 +2590,10 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
             "Model:",
             "RCK: states",
             "Git:",
-            "Escribí un prompt directamente.",
-            "Comandos internos:",
+            "Prompts:",
+            "Commands:",
+            "/anchor \"name\"",
+            "/model <model>",
         };
 
         foreach (var fragment in requiredFragments)
@@ -2607,6 +2613,109 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
         if (statusAfter.StateCount != statusBefore.StateCount || statusAfter.DeltaCount != statusBefore.DeltaCount || statusAfter.AnchorCount != statusBefore.AnchorCount)
         {
             failures.Add($"[{name}] expected bare session to leave RCK counts unchanged.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-internal-commands-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var configBefore = RckWorkspaceModelConfigStore.Read(tempRoot);
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/status\n/log\n/model\n/context\n/trace\n/model gpt-5.4-mini\n/model\n/help\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        if (tuiResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+        }
+
+        var requiredFragments = new[]
+        {
+            "RCK:",
+            "Git:",
+            "Model:",
+            "Session:",
+            "Recent interactions:",
+            "No context has been built in this session yet.",
+            "No TraceSlice has been built in this session yet.",
+            "Model updated:",
+            "Current model:",
+            "Prompts:",
+            "Commands:",
+        };
+
+        foreach (var fragment in requiredFragments)
+        {
+            if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        if (!tuiResult.Stdout.Contains("Source:", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected /model and /status output to include model source.");
+        }
+
+        if (!tuiResult.Stdout.Contains("current model:", StringComparison.OrdinalIgnoreCase))
+        {
+            failures.Add($"[{name}] expected /status or /model output to include current model.");
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfter.StateCount != statusBefore.StateCount || statusAfter.DeltaCount != statusBefore.DeltaCount || statusAfter.AnchorCount != statusBefore.AnchorCount)
+        {
+            failures.Add($"[{name}] expected informational commands to leave RCK counts unchanged.");
+        }
+
+        var configAfter = RckWorkspaceModelConfigStore.Read(tempRoot);
+        if (!configAfter.Success || !configAfter.HasConfiguredDefaultModel || !string.Equals(configAfter.DefaultModel, "gpt-5.4-mini", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected /model gpt-5.4-mini to persist the workspace default model.");
+        }
+
+        if (configBefore.HasConfiguredDefaultModel)
+        {
+            failures.Add($"[{name}] expected the workspace to start without a configured default model.");
         }
     }
     catch (Exception ex)

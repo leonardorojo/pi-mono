@@ -345,9 +345,9 @@ Suggested internal commands:
 
 Rules:
 
-- `/status`, `/log`, `/help`, and `/exit` do not write RCK
+- `/status`, `/log`, `/model`, `/context`, `/trace`, `/help`, and `/exit` do not write RCK
 - `/model <model>` writes `.rfs/config.json` but does not write RCK
-- `/context` shows the last ContextPack used
+- `/context` shows the last Simple or Complete context summary built in the session
 - `/trace` shows the last TraceSlice / validation summary
 - `/anchor` creates an Anchor
 

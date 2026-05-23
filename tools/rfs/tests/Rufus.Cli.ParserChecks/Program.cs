@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Rufus.Cli.PiIntegration;
+using Rufus.Cli.Tui;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.RCK.Workspace;
@@ -157,9 +158,84 @@ await RunContextPackTraceSliceValidatedCliCaseAsync(
     prompt: "Implement rfs show command",
     failures);
 
+RunRfsTuiModeSelectionParserCases(failures);
+
+await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+    name: "bare rfs prompt selects direct mode stub",
+    prompt: "Implement reset board action",
+    input: "Implement reset board action\n1\n/exit\n",
+    expectedFragments: new[]
+    {
+        "¿Cómo querés procesar este prompt?",
+        "[Direct mode]",
+        "Mode execution will be implemented in PT5.",
+    },
+    expectPromptEcho: true,
+    failures);
+
+await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+    name: "bare rfs prompt selects simple mode stub",
+    prompt: "Implement reset board action",
+    input: "Implement reset board action\n2\n/exit\n",
+    expectedFragments: new[]
+    {
+        "[Simple mode]",
+        "Mode execution will be implemented in PT6.",
+    },
+    expectPromptEcho: true,
+    failures);
+
+await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+    name: "bare rfs prompt selects complete mode stub",
+    prompt: "Implement reset board action",
+    input: "Implement reset board action\n3\n/exit\n",
+    expectedFragments: new[]
+    {
+        "[Complete mode]",
+        "Mode execution will be implemented in PT7.",
+    },
+    expectPromptEcho: true,
+    failures);
+
+await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+    name: "bare rfs prompt selects plan mode stub",
+    prompt: "Implement reset board action",
+    input: "Implement reset board action\n4\n/exit\n",
+    expectedFragments: new[]
+    {
+        "[Plan mode]",
+        "Mode execution will be implemented in PT8.",
+    },
+    expectPromptEcho: true,
+    failures);
+
+await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+    name: "bare rfs prompt rejects invalid mode then cancels",
+    prompt: "Implement reset board action",
+    input: "Implement reset board action\nx\n/cancel\n/exit\n",
+    expectedFragments: new[]
+    {
+        "Invalid mode. Choose 1, 2, 3, 4, or /cancel.",
+        "Prompt cancelled.",
+    },
+    expectPromptEcho: false,
+    failures);
+
+await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+    name: "bare rfs prompt exits from mode selection",
+    prompt: "Implement reset board action",
+    input: "Implement reset board action\n/exit\n",
+    expectedFragments: new[]
+    {
+        "¿Cómo querés procesar este prompt?",
+    },
+    expectPromptEcho: false,
+    failures);
+
 await RunRfsTuiInitializedSessionCaseAsync(
     name: "bare rfs enters tui and handles basic commands on initialized repo",
     failures);
+
 
 await RunRfsTuiAutoInitSessionCaseAsync(
     name: "bare rfs auto-initializes an empty repo and enters tui",
@@ -2361,6 +2437,106 @@ static async Task RunIntentCliCaseAsync(
     }
 }
 
+static void RunRfsTuiModeSelectionParserCases(List<string> failures)
+{
+    var cases = new (string Input, RfsTuiModeSelection Expected)[]
+    {
+        ("1", RfsTuiModeSelection.Direct),
+        ("2", RfsTuiModeSelection.Simple),
+        ("3", RfsTuiModeSelection.Complete),
+        ("4", RfsTuiModeSelection.Plan),
+        ("/cancel", RfsTuiModeSelection.Cancel),
+        ("cancel", RfsTuiModeSelection.Cancel),
+        ("/exit", RfsTuiModeSelection.Exit),
+        ("x", RfsTuiModeSelection.Invalid),
+    };
+
+    foreach (var testCase in cases)
+    {
+        var actual = RfsTuiModeSelectionParser.ParseModeSelection(testCase.Input);
+        if (actual != testCase.Expected)
+        {
+            failures.Add($"[tui mode parser] input '{testCase.Input}' expected {testCase.Expected} but got {actual}.");
+        }
+    }
+}
+
+static async Task RunRfsTuiPromptModeSelectionSessionCaseAsync(
+    string name,
+    string prompt,
+    string input,
+    string[] expectedFragments,
+    bool expectPromptEcho,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-mode-selection-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, input, "dotnet", "run", "--project", cliProjectPath, "--");
+        if (tuiResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+        }
+
+        foreach (var fragment in expectedFragments)
+        {
+            if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        if (expectPromptEcho && !tuiResult.Stdout.Contains($"  {prompt}", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected stdout to echo the prompt text but it was missing.");
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfter.StateCount != statusBefore.StateCount || statusAfter.DeltaCount != statusBefore.DeltaCount || statusAfter.AnchorCount != statusBefore.AnchorCount)
+        {
+            failures.Add($"[{name}] expected prompt mode selection to leave RCK counts unchanged.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
 
 static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string> failures)
 {
@@ -2405,8 +2581,8 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
             "Model:",
             "RCK: states",
             "Git:",
-            "rfs status",
-            "Prompt processing modes will be implemented in later PT phases.",
+            "Escribí un prompt directamente.",
+            "Comandos internos:",
         };
 
         foreach (var fragment in requiredFragments)

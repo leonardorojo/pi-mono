@@ -1,6 +1,6 @@
 # RFS TUI UX Contract
 
-PT1 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, and `/status` / `/help` / `/exit` only.
+PT3 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and clear stubs for Direct / Simple / Complete / Plan. PT4+ pipeline execution and State + Delta recording remain pending.
 
 ## 1. North Star
 

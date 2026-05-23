@@ -112,14 +112,106 @@ internal static class RfsTuiSession
                     continue;
                 }
 
-                Console.WriteLine("Prompt received.");
-                Console.WriteLine("Mode selection will be implemented in PT3.");
+                if (RunPromptModeSelection(input))
+                {
+                    break;
+                }
             }
         }
         finally
         {
             Console.CancelKeyPress -= HandleCancelKeyPress;
         }
+    }
+
+    private static bool RunPromptModeSelection(string prompt)
+    {
+        RenderModeSelectionMenu();
+
+        while (true)
+        {
+            Console.Write("> ");
+            var line = Console.ReadLine();
+            if (line is null)
+            {
+                return true;
+            }
+
+            var selectionInput = line.Trim();
+            if (selectionInput.Length == 0)
+            {
+                continue;
+            }
+
+            if (string.Equals(selectionInput, "/help", StringComparison.Ordinal))
+            {
+                RenderModeSelectionHelp();
+                continue;
+            }
+
+            var selection = RfsTuiModeSelectionParser.ParseModeSelection(selectionInput);
+            switch (selection)
+            {
+                case RfsTuiModeSelection.Direct:
+                    RenderModeSelectionStub("Direct mode", prompt, "PT5");
+                    return false;
+                case RfsTuiModeSelection.Simple:
+                    RenderModeSelectionStub("Simple mode", prompt, "PT6");
+                    return false;
+                case RfsTuiModeSelection.Complete:
+                    RenderModeSelectionStub("Complete mode", prompt, "PT7");
+                    return false;
+                case RfsTuiModeSelection.Plan:
+                    RenderModeSelectionStub("Plan mode", prompt, "PT8");
+                    return false;
+                case RfsTuiModeSelection.Cancel:
+                    Console.WriteLine("Prompt cancelled.");
+                    return false;
+                case RfsTuiModeSelection.Exit:
+                    return true;
+                default:
+                    Console.WriteLine("Invalid mode. Choose 1, 2, 3, 4, or /cancel.");
+                    break;
+            }
+        }
+    }
+
+    private static void RenderModeSelectionMenu()
+    {
+        Console.WriteLine("¿Cómo querés procesar este prompt?");
+        Console.WriteLine();
+        Console.WriteLine("1. Directo");
+        Console.WriteLine("   Preguntar al LLM sin contexto RCK.");
+        Console.WriteLine();
+        Console.WriteLine("2. Simple");
+        Console.WriteLine("   Usar últimas 5 interacciones + git status + artifacts metadata.");
+        Console.WriteLine();
+        Console.WriteLine("3. Completo");
+        Console.WriteLine("   Intent + TraceSliceProposal + Validation + ContextPack.");
+        Console.WriteLine();
+        Console.WriteLine("4. Plan");
+        Console.WriteLine("   Generar plan de implementación sin tocar código.");
+    }
+
+    private static void RenderModeSelectionHelp()
+    {
+        Console.WriteLine("Mode selection commands:");
+        Console.WriteLine("  1 Directo");
+        Console.WriteLine("  2 Simple");
+        Console.WriteLine("  3 Completo");
+        Console.WriteLine("  4 Plan");
+        Console.WriteLine("  /cancel");
+        Console.WriteLine("  /help");
+        Console.WriteLine("  /exit");
+    }
+
+    private static void RenderModeSelectionStub(string modeLabel, string prompt, string ptLabel)
+    {
+        Console.WriteLine($"[{modeLabel}]");
+        Console.WriteLine("Prompt:");
+        Console.WriteLine($"  {prompt}");
+        Console.WriteLine();
+        Console.WriteLine($"Mode execution will be implemented in {ptLabel}.");
     }
 
     private static void RenderStatus(string repoRoot)
@@ -142,12 +234,17 @@ internal static class RfsTuiSession
     {
         Console.WriteLine("RFS TUI");
         Console.WriteLine();
-        Console.WriteLine("Internal commands:");
+        Console.WriteLine("Escribí un prompt directamente.");
+        Console.WriteLine("Después elegí modo:");
+        Console.WriteLine("  1 Directo");
+        Console.WriteLine("  2 Simple");
+        Console.WriteLine("  3 Completo");
+        Console.WriteLine("  4 Plan");
+        Console.WriteLine();
+        Console.WriteLine("Comandos internos:");
         Console.WriteLine("  /status");
         Console.WriteLine("  /help");
         Console.WriteLine("  /exit");
-        Console.WriteLine();
-        Console.WriteLine("Prompt processing modes will be implemented in later PT phases.");
     }
 
     private static void HandleCancelKeyPress(object? sender, ConsoleCancelEventArgs e)

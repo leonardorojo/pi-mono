@@ -157,8 +157,7 @@ internal static class RfsTuiSession
                 case RfsTuiModeSelection.Direct:
                     return await RunDirectModeAsync(repoRoot, prompt);
                 case RfsTuiModeSelection.Simple:
-                    RenderModeSelectionStub("Simple mode", prompt, "PT6");
-                    return false;
+                    return await RunSimpleModeAsync(repoRoot, prompt);
                 case RfsTuiModeSelection.Complete:
                     RenderModeSelectionStub("Complete mode", prompt, "PT7");
                     return false;
@@ -175,6 +174,95 @@ internal static class RfsTuiSession
                     break;
             }
         }
+    }
+
+    private static async Task<bool> RunSimpleModeAsync(string repoRoot, string prompt)
+    {
+        Console.WriteLine("[Simple mode]");
+        Console.WriteLine("Building Simple Context...");
+
+        var simpleContextBuildResult = RckSimpleContextBuilder.Build(repoRoot, prompt);
+        var simpleContext = simpleContextBuildResult.Context;
+
+        Console.WriteLine($"  recent interactions: {simpleContext.RecentInteractions.Count}");
+        Console.WriteLine($"  anchors: {simpleContext.Anchors.Count}");
+        Console.WriteLine($"  artifacts: {simpleContext.Artifacts.Count}");
+        Console.WriteLine($"  estimated chars: {simpleContext.Budget.EstimatedChars}");
+        Console.WriteLine($"  estimated tokens: {simpleContext.Budget.EstimatedTokens}");
+        Console.WriteLine($"  truncated: {simpleContext.Budget.Truncated.ToString().ToLowerInvariant()}");
+
+        var askJsonResult = await PiJsonEventRunner.RunAskAsync(
+            repoRoot,
+            simpleContextBuildResult.PromptToSend,
+            RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot));
+
+        if (!askJsonResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(askJsonResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(askJsonResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine("Respuesta:");
+        Console.WriteLine("────────────────────────────────────────────");
+
+        if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
+        {
+            Console.WriteLine("(no assistant output)");
+        }
+        else
+        {
+            foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
+            {
+                Console.WriteLine(answerLine);
+            }
+        }
+
+        var pipelineSummary = new RckInteractionPipelineSummary(
+            "simple",
+            usesRckContext: true,
+            usesTraceSlice: false,
+            usesContextPack: false,
+            validationStatus: null,
+            recentInteractionCount: simpleContext.RecentInteractions.Count,
+            selectedStateIds: simpleContext.RecentInteractions.Select(interaction => interaction.StateId).ToArray(),
+            selectedDeltaIds: simpleContext.RecentInteractions.Where(interaction => !string.IsNullOrWhiteSpace(interaction.DeltaId)).Select(interaction => interaction.DeltaId!).ToArray(),
+            selectedAnchorIds: simpleContext.Anchors.Select(anchor => anchor.Id).ToArray(),
+            artifactRefCount: simpleContext.Artifacts.Count,
+            estimatedChars: simpleContext.Budget.EstimatedChars,
+            estimatedTokens: simpleContext.Budget.EstimatedTokens,
+            truncated: simpleContext.Budget.Truncated,
+            omissions: simpleContextBuildResult.Omissions.ToArray());
+
+        var recordResult = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(
+                prompt,
+                askJsonResult.Answer,
+                askJsonResult.Provider,
+                askJsonResult.Model,
+                mode: "tui-simple",
+                pipelineSummary: pipelineSummary),
+            repoRoot);
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("State created:");
+        Console.WriteLine($"  {recordResult.StateId?.ToString() ?? "(unknown)"}");
+        Console.WriteLine("Delta created:");
+        Console.WriteLine($"  {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
+
+        return false;
     }
 
     private static async Task<bool> RunDirectModeAsync(string repoRoot, string prompt)

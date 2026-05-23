@@ -21,7 +21,21 @@ public static class RckInteractionRecorder
         => Record(RckInteractionRecord.CreateAgent(prompt, answer, tools), startingDirectory);
 
     public static RckInteractionRecordResult RecordTui(RckTuiInteractionRecordInput input, string? startingDirectory = null)
-        => Record(RckInteractionRecord.CreateTuiDirect(input.Prompt, input.Answer, input.Provider, input.Model), startingDirectory);
+    {
+        if (string.Equals(input.Mode, "tui-simple", StringComparison.Ordinal))
+        {
+            var simplePipelineSummary = input.PipelineSummary ?? new RckInteractionPipelineSummary(
+                "simple",
+                usesRckContext: true,
+                usesTraceSlice: false,
+                usesContextPack: false,
+                validationStatus: null);
+
+            return Record(RckInteractionRecord.CreateTuiSimple(input.Prompt, input.Answer, simplePipelineSummary, input.Provider, input.Model), startingDirectory);
+        }
+
+        return Record(RckInteractionRecord.CreateTuiDirect(input.Prompt, input.Answer, input.Provider, input.Model, input.PipelineSummary), startingDirectory);
+    }
 
     public static RckInteractionRecordResult Record(RckInteractionRecord record, string? startingDirectory = null)
     {
@@ -168,14 +182,7 @@ public static class RckInteractionRecorder
                 model = record.Model,
                 pipelineSummary = record.PipelineSummary is null
                     ? null
-                    : new
-                    {
-                        kind = record.PipelineSummary.Kind,
-                        usesRckContext = record.PipelineSummary.UsesRckContext,
-                        usesTraceSlice = record.PipelineSummary.UsesTraceSlice,
-                        usesContextPack = record.PipelineSummary.UsesContextPack,
-                        validationStatus = record.PipelineSummary.ValidationStatus,
-                    },
+                    : SerializePipelineSummary(record.PipelineSummary),
             },
             git = new
             {
@@ -227,7 +234,9 @@ public static class RckInteractionRecorder
             {
                 path = "/interaction/pipelineSummary",
                 kind = "updated",
-                summary = "Captured the direct TUI pipeline summary.",
+                summary = record.PipelineSummary is null
+                    ? "Captured the TUI pipeline summary."
+                    : $"Captured the {record.PipelineSummary.Kind} TUI pipeline summary.",
             });
         }
 
@@ -270,14 +279,7 @@ public static class RckInteractionRecorder
                 model = record.Model,
                 pipelineSummary = record.PipelineSummary is null
                     ? null
-                    : new
-                    {
-                        kind = record.PipelineSummary.Kind,
-                        usesRckContext = record.PipelineSummary.UsesRckContext,
-                        usesTraceSlice = record.PipelineSummary.UsesTraceSlice,
-                        usesContextPack = record.PipelineSummary.UsesContextPack,
-                        validationStatus = record.PipelineSummary.ValidationStatus,
-                    },
+                    : SerializePipelineSummary(record.PipelineSummary),
             },
             evidence = new
             {
@@ -286,6 +288,25 @@ public static class RckInteractionRecorder
             },
         };
     }
+
+    private static object SerializePipelineSummary(RckInteractionPipelineSummary pipelineSummary)
+        => new
+        {
+            kind = pipelineSummary.Kind,
+            usesRckContext = pipelineSummary.UsesRckContext,
+            usesTraceSlice = pipelineSummary.UsesTraceSlice,
+            usesContextPack = pipelineSummary.UsesContextPack,
+            validationStatus = pipelineSummary.ValidationStatus,
+            recentInteractionCount = pipelineSummary.RecentInteractionCount,
+            selectedStateIds = pipelineSummary.SelectedStateIds,
+            selectedDeltaIds = pipelineSummary.SelectedDeltaIds,
+            selectedAnchorIds = pipelineSummary.SelectedAnchorIds,
+            artifactRefCount = pipelineSummary.ArtifactRefCount,
+            estimatedChars = pipelineSummary.EstimatedChars,
+            estimatedTokens = pipelineSummary.EstimatedTokens,
+            truncated = pipelineSummary.Truncated,
+            omissions = pipelineSummary.Omissions,
+        };
 
     private static string SerializeStateEnvelope(RckState state)
     {

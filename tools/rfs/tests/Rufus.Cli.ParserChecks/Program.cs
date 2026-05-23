@@ -164,16 +164,10 @@ await RunRckTuiDirectRecordingCaseAsync(
     name: "tui direct recording stores direct pipeline summary",
     failures);
 
-await RunRfsTuiPromptModeSelectionSessionCaseAsync(
-    name: "bare rfs prompt selects simple mode stub",
+await RunRfsTuiSimpleModeRecordingSessionCaseAsync(
+    name: "bare rfs prompt selects simple mode and records a simple interaction",
     prompt: "Implement reset board action",
     input: "Implement reset board action\n2\n/exit\n",
-    expectedFragments: new[]
-    {
-        "[Simple mode]",
-        "Mode execution will be implemented in PT6.",
-    },
-    expectPromptEcho: true,
     failures);
 
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
@@ -2791,6 +2785,215 @@ static async Task RunRckTuiDirectRecordingCaseAsync(string name, List<string> fa
         var cause = deltaPayloadRoot.GetProperty("cause");
         AssertStringEqual(name, failures, "delta.cause.mode", "tui-direct", cause.GetProperty("mode").GetString());
         AssertStringEqual(name, failures, "delta.cause.pipelineSummary.kind", "direct", cause.GetProperty("pipelineSummary").GetProperty("kind").GetString());
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunRfsTuiSimpleModeRecordingSessionCaseAsync(string name, string prompt, string input, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-simple-recording-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var configNameResult = await RunProcessAsync(tempRoot, "git", "config", "user.name", "Rufus Test");
+        var configEmailResult = await RunProcessAsync(tempRoot, "git", "config", "user.email", "rufus@test.local");
+        if (configNameResult.ExitCode != 0 || configEmailResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to configure git identity for the temp repo.");
+            return;
+        }
+
+        var seedPath = Path.Combine(tempRoot, "README.md");
+        await File.WriteAllTextAsync(seedPath, "seed\n");
+        var addResult = await RunProcessAsync(tempRoot, "git", "add", "README.md");
+        if (addResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to stage the seed file: {addResult.Stderr}");
+            return;
+        }
+
+        var commitResult = await RunProcessAsync(tempRoot, "git", "commit", "-m", "seed commit");
+        if (commitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to create the seed commit: {commitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var scriptPath = Path.Combine(tempRoot, "pi");
+        var script = "#!/usr/bin/env bash\n" +
+                     "set -euo pipefail\n" +
+                     "cat <<'EOF'\n" +
+                     "{\"type\":\"session\"}\n" +
+                     "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"Simple mode works.\"}]}}\n" +
+                     "EOF\n";
+        await File.WriteAllTextAsync(scriptPath, script);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                scriptPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+            var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+            var tuiResult = await RunProcessAsyncWithInput(tempRoot, input, "dotnet", "run", "--project", cliProjectPath, "--");
+            if (tuiResult.ExitCode != 0)
+            {
+                failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+            {
+                failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+            }
+
+            var requiredFragments = new[]
+            {
+                "[Simple mode]",
+                "Building Simple Context...",
+                "recent interactions:",
+                "anchors:",
+                "artifacts:",
+                "estimated chars:",
+                "estimated tokens:",
+                "truncated:",
+                "Respuesta:",
+                "State created:",
+                "Delta created:",
+            };
+
+            foreach (var fragment in requiredFragments)
+            {
+                if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+                }
+            }
+
+            if (tuiResult.Stdout.Contains("Mode execution will be implemented in PT6.", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected the simple mode stub message to be removed.");
+            }
+
+            if (tuiResult.Stdout.Contains("message_update", StringComparison.Ordinal) ||
+                tuiResult.Stdout.Contains("diff --git", StringComparison.Ordinal) ||
+                tuiResult.Stdout.Contains("stdout:", StringComparison.Ordinal) ||
+                tuiResult.Stdout.Contains("stderr:", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected no raw JSONL/stdout/stderr/diff output in the TUI stream.");
+            }
+
+            var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+            if (statusAfter.StateCount != statusBefore.StateCount + 1)
+            {
+                failures.Add($"[{name}] expected state count to increase by 1 but changed from {statusBefore.StateCount} to {statusAfter.StateCount}.");
+            }
+
+            if (statusAfter.DeltaCount != statusBefore.DeltaCount + 1)
+            {
+                failures.Add($"[{name}] expected delta count to increase by 1 but changed from {statusBefore.DeltaCount} to {statusAfter.DeltaCount}.");
+            }
+
+            var headPath = Path.Combine(tempRoot, ".rfs", "rck", "HEAD");
+            var headText = File.ReadAllText(headPath).Trim();
+            if (string.IsNullOrWhiteSpace(headText))
+            {
+                failures.Add($"[{name}] expected HEAD to resolve after simple mode recording.");
+                return;
+            }
+
+            var statePath = Path.Combine(tempRoot, ".rfs", "rck", "states", $"{headText}.json");
+            if (!File.Exists(statePath))
+            {
+                failures.Add($"[{name}] expected state file for HEAD '{headText}' to exist.");
+                return;
+            }
+
+            var stateJson = File.ReadAllText(statePath);
+            using var stateDocument = JsonDocument.Parse(stateJson);
+            var stateRoot = stateDocument.RootElement;
+            var payloadJson = stateRoot.GetProperty("payloadCanonicalJson").GetString() ?? string.Empty;
+            using var payloadDocument = JsonDocument.Parse(payloadJson);
+            var payloadRoot = payloadDocument.RootElement;
+            var interaction = payloadRoot.GetProperty("interaction");
+            var pipelineSummary = interaction.GetProperty("pipelineSummary");
+
+            AssertStringEqual(name, failures, "interaction.type", "rufus.interaction-state", payloadRoot.GetProperty("type").GetString());
+            AssertStringEqual(name, failures, "interaction.mode", "tui-simple", interaction.GetProperty("mode").GetString());
+            AssertStringEqual(name, failures, "interaction.prompt", prompt, interaction.GetProperty("prompt").GetString());
+            AssertStringEqual(name, failures, "interaction.answerSummary", "Simple mode works.", interaction.GetProperty("answerSummary").GetString());
+            AssertStringEqual(name, failures, "interaction.pipelineSummary.kind", "simple", pipelineSummary.GetProperty("kind").GetString());
+            AssertBooleanEqual(name, failures, "interaction.pipelineSummary.usesRckContext", true, pipelineSummary.GetProperty("usesRckContext").GetBoolean());
+            AssertBooleanEqual(name, failures, "interaction.pipelineSummary.usesTraceSlice", false, pipelineSummary.GetProperty("usesTraceSlice").GetBoolean());
+            AssertBooleanEqual(name, failures, "interaction.pipelineSummary.usesContextPack", false, pipelineSummary.GetProperty("usesContextPack").GetBoolean());
+            AssertBooleanEqual(name, failures, "interaction.pipelineSummary.truncated", false, pipelineSummary.GetProperty("truncated").GetBoolean());
+
+            if (pipelineSummary.TryGetProperty("recentInteractionCount", out var recentInteractionCountElement) && recentInteractionCountElement.GetInt32() < 1)
+            {
+                failures.Add($"[{name}] expected recentInteractionCount to be at least 1.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("selectedStateIds", out var selectedStateIdsElement) || selectedStateIdsElement.ValueKind != JsonValueKind.Array || selectedStateIdsElement.GetArrayLength() < 1)
+            {
+                failures.Add($"[{name}] expected selectedStateIds to contain at least one state id.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("selectedAnchorIds", out var selectedAnchorIdsElement) || selectedAnchorIdsElement.ValueKind != JsonValueKind.Array)
+            {
+                failures.Add($"[{name}] expected selectedAnchorIds array to be present.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("estimatedChars", out var estimatedCharsElement) || estimatedCharsElement.GetInt32() <= 0)
+            {
+                failures.Add($"[{name}] expected estimatedChars to be populated.");
+            }
+
+            if (!pipelineSummary.TryGetProperty("estimatedTokens", out var estimatedTokensElement) || estimatedTokensElement.GetInt32() <= 0)
+            {
+                failures.Add($"[{name}] expected estimatedTokens to be populated.");
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+        }
     }
     catch (Exception ex)
     {

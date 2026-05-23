@@ -150,6 +150,8 @@ The persisted interaction `mode` should be one of:
 
 ### `tui-simple`
 
+PT7 uses this shape after building Simple Context v0 and receiving the main-LLM response.
+
 - `pipelineKind = simple`
 - `recentInteractionCount`
 - `selectedStateIds` when applicable

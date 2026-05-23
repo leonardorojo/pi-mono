@@ -5,6 +5,7 @@
 PT6.
 Documentation-only.
 This document defines the future *Simple Context v0* contract for the TUI Simple mode.
+PT7 implements the first runtime use of this contract in the TUI Simple path.
 
 This phase does not implement runtime behavior.
 It does not call Pi or any LLM.

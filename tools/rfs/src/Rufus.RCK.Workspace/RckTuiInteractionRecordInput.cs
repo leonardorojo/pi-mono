@@ -10,7 +10,11 @@ public sealed record RckTuiInteractionRecordInput
 
     public string? Model { get; }
 
-    public RckTuiInteractionRecordInput(string prompt, string answer, string? provider = null, string? model = null)
+    public string Mode { get; }
+
+    public RckInteractionPipelineSummary? PipelineSummary { get; }
+
+    public RckTuiInteractionRecordInput(string prompt, string answer, string? provider = null, string? model = null, string mode = "tui-direct", RckInteractionPipelineSummary? pipelineSummary = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
 
@@ -18,5 +22,7 @@ public sealed record RckTuiInteractionRecordInput
         Answer = answer ?? string.Empty;
         Provider = provider;
         Model = model;
+        Mode = mode;
+        PipelineSummary = pipelineSummary;
     }
 }

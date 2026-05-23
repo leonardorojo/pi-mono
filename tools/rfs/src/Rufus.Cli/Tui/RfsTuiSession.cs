@@ -1,3 +1,4 @@
+using System.Text;
 using Rufus.Cli.PiIntegration;
 using Rufus.RCK.Workspace;
 
@@ -161,8 +162,7 @@ internal static class RfsTuiSession
                 case RfsTuiModeSelection.Complete:
                     return await RunCompleteModeAsync(repoRoot, prompt);
                 case RfsTuiModeSelection.Plan:
-                    RenderModeSelectionStub("Plan mode", prompt, "PT8");
-                    return false;
+                    return await RunPlanModeAsync(repoRoot, prompt);
                 case RfsTuiModeSelection.Cancel:
                     Console.WriteLine("Prompt cancelled.");
                     return false;
@@ -452,6 +452,144 @@ internal static class RfsTuiSession
         Console.WriteLine($"  {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
 
         return false;
+    }
+
+    private static async Task<bool> RunPlanModeAsync(string repoRoot, string prompt)
+    {
+        Console.WriteLine("[Plan mode]");
+        Console.WriteLine("Building planning context...");
+
+        var simpleContextBuildResult = RckSimpleContextBuilder.Build(repoRoot, prompt);
+        var simpleContext = simpleContextBuildResult.Context;
+        var planPromptToSend = BuildPlanPromptToSend(simpleContext);
+
+        var recentInteractionCount = simpleContext.RecentInteractions.Count;
+        var selectedStateIds = simpleContext.RecentInteractions.Select(interaction => interaction.StateId).ToArray();
+        var selectedDeltaIds = simpleContext.RecentInteractions.Where(interaction => !string.IsNullOrWhiteSpace(interaction.DeltaId)).Select(interaction => interaction.DeltaId!).ToArray();
+        var selectedAnchorIds = simpleContext.Anchors.Select(anchor => anchor.Id).ToArray();
+
+        Console.WriteLine("  context: simple");
+        Console.WriteLine($"  recent interactions: {recentInteractionCount}");
+        Console.WriteLine($"  anchors: {selectedAnchorIds.Length}");
+        Console.WriteLine($"  artifacts: {simpleContext.Artifacts.Count}");
+        Console.WriteLine($"  estimated chars: {simpleContext.Budget.EstimatedChars}");
+        Console.WriteLine($"  estimated tokens: {simpleContext.Budget.EstimatedTokens}");
+        Console.WriteLine($"  truncated: {simpleContext.Budget.Truncated.ToString().ToLowerInvariant()}");
+
+        if (simpleContextBuildResult.Warnings.Count > 0)
+        {
+            Console.WriteLine("  warnings:");
+            foreach (var warning in simpleContextBuildResult.Warnings)
+            {
+                Console.WriteLine($"    - {warning}");
+            }
+        }
+
+        if (simpleContextBuildResult.Omissions.Count > 0)
+        {
+            Console.WriteLine("  omissions:");
+            foreach (var omission in simpleContextBuildResult.Omissions)
+            {
+                Console.WriteLine($"    - {omission}");
+            }
+        }
+
+        Console.WriteLine();
+
+        var askJsonResult = await PiJsonEventRunner.RunAskAsync(
+            repoRoot,
+            planPromptToSend,
+            RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot));
+
+        if (!askJsonResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(askJsonResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(askJsonResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine("Respuesta:");
+        Console.WriteLine("────────────────────────────────────────────");
+
+        if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
+        {
+            Console.WriteLine("(no assistant output)");
+        }
+        else
+        {
+            foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
+            {
+                Console.WriteLine(answerLine);
+            }
+        }
+
+        var pipelineSummary = new RckInteractionPipelineSummary(
+            "plan",
+            usesRckContext: true,
+            usesTraceSlice: false,
+            usesContextPack: false,
+            validationStatus: null,
+            contextMode: "simple",
+            recentInteractionCount: recentInteractionCount,
+            selectedStateIds: selectedStateIds,
+            selectedDeltaIds: selectedDeltaIds,
+            selectedAnchorIds: selectedAnchorIds,
+            artifactRefCount: simpleContext.Artifacts.Count,
+            estimatedChars: simpleContext.Budget.EstimatedChars,
+            estimatedTokens: simpleContext.Budget.EstimatedTokens,
+            truncated: simpleContext.Budget.Truncated,
+            warnings: simpleContextBuildResult.Warnings,
+            omissions: simpleContextBuildResult.Omissions);
+
+        var recordResult = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(
+                prompt,
+                askJsonResult.Answer,
+                askJsonResult.Provider,
+                askJsonResult.Model,
+                mode: "tui-plan",
+                pipelineSummary: pipelineSummary),
+            repoRoot);
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("State created:");
+        Console.WriteLine($"  {recordResult.StateId?.ToString() ?? "(unknown)"}");
+        Console.WriteLine("Delta created:");
+        Console.WriteLine($"  {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
+
+        return false;
+    }
+
+    private static string BuildPlanPromptToSend(RckSimpleContext simpleContext)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You are assisting inside an RFS repository session.");
+        sb.AppendLine("Use the provided Simple Context to create a safe implementation plan.");
+        sb.AppendLine("Do not modify files.");
+        sb.AppendLine("Do not propose applying patches.");
+        sb.AppendLine("Do not assume file contents unless provided.");
+        sb.AppendLine("Return a concise, actionable plan.");
+        sb.AppendLine();
+        sb.AppendLine("[Simple Context]");
+        sb.Append(simpleContext.Render());
+        sb.AppendLine();
+        sb.AppendLine("[User Prompt]");
+        sb.AppendLine(simpleContext.Prompt.Text);
+        sb.AppendLine();
+        sb.AppendLine("Produce a plan only.");
+        return sb.ToString();
     }
 
     private static void RenderModeSelectionMenu()

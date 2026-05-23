@@ -4,7 +4,7 @@
 
 PT5.
 Implemented.
-This document now describes the live direct-mode and complete-mode TUI recording shape.
+This document now describes the live direct-mode, simple-mode, complete-mode, and plan-mode TUI recording shape.
 
 This document defines how a finalized TUI interaction is recorded once the main LLM responds.
 It does not touch `Rufus.RCK.Core`.
@@ -180,8 +180,8 @@ PT7 uses this shape after building Simple Context v0 and receiving the main-LLM 
 ### `tui-plan`
 
 - `pipelineKind = plan`
-- `contextMode = simple | complete`
-- `planSummary`
+- `contextMode = simple`
+- concise plan captured in `answerSummary`
 - no code changes
 - no patch applied
 
@@ -208,7 +208,7 @@ Mode-specific additions:
 - direct: only a short summary of the single-shot response path
 - simple: recent interaction count, selected ids, artifact ref count, estimated budget, and truncation status
 - complete: intent, proposal, validation, trace-slice selection, context-pack scope, and materialization policy summaries
-- plan: planning summary plus the chosen context mode
+- plan: concise plan summary in `answerSummary` plus the chosen context mode
 
 Do not store:
 

@@ -256,6 +256,8 @@ When the main LLM responds, the TUI records:
 - `interaction.mode = tui-simple`
 - `pipelineSummary.kind = simple`
 
+PT9 reuses the same Simple Context v0 as the default planning context and records it as `interaction.mode = tui-plan` with `pipelineSummary.kind = plan`.
+
 `pipelineSummary` must capture a controlled context summary, including:
 
 - `recentInteractionCount`

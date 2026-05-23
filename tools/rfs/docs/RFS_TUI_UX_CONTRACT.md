@@ -1,6 +1,6 @@
 # RFS TUI UX Contract
 
-PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the Simple Context contract for Simple mode, PT7 implements the live Simple mode path on top of that contract, and PT8 implements the live Complete mode path on top of proposal/validation/context-pack reuse.
+PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the Simple Context contract for Simple mode, PT7 implements the live Simple mode path on top of that contract, PT8 implements the live Complete mode path on top of proposal/validation/context-pack reuse, and PT9 implements the live Plan mode path on top of Simple Context reuse.
 
 ## 1. North Star
 
@@ -193,11 +193,14 @@ Pipeline:
 
 ```text
 Prompt
-→ contexto simple o completo
-→ plan de implementación
+→ Simple Context
+→ LLM principal
+→ respuesta de plan
 → State
 → Delta
 ```
+
+Plan mode reuses Simple Context v0 by default.
 
 Characteristics:
 

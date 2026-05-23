@@ -34,6 +34,19 @@ public static class RckInteractionRecorder
             return Record(RckInteractionRecord.CreateTuiSimple(input.Prompt, input.Answer, simplePipelineSummary, input.Provider, input.Model), startingDirectory);
         }
 
+        if (string.Equals(input.Mode, "tui-plan", StringComparison.Ordinal))
+        {
+            var planPipelineSummary = input.PipelineSummary ?? new RckInteractionPipelineSummary(
+                "plan",
+                usesRckContext: true,
+                usesTraceSlice: false,
+                usesContextPack: false,
+                validationStatus: null,
+                contextMode: "simple");
+
+            return Record(RckInteractionRecord.CreateTuiPlan(input.Prompt, input.Answer, planPipelineSummary, input.Provider, input.Model), startingDirectory);
+        }
+
         if (string.Equals(input.Mode, "tui-complete", StringComparison.Ordinal))
         {
             var completePipelineSummary = input.PipelineSummary ?? new RckInteractionPipelineSummary(
@@ -309,6 +322,14 @@ public static class RckInteractionRecorder
             usesTraceSlice = pipelineSummary.UsesTraceSlice,
             usesContextPack = pipelineSummary.UsesContextPack,
             validationStatus = pipelineSummary.ValidationStatus,
+            traceSliceSelectionStrategy = pipelineSummary.TraceSliceSelectionStrategy,
+            contextPackScope = pipelineSummary.ContextPackScope,
+            contextMode = pipelineSummary.ContextMode,
+            intentKind = pipelineSummary.IntentKind,
+            intentSummary = pipelineSummary.IntentSummary,
+            proposalSummary = pipelineSummary.ProposalSummary,
+            proposalSource = pipelineSummary.ProposalSource,
+            materializationPolicySummary = pipelineSummary.MaterializationPolicySummary,
             recentInteractionCount = pipelineSummary.RecentInteractionCount,
             selectedStateIds = pipelineSummary.SelectedStateIds,
             selectedDeltaIds = pipelineSummary.SelectedDeltaIds,
@@ -317,6 +338,7 @@ public static class RckInteractionRecorder
             estimatedChars = pipelineSummary.EstimatedChars,
             estimatedTokens = pipelineSummary.EstimatedTokens,
             truncated = pipelineSummary.Truncated,
+            warnings = pipelineSummary.Warnings,
             omissions = pipelineSummary.Omissions,
         };
 

@@ -16,6 +16,8 @@ public sealed record RckInteractionPipelineSummary
 
     public string? ContextPackScope { get; }
 
+    public string? ContextMode { get; }
+
     public string? IntentKind { get; }
 
     public string? IntentSummary { get; }
@@ -54,6 +56,7 @@ public sealed record RckInteractionPipelineSummary
         string? validationStatus,
         string? traceSliceSelectionStrategy = null,
         string? contextPackScope = null,
+        string? contextMode = null,
         string? intentKind = null,
         string? intentSummary = null,
         string? proposalSummary = null,
@@ -79,6 +82,7 @@ public sealed record RckInteractionPipelineSummary
         ValidationStatus = validationStatus;
         TraceSliceSelectionStrategy = traceSliceSelectionStrategy;
         ContextPackScope = contextPackScope;
+        ContextMode = contextMode;
         IntentKind = intentKind;
         IntentSummary = intentSummary;
         ProposalSummary = proposalSummary;

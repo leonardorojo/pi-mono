@@ -1465,94 +1465,27 @@ static bool IsHelpCommand(string command)
     return command is "help" or "--help" or "-h";
 }
 
-static bool TryBuildTraceSliceProposalIntent(string intentOutputJson, out object intentProjection, out string? errorMessage, string errorPrefix)
-{
-    intentProjection = null!;
-    errorMessage = null;
-
-    try
-    {
-        using var document = JsonDocument.Parse(intentOutputJson);
-        var root = document.RootElement;
-        intentProjection = new
-        {
-            kind = GetRequiredString(root, "Intent"),
-            summary = GetRequiredString(root, "Summary"),
-            source = "intent-inference-agent",
-        };
-        return true;
-    }
-    catch (Exception ex)
-    {
-        errorMessage = $"{errorPrefix}: failed to project intent result: {ex.Message}";
-        return false;
-    }
-}
-
 static async Task<TraceSliceProposalPipelineResult> BuildTraceSliceProposalJsonAsync(string prompt, string currentDirectory, string errorPrefix)
 {
-    var quickIndexResult = RckTraceSliceProposalInputBuilder.Build(currentDirectory, 5);
-    if (!quickIndexResult.Success || quickIndexResult.DagQuickIndex is null)
+    var proposalResult = await RfsCompleteModePipeline.BuildProposalAsync(prompt, currentDirectory, 5);
+    if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
     {
-        return TraceSliceProposalPipelineResult.Failure(quickIndexResult.ErrorMessage ?? $"{errorPrefix}: failed to read TraceSliceProposal input.");
+        return TraceSliceProposalPipelineResult.Failure(proposalResult.ErrorMessage ?? $"{errorPrefix}: failed to build TraceSliceProposal.");
     }
 
-    var intentAgent = new IntentInferenceAgent();
-    var intentTask = new AgentTask(
-        id: $"intent-{Guid.NewGuid():N}",
-        kind: "infer-intent",
-        goal: "infer deterministic operational intent for a trace slice proposal",
-        input: prompt,
-        expectedOutput: "PromptIntent JSON");
-    var intentResult = await intentAgent.ExecuteAsync(intentTask);
-    if (intentResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(intentResult.Output))
-    {
-        var firstError = intentResult.Errors.FirstOrDefault();
-        return TraceSliceProposalPipelineResult.Failure(firstError ?? $"{errorPrefix}: intent inference failed.");
-    }
-
-    if (!TryBuildTraceSliceProposalIntent(intentResult.Output, out var proposalIntent, out var intentErrorMessage, errorPrefix))
-    {
-        return TraceSliceProposalPipelineResult.Failure(intentErrorMessage ?? $"{errorPrefix}: failed to project intent result.");
-    }
-
-    var plannerInputJson = JsonSerializer.Serialize(new
-    {
-        prompt,
-        intent = proposalIntent,
-        dagQuickIndex = quickIndexResult.DagQuickIndex,
-    }, new JsonSerializerOptions
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    });
-
-    var plannerAgent = new TraceSlicePlannerAgent();
-    var plannerTask = new AgentTask(
-        id: $"trace-slice-proposal-{Guid.NewGuid():N}",
-        kind: "propose-trace-slice",
-        goal: "build a deterministic anchor-aware trace slice proposal",
-        input: plannerInputJson,
-        expectedOutput: "TraceSliceProposal JSON");
-    var plannerResult = await plannerAgent.ExecuteAsync(plannerTask);
-    if (plannerResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(plannerResult.Output))
-    {
-        var firstError = plannerResult.Errors.FirstOrDefault();
-        return TraceSliceProposalPipelineResult.Failure(firstError ?? $"{errorPrefix}: trace slice planner failed.");
-    }
-
-    return TraceSliceProposalPipelineResult.SuccessResult(plannerResult.Output);
+    return TraceSliceProposalPipelineResult.SuccessResult(proposalResult.ProposalJson);
 }
 
 static async Task<RckTraceSliceProposalValidationResult> BuildValidatedTraceSliceJsonAsync(string prompt, string currentDirectory, string errorPrefix)
 {
-    var proposalResult = await BuildTraceSliceProposalJsonAsync(prompt, currentDirectory, errorPrefix);
-    if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
+    var validationResult = await RfsCompleteModePipeline.BuildValidatedAsync(prompt, currentDirectory, 5);
+    if (!validationResult.Success || string.IsNullOrWhiteSpace(validationResult.Json))
     {
         return RckTraceSliceProposalValidationResult.Failure(
-            proposalResult.ErrorMessage ?? $"{errorPrefix}: failed to build TraceSliceProposal.");
+            validationResult.ErrorMessage ?? $"{errorPrefix}: failed to validate TraceSliceProposal.");
     }
 
-    return RckTraceSliceProposalValidator.Validate(proposalResult.ProposalJson, currentDirectory, maxStates: 5, maxDeltas: 5);
+    return validationResult;
 }
 
 sealed record TraceSliceProposalPipelineResult(bool Success, string? ErrorMessage, string? ProposalJson)

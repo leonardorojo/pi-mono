@@ -159,8 +159,7 @@ internal static class RfsTuiSession
                 case RfsTuiModeSelection.Simple:
                     return await RunSimpleModeAsync(repoRoot, prompt);
                 case RfsTuiModeSelection.Complete:
-                    RenderModeSelectionStub("Complete mode", prompt, "PT7");
-                    return false;
+                    return await RunCompleteModeAsync(repoRoot, prompt);
                 case RfsTuiModeSelection.Plan:
                     RenderModeSelectionStub("Plan mode", prompt, "PT8");
                     return false;
@@ -322,6 +321,139 @@ internal static class RfsTuiSession
         return false;
     }
 
+    private static async Task<bool> RunCompleteModeAsync(string repoRoot, string prompt)
+    {
+        Console.WriteLine("[Complete mode]");
+        Console.WriteLine("[1/5] Inferring intent...");
+        Console.WriteLine("[2/5] Building TraceSlice proposal...");
+        Console.WriteLine("[3/5] Validating proposal...");
+        Console.WriteLine("[4/5] Building ContextPack...");
+        Console.WriteLine("[5/5] Asking main LLM...");
+        Console.WriteLine();
+
+        var completeResult = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot);
+        if (!completeResult.Success || string.IsNullOrWhiteSpace(completeResult.PromptToSend))
+        {
+            if (!string.IsNullOrWhiteSpace(completeResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(completeResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine("Context:");
+        Console.WriteLine($"  selection: {completeResult.TraceSliceSelectionStrategy ?? "(unknown)"}");
+        Console.WriteLine($"  validation: {completeResult.ValidationStatus ?? "(unknown)"}");
+        Console.WriteLine($"  states: {completeResult.SelectedStateIds.Count}");
+        Console.WriteLine($"  deltas: {completeResult.SelectedDeltaIds.Count}");
+        Console.WriteLine($"  anchors: {completeResult.SelectedAnchorIds.Count}");
+        Console.WriteLine($"  artifact refs: {completeResult.ArtifactRefCount}");
+        Console.WriteLine($"  estimated chars: {completeResult.EstimatedChars}");
+        Console.WriteLine($"  estimated tokens: {completeResult.EstimatedTokens}");
+        Console.WriteLine($"  truncated: {completeResult.Truncated.ToString().ToLowerInvariant()}");
+
+        if (completeResult.Warnings.Count > 0)
+        {
+            Console.WriteLine("  warnings:");
+            foreach (var warning in completeResult.Warnings)
+            {
+                Console.WriteLine($"    - {warning}");
+            }
+        }
+
+        if (completeResult.Omissions.Count > 0)
+        {
+            Console.WriteLine("  omissions:");
+            foreach (var omission in completeResult.Omissions)
+            {
+                Console.WriteLine($"    - {omission}");
+            }
+        }
+
+        Console.WriteLine();
+
+        var askJsonResult = await PiJsonEventRunner.RunAskAsync(
+            repoRoot,
+            completeResult.PromptToSend,
+            RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot));
+
+        if (!askJsonResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(askJsonResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(askJsonResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine("Respuesta:");
+        Console.WriteLine("────────────────────────────────────────────");
+
+        if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
+        {
+            Console.WriteLine("(no assistant output)");
+        }
+        else
+        {
+            foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
+            {
+                Console.WriteLine(answerLine);
+            }
+        }
+
+        var pipelineSummary = new RckInteractionPipelineSummary(
+            "complete",
+            usesRckContext: true,
+            usesTraceSlice: true,
+            usesContextPack: true,
+            validationStatus: completeResult.ValidationStatus,
+            traceSliceSelectionStrategy: completeResult.TraceSliceSelectionStrategy,
+            contextPackScope: completeResult.ContextPackScope,
+            intentKind: completeResult.IntentKind,
+            intentSummary: completeResult.IntentSummary,
+            proposalSummary: completeResult.ProposalSummary,
+            proposalSource: completeResult.ProposalSource,
+            materializationPolicySummary: completeResult.MaterializationPolicySummary,
+            selectedStateIds: completeResult.SelectedStateIds,
+            selectedDeltaIds: completeResult.SelectedDeltaIds,
+            selectedAnchorIds: completeResult.SelectedAnchorIds,
+            artifactRefCount: completeResult.ArtifactRefCount,
+            estimatedChars: completeResult.EstimatedChars,
+            estimatedTokens: completeResult.EstimatedTokens,
+            truncated: completeResult.Truncated,
+            warnings: completeResult.Warnings,
+            omissions: completeResult.Omissions);
+
+        var recordResult = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(
+                prompt,
+                askJsonResult.Answer,
+                askJsonResult.Provider,
+                askJsonResult.Model,
+                mode: "tui-complete",
+                pipelineSummary: pipelineSummary),
+            repoRoot);
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return false;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("State created:");
+        Console.WriteLine($"  {recordResult.StateId?.ToString() ?? "(unknown)"}");
+        Console.WriteLine("Delta created:");
+        Console.WriteLine($"  {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
+
+        return false;
+    }
+
     private static void RenderModeSelectionMenu()
     {
         Console.WriteLine("¿Cómo querés procesar este prompt?");
@@ -338,6 +470,7 @@ internal static class RfsTuiSession
         Console.WriteLine("4. Plan");
         Console.WriteLine("   Generar plan de implementación sin tocar código.");
     }
+
 
     private static void RenderModeSelectionHelp()
     {

@@ -12,6 +12,20 @@ public sealed record RckInteractionPipelineSummary
 
     public string? ValidationStatus { get; }
 
+    public string? TraceSliceSelectionStrategy { get; }
+
+    public string? ContextPackScope { get; }
+
+    public string? IntentKind { get; }
+
+    public string? IntentSummary { get; }
+
+    public string? ProposalSummary { get; }
+
+    public string? ProposalSource { get; }
+
+    public string? MaterializationPolicySummary { get; }
+
     public int? RecentInteractionCount { get; }
 
     public IReadOnlyList<string>? SelectedStateIds { get; }
@@ -28,6 +42,8 @@ public sealed record RckInteractionPipelineSummary
 
     public bool? Truncated { get; }
 
+    public IReadOnlyList<string>? Warnings { get; }
+
     public IReadOnlyList<string>? Omissions { get; }
 
     public RckInteractionPipelineSummary(
@@ -36,6 +52,13 @@ public sealed record RckInteractionPipelineSummary
         bool usesTraceSlice,
         bool usesContextPack,
         string? validationStatus,
+        string? traceSliceSelectionStrategy = null,
+        string? contextPackScope = null,
+        string? intentKind = null,
+        string? intentSummary = null,
+        string? proposalSummary = null,
+        string? proposalSource = null,
+        string? materializationPolicySummary = null,
         int? recentInteractionCount = null,
         IReadOnlyList<string>? selectedStateIds = null,
         IReadOnlyList<string>? selectedDeltaIds = null,
@@ -44,6 +67,7 @@ public sealed record RckInteractionPipelineSummary
         int? estimatedChars = null,
         int? estimatedTokens = null,
         bool? truncated = null,
+        IReadOnlyList<string>? warnings = null,
         IReadOnlyList<string>? omissions = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
@@ -53,6 +77,13 @@ public sealed record RckInteractionPipelineSummary
         UsesTraceSlice = usesTraceSlice;
         UsesContextPack = usesContextPack;
         ValidationStatus = validationStatus;
+        TraceSliceSelectionStrategy = traceSliceSelectionStrategy;
+        ContextPackScope = contextPackScope;
+        IntentKind = intentKind;
+        IntentSummary = intentSummary;
+        ProposalSummary = proposalSummary;
+        ProposalSource = proposalSource;
+        MaterializationPolicySummary = materializationPolicySummary;
         RecentInteractionCount = recentInteractionCount;
         SelectedStateIds = selectedStateIds;
         SelectedDeltaIds = selectedDeltaIds;
@@ -61,6 +92,7 @@ public sealed record RckInteractionPipelineSummary
         EstimatedChars = estimatedChars;
         EstimatedTokens = estimatedTokens;
         Truncated = truncated;
+        Warnings = warnings;
         Omissions = omissions;
     }
 }

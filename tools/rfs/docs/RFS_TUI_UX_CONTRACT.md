@@ -1,6 +1,6 @@
 # RFS TUI UX Contract
 
-PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the Simple Context contract for Simple mode, and PT7 implements the live Simple mode path on top of that contract.
+PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the Simple Context contract for Simple mode, PT7 implements the live Simple mode path on top of that contract, and PT8 implements the live Complete mode path on top of proposal/validation/context-pack reuse.
 
 ## 1. North Star
 
@@ -380,12 +380,12 @@ This cycle does not:
 - PT4 — Auto-record State + Delta
 - PT5 — Direct mode
 - PT6 — Simple mode
-- PT7 — Complete mode
-- PT8 — Plan mode
-- PT9 — `/anchor` + commit-boundary anchors
-- PT10 — Internal commands polish
-- PT11 — Manual lab in `ChessBoardApp`
-- PT12 — Documentation / stop point
+- PT8 — Complete mode
+- PT9 — Plan mode
+- PT10 — `/anchor` + commit-boundary anchors
+- PT11 — Internal commands polish
+- PT12 — Manual lab in `ChessBoardApp`
+- PT13 — Documentation / stop point
 
 ## 13. PT0 close criteria
 

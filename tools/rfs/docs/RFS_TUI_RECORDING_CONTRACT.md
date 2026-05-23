@@ -4,7 +4,7 @@
 
 PT5.
 Implemented.
-This document now describes the live direct-mode TUI recording shape.
+This document now describes the live direct-mode and complete-mode TUI recording shape.
 
 This document defines how a finalized TUI interaction is recorded once the main LLM responds.
 It does not touch `Rufus.RCK.Core`.

@@ -34,6 +34,18 @@ public static class RckInteractionRecorder
             return Record(RckInteractionRecord.CreateTuiSimple(input.Prompt, input.Answer, simplePipelineSummary, input.Provider, input.Model), startingDirectory);
         }
 
+        if (string.Equals(input.Mode, "tui-complete", StringComparison.Ordinal))
+        {
+            var completePipelineSummary = input.PipelineSummary ?? new RckInteractionPipelineSummary(
+                "complete",
+                usesRckContext: true,
+                usesTraceSlice: true,
+                usesContextPack: true,
+                validationStatus: null);
+
+            return Record(RckInteractionRecord.CreateTuiComplete(input.Prompt, input.Answer, completePipelineSummary, input.Provider, input.Model), startingDirectory);
+        }
+
         return Record(RckInteractionRecord.CreateTuiDirect(input.Prompt, input.Answer, input.Provider, input.Model, input.PipelineSummary), startingDirectory);
     }
 
@@ -519,7 +531,7 @@ public static class RckInteractionRecorder
         => mode switch
         {
             "agent" => "rfs agent --record",
-            "tui-direct" => "rfs tui --record",
+            _ when mode.StartsWith("tui-", StringComparison.Ordinal) => "rfs tui --record",
             _ => "rfs ask --record",
         };
 

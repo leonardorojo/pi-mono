@@ -74,6 +74,17 @@ public sealed record RckInteractionRecord
         return new RckInteractionRecord("tui-simple", prompt, answer, summary, pipelineSummary, provider, model, Array.Empty<RckInteractionTool>());
     }
 
+    public static RckInteractionRecord CreateTuiComplete(
+        string prompt,
+        string answer,
+        RckInteractionPipelineSummary pipelineSummary,
+        string? provider = null,
+        string? model = null)
+    {
+        var summary = CreateAnswerSummary(answer);
+        return new RckInteractionRecord("tui-complete", prompt, answer, summary, pipelineSummary, provider, model, Array.Empty<RckInteractionTool>());
+    }
+
     private static string CreateAnswerSummary(string answer)
     {
         if (string.IsNullOrWhiteSpace(answer))

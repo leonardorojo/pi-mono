@@ -17,7 +17,7 @@ await RunCaseAsync(
     expectedProvider: "test-provider",
     expectedModel: "test-model",
     expectedErrorContains: null,
-    failures);
+    failures: failures);
 
 await RunCaseAsync(
     name: "delta fallback with stderr separation",
@@ -27,7 +27,7 @@ await RunCaseAsync(
     expectedProvider: null,
     expectedModel: null,
     expectedErrorContains: null,
-    failures);
+    failures: failures);
 
 await RunCaseAsync(
     name: "final answer beats prior delta",
@@ -37,7 +37,7 @@ await RunCaseAsync(
     expectedProvider: "test-provider",
     expectedModel: "test-model",
     expectedErrorContains: null,
-    failures);
+    failures: failures);
 
 await RunCaseAsync(
     name: "no answer fails explicitly",
@@ -47,7 +47,7 @@ await RunCaseAsync(
     expectedProvider: null,
     expectedModel: null,
     expectedErrorContains: "Pi JSON stream ended before a final assistant answer was observed",
-    failures);
+    failures: failures);
 
 await RunCaseAsync(
     name: "invalid jsonl",
@@ -57,7 +57,7 @@ await RunCaseAsync(
     expectedProvider: null,
     expectedModel: null,
     expectedErrorContains: "Invalid JSONL on line 1",
-    failures);
+    failures: failures);
 
 await RunIntentInferenceCaseAsync(
     name: "intent inference success",
@@ -68,7 +68,7 @@ await RunIntentInferenceCaseAsync(
         input: "Build a TraceSlice for the current diff and summarize evidence.",
         expectedOutput: "PromptIntent JSON"),
     expectedIntent: "build-trace-slice",
-    failures);
+    failures: failures);
 
 await RunIntentInferenceFailureCaseAsync(
     name: "intent inference rejects unsupported kind",
@@ -79,23 +79,23 @@ await RunIntentInferenceFailureCaseAsync(
         input: "Summarize the diff evidence.",
         expectedOutput: null),
     expectedErrorContains: "Kind='infer-intent'",
-    failures);
+    failures: failures);
 
 await RunIntentCliCaseAsync(
     name: "intent cli renders result",
     prompt: "Implement rfs show command",
     expectedIntent: "general-operational-intent",
-    failures);
+    failures: failures);
 
 await RunTraceSliceCliCaseAsync(
     name: "trace slice cli renders deterministic json",
     prompt: "Implement rfs show command",
-    failures);
+    failures: failures);
 
 await RunTraceSliceProposalCliCaseAsync(
     name: "trace slice proposal cli renders deterministic proposal json",
     prompt: "Implement rfs show command",
-    failures);
+    failures: failures);
 
 await RunTraceSliceProposalLlmCliCaseAsync(
     name: "trace slice proposal llm cli renders proposal json",
@@ -151,36 +151,44 @@ await RunRckTraceSliceProposalValidatorCriticalCasesAsync(failures);
 await RunContextPackTraceSliceCliCaseAsync(
     name: "context pack trace-slice cli renders scoped json",
     prompt: "Implement rfs show command",
-    failures);
+    failures: failures);
 
 await RunContextPackTraceSliceValidatedCliCaseAsync(
     name: "context pack trace-slice-validated cli renders validated scoped json",
     prompt: "Implement rfs show command",
-    failures);
+    failures: failures);
 
 RunRfsTuiModeSelectionParserCases(failures);
 
 await RunRckTuiDirectRecordingCaseAsync(
     name: "tui direct recording stores direct pipeline summary",
-    failures);
+    failures: failures);
 
 await RunRfsTuiSimpleModeRecordingSessionCaseAsync(
     name: "bare rfs prompt selects simple mode and records a simple interaction",
     prompt: "Implement reset board action",
     input: "Implement reset board action\n2\n/exit\n",
-    failures);
+    failures: failures);
 
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
-    name: "bare rfs prompt selects complete mode stub",
+    name: "bare rfs prompt selects complete mode real pipeline and records a complete interaction",
     prompt: "Implement reset board action",
     input: "Implement reset board action\n3\n/exit\n",
     expectedFragments: new[]
     {
         "[Complete mode]",
-        "Mode execution will be implemented in PT7.",
+        "[1/5] Inferring intent...",
+        "Context:",
+        "validation:",
+        "Respuesta:",
+        "State created:",
+        "Delta created:",
     },
-    expectPromptEcho: true,
-    failures);
+    expectPromptEcho: false,
+    expectedStateCountDelta: 1,
+    expectedDeltaCountDelta: 1,
+    expectedAnchorCountDelta: 0,
+    failures: failures);
 
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     name: "bare rfs prompt selects plan mode stub",
@@ -192,7 +200,7 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
         "Mode execution will be implemented in PT8.",
     },
     expectPromptEcho: true,
-    failures);
+    failures: failures);
 
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     name: "bare rfs prompt rejects invalid mode then cancels",
@@ -204,7 +212,7 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
         "Prompt cancelled.",
     },
     expectPromptEcho: false,
-    failures);
+    failures: failures);
 
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     name: "bare rfs prompt exits from mode selection",
@@ -215,16 +223,16 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
         "¿Cómo querés procesar este prompt?",
     },
     expectPromptEcho: false,
-    failures);
+    failures: failures);
 
 await RunRfsTuiInitializedSessionCaseAsync(
     name: "bare rfs enters tui and handles basic commands on initialized repo",
-    failures);
+    failures: failures);
 
 
 await RunRfsTuiAutoInitSessionCaseAsync(
     name: "bare rfs auto-initializes an empty repo and enters tui",
-    failures);
+    failures: failures);
 
 if (failures.Count > 0)
 {
@@ -2452,8 +2460,12 @@ static async Task RunRfsTuiPromptModeSelectionSessionCaseAsync(
     string input,
     string[] expectedFragments,
     bool expectPromptEcho,
-    List<string> failures)
+    int expectedStateCountDelta = 0,
+    int expectedDeltaCountDelta = 0,
+    int expectedAnchorCountDelta = 0,
+    List<string>? failures = null)
 {
+    failures ??= new List<string>();
     var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
     var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
     var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-mode-selection-checks", Guid.NewGuid().ToString("N"));
@@ -2502,9 +2514,11 @@ static async Task RunRfsTuiPromptModeSelectionSessionCaseAsync(
         }
 
         var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
-        if (statusAfter.StateCount != statusBefore.StateCount || statusAfter.DeltaCount != statusBefore.DeltaCount || statusAfter.AnchorCount != statusBefore.AnchorCount)
+        if (statusAfter.StateCount - statusBefore.StateCount != expectedStateCountDelta ||
+            statusAfter.DeltaCount - statusBefore.DeltaCount != expectedDeltaCountDelta ||
+            statusAfter.AnchorCount - statusBefore.AnchorCount != expectedAnchorCountDelta)
         {
-            failures.Add($"[{name}] expected prompt mode selection to leave RCK counts unchanged.");
+            failures.Add($"[{name}] expected RCK count deltas to be state +{expectedStateCountDelta}, delta +{expectedDeltaCountDelta}, anchor +{expectedAnchorCountDelta} but got state {statusBefore.StateCount}->{statusAfter.StateCount}, delta {statusBefore.DeltaCount}->{statusAfter.DeltaCount}, anchor {statusBefore.AnchorCount}->{statusAfter.AnchorCount}.");
         }
     }
     catch (Exception ex)

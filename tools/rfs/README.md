@@ -8,6 +8,7 @@ It is intentionally still a POC, not a finished product.
 Canonical policy reference: [`docs/RFS_COMMAND_GOVERNANCE.md`](docs/RFS_COMMAND_GOVERNANCE.md).
 Canonical TUI UX reference: [`docs/RFS_TUI_UX_CONTRACT.md`](docs/RFS_TUI_UX_CONTRACT.md).
 Canonical TUI recording reference: [`docs/RFS_TUI_RECORDING_CONTRACT.md`](docs/RFS_TUI_RECORDING_CONTRACT.md).
+Canonical Simple Context reference: [`docs/RFS_SIMPLE_CONTEXT_CONTRACT.md`](docs/RFS_SIMPLE_CONTEXT_CONTRACT.md).
 
 Short version:
 
@@ -19,7 +20,7 @@ Short version:
 - Experimental / diagnostic commands: `rfs ask-json`, `rfs agent-json`, `rfs trace-slice-proposal`, `rfs trace-slice-validate`, `rfs trace-slice-proposal-llm`, `rfs trace-slice-validate-llm`, `rfs context-pack --trace-slice-validated`.
 - Legacy current commands: `rfs agent`, `rfs agent --record`.
 - RCK writers: `rfs ask --record`, `rfs intent --record`, `rfs agent --record`.
-- The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI.
+- The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI; PT6 defines the future Simple Context contract.
 - Do not confuse proposal with the final TraceSlice, or TraceSlice with ContextPack.
 - Do not add new commands before closing the current cycle.
 

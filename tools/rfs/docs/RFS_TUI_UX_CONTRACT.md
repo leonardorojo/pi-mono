@@ -1,6 +1,6 @@
 # RFS TUI UX Contract
 
-PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path.
+PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the future Simple Context contract for Simple mode.
 
 ## 1. North Star
 
@@ -137,20 +137,20 @@ Pipeline:
 
 ```text
 Prompt
-→ últimas 5 interacciones RCK
-→ git status
-→ artifacts metadata
-→ simple context
+→ Simple Context
 → LLM principal
 → respuesta
 → State
 → Delta
 ```
 
+Simple Context contract: [`RFS_SIMPLE_CONTEXT_CONTRACT.md`](RFS_SIMPLE_CONTEXT_CONTRACT.md).
+
 Characteristics:
 
 - recommended for daily use
 - uses lightweight context only
+- Simple Context is compact, safe, and intentionally smaller than a full ContextPack
 - does not use the full TraceSliceProposal/Validation stack
 - validation can remain absent unless later added explicitly
 - does not modify code

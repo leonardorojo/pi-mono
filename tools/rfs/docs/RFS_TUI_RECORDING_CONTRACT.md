@@ -151,10 +151,14 @@ The persisted interaction `mode` should be one of:
 ### `tui-simple`
 
 - `pipelineKind = simple`
-- `lastInteractionCount`
-- `selectedRecentStateIds` when applicable
-- `selectedRecentDeltaIds` when applicable
-- artifact refs are metadata-only
+- `recentInteractionCount`
+- `selectedStateIds` when applicable
+- `selectedDeltaIds` when applicable
+- `selectedAnchorIds` when applicable
+- `artifactRefCount`
+- `estimatedChars`
+- `estimatedTokens`
+- `truncated`
 - `contextSummary`
 
 ### `tui-complete`
@@ -200,7 +204,7 @@ Minimum conceptual fields:
 Mode-specific additions:
 
 - direct: only a short summary of the single-shot response path
-- simple: recent-state / recent-delta selection metadata plus a short context summary
+- simple: recent interaction count, selected ids, artifact ref count, estimated budget, and truncation status
 - complete: intent, proposal, validation, trace-slice selection, context-pack scope, and materialization policy summaries
 - plan: planning summary plus the chosen context mode
 

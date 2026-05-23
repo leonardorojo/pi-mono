@@ -2,10 +2,11 @@
 
 ## Status
 
-PT6.
-Documentation-only.
-This document defines the future *Simple Context v0* contract for the TUI Simple mode.
-PT7 implements the first runtime use of this contract in the TUI Simple path.
+PT13.
+Documentation-only stop point.
+This document defines the live *Simple Context v0* contract for the TUI Simple mode.
+PT7 implemented the first runtime use of this contract in the TUI Simple path.
+PT12 externally validated the live TUI behavior and confirmed the context-usage reporting shape.
 
 This phase does not implement runtime behavior.
 It does not call Pi or any LLM.

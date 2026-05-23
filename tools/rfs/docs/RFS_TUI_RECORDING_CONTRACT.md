@@ -2,9 +2,9 @@
 
 ## Status
 
-PT5.
+PT13.
 Implemented.
-This document now describes the live direct-mode, simple-mode, complete-mode, and plan-mode TUI recording shape.
+This document now describes the live direct-mode, simple-mode, complete-mode, and plan-mode TUI recording shape, and it remains the canonical stop-point reference for the TUI cycle.
 
 This document defines how a finalized TUI interaction is recorded once the main LLM responds.
 It does not touch `Rufus.RCK.Core`.
@@ -301,3 +301,14 @@ This contract does not:
 - persist raw context packs, traces, or tool outputs
 - change log/context-pack compatibility surface
 - introduce RCK schema migrations
+
+## 13. PT12 validation note
+
+PT12 externally validated the live TUI against a real repository and confirmed the intended recording boundary:
+
+- Direct, Simple, and Plan modes create one State + one Delta only after the main LLM responds
+- Complete mode can fail before the main LLM response with `Argument list too long`
+- when that failure happens, no State or Delta is created
+- the TUI remains operable after the failure
+- no raw JSONL, stdout/stderr dumps, diffs, or file contents were accepted into the recorded summaries
+- the validation did not require a Core schema change

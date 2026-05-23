@@ -3,267 +3,273 @@
 ## 1. State summary
 
 - Active working branch: `feature/rufus-cli-design`
-- Expected repo state at closeout:
-  - working tree clean
-  - `origin/feature/rufus-cli-design` updated
-- Current focus:
-  - PT4: RFS TUI Recording Contract / Payload Audit
-  - governed prompt -> Intent -> TraceSlice -> ContextPack pipeline remains documented as backend policy
-  - TUI final-response recording reuses the existing interaction payload family
+- Phase: **PT13 — Documentation / stop point**
+- This cycle is documentation-only.
+- It does not add runtime behavior.
+- It does not add commands.
+- It does not touch `Rufus.RCK.Core`.
+- It does not change transport.
+- It does not correct `Argument list too long`.
 
-This document is the PT4 closeout note for the current documentation cycle.
-It is documentation-only.
-It does not add features.
-It does not add commands.
-It does not modify runtime behavior.
-It does not touch `Rufus.RCK.Core`.
-It does not write RCK.
+PT12 was validated externally in `ChessBoardApp` and confirmed the live TUI state before this stop point.
 
-The canonical TUI UX contract lives in `RFS_TUI_UX_CONTRACT.md`.
-The canonical TUI recording contract lives in `RFS_TUI_RECORDING_CONTRACT.md`.
+Observed PT12 end state:
+
+- RCK HEAD: `b9919c2a680ae7ad5da2c4e75ba3d0cfae775d5e6b81b714cfd6cacc6be136ad`
+- states: `20`
+- deltas: `19`
+- anchors: `3`
+- untracked files left in the lab repo:
+  - `RFS_TRACE_LAB_NOTE.md`
+  - `RFS_TRACE_TEST.md`
 
 ## 2. North Star
 
+RFS debe ser una sesión cognitiva del repo.
+
+Canonical flow:
+
 ```text
-Prompt
-  -> Intent
-  -> TraceSliceProposal
-  -> RFS validation
-  -> TraceSlice final
-  -> ContextPack
-  -> LLM principal
+cd repo
+rfs
+
+if no .rfs:
+  auto-init
+
+prompt first
+choose mode:
+  1 Direct
+  2 Simple
+  3 Complete
+  4 Plan
+
+main LLM responds
+
+only then:
+  State + Delta
 ```
 
 Principle:
 
-- The agent proposes.
-- RFS validates.
-- RCK remembers.
-- ContextPack materializes.
-- The LLM principal responds.
+- the user writes the prompt first
+- the mode is selected after the prompt
+- the main LLM response closes the interaction
+- recording happens only after the main LLM responds
+- anchors are structural milestones, not per-prompt records
 
-## 3. Current architecture
+## 3. Current architecture boundary
 
-The current architecture is intentionally layered:
+The current RFS architecture stays layered:
 
 ```text
 Rufus.Cli
-  -> orchestrates commands
+  -> orchestrates commands and TUI UX
 
 Rufus.RCK.Workspace
-  -> filesystem, .rfs, git context, readers/builders/validators
+  -> .rfs, Git context, readers, builders, validators
 
 Rufus.RCK.Core
-  -> kernel minimal type system for cognitive git-like state
+  -> minimal persistent cognitive kernel
 
 Rufus.Agenting
-  -> executes AgentTask / AgentTaskResult
+  -> operational AgentTask / AgentTaskResult layer
 
 Pi integration
-  -> RPC / JSON mode / LLM proposals depending on the command
+  -> JSON / RPC / LLM execution depending on the command
 ```
 
 Boundary rules:
 
 - `Rufus.RCK.Core` does not know Pi.
-- `Rufus.RCK.Core` does not know Agenting.
-- `Rufus.RCK.Core` does not know Workspace.
-- `Rufus.Agenting` does not depend on RCK.
-- `Rufus.RCK.Workspace` adapts and validates.
-- `Rufus.Cli` orchestrates.
+- `Rufus.RCK.Core` does not know `Rufus.Agenting`.
+- `Rufus.RCK.Core` does not know `Rufus.RCK.Workspace`.
+- `Rufus.Agenting` does not depend on RCK Core.
+- `Rufus.RCK.Workspace` owns persistence, projection, and validation.
+- `Rufus.Cli` owns orchestration and presentation.
 
-## 4. RCK Core boundary
+## 4. Live TUI state confirmed by PT12
 
-`Rufus.RCK.Core` remains pure and minimal.
+PT12 validated the TUI in a real repository and confirmed:
 
-It contains structural wrappers such as:
+- `/status`, `/log`, `/model`, `/context`, `/trace`, `/help`, `/exit` respond normally
+- `/context` and `/trace` show clear summaries when no session context exists
+- `/model` without args shows the current model and source
+- `/model <model>` is config-only and does not write RCK
+- `/anchor "name"` creates only an Anchor on the current HEAD
+- Direct mode records `State + Delta`
+- Simple mode records `State + Delta`
+- Plan mode records `State + Delta`
+- Complete mode shows its governed stages and can fail before the main LLM call with `Argument list too long`
+- the TUI remains operable after that failure
 
-- `State`
-- `Delta`
-- `Anchor`
-- `Ref`
-- `EvidenceRef`
-- `PatchOp` if applicable
+## 5. Mode contracts
 
-Semantic payloads live inside the payload itself, for example:
-
-- `interaction-state`
-- `agent-task-state`
-- `trace-slice`
-- related payload-specific shapes
-
-This phase does not alter that boundary.
-No core changes are expected unless there is a separate explicit architectural decision.
-
-## 5. Pipeline available today
-
-### A. Baseline TraceSlice
+### Direct
 
 ```text
-rfs trace-slice "<prompt>"
-rfs context-pack --trace-slice "<prompt>"
+Prompt -> LLM principal -> State + Delta
 ```
 
-Meaning:
-
-- `rfs trace-slice` builds the deterministic TraceSlice baseline.
-- `rfs context-pack --trace-slice` materializes a ContextPack from that baseline.
-
-### B. Governed deterministic pipeline
+### Simple
 
 ```text
-rfs trace-slice-proposal "<prompt>"
-rfs trace-slice-validate "<prompt>"
-rfs context-pack --trace-slice-validated "<prompt>"
+Prompt -> Simple Context v0 -> LLM principal -> State + Delta
 ```
 
-Meaning:
-
-- `rfs trace-slice-proposal` proposes a candidate TraceSlice.
-- `rfs trace-slice-validate` is the authority boundary and emits the final TraceSlice.
-- `rfs context-pack --trace-slice-validated` materializes from the validated TraceSlice.
-
-### C. LLM experimental proposal pipeline
+### Complete
 
 ```text
-rfs trace-slice-proposal-llm "<prompt>"
-rfs trace-slice-validate-llm "<prompt>"
+Prompt -> Intent -> TraceSliceProposal -> RFS validation -> TraceSlice final -> ContextPack -> LLM principal -> State + Delta
 ```
 
-Meaning:
+### Plan
 
-- the LLM only proposes;
-- RFS validation remains authoritative;
-- proposal does not equal final decision;
-- validation emits the final TraceSlice;
-- ContextPack still materializes only from the validated result.
+```text
+Prompt -> Simple Context v0 -> LLM principal -> plan response -> State + Delta
+```
 
-## 6. Main command categories
+## 6. Recording rules
 
-See `RFS_COMMAND_GOVERNANCE.md` for the canonical command matrix.
-This section is a closeout summary, not a second source of truth.
+- No recording when the prompt is typed.
+- No recording when the mode is selected.
+- No recording during internal pipeline steps.
+- Only the main LLM response closes the interaction and triggers persistence.
+- State + Delta summarize the full interaction window.
 
-| Category | Stability | Writes RCK | Pi / RPC / JSON / legacy | Notes |
-| --- | --- | --- | --- | --- |
-| Workspace / RCK | stable | mixed | workspace / Git / local projection | `init`, `status`, `log`, `context-pack` |
-| Models | stable | no | local config / Pi RPC | `model get`, `model set`, `model list` |
-| Ask | stable | only `ask --record` | Pi JSON mode | `ask`, `ask --record`, `ask-json` |
-| Intent / TraceSlice | mixed | only record variants | deterministic / Pi LLM / validation | proposal, validation, and intent paths |
-| Agent | legacy current / experimental | only `agent --record` | legacy bridge / Pi JSON-tools experimental | `agent`, `agent --record`, `agent-json` |
-| Pi | passthrough | no | direct Pi surface | `rfs pi` |
+Record the controlled summary, not raw dumps:
 
-Notes:
+- prompt
+- selected mode
+- context summary
+- validation summary, when applicable
+- final response summary
+- git context
+- artifact metadata
+- pipelineSummary
 
-- Stable means the command is part of the current supported surface.
-- Experimental means the command exists but the pipeline is still being hardened.
-- Legacy current means the command still exists, but it is not the preferred long-term bridge design.
+## 7. Anchors
 
-## 7. What writes RCK
+Anchors are created only on:
 
-Writes RCK:
+- init / genesis
+- git commit boundary
+- explicit `/anchor "name"`
 
-- `rfs ask --record`
-- `rfs intent --record`
-- `rfs agent --record`
+Explicit `/anchor`:
 
-Does not write RCK:
+- creates an Anchor on the current HEAD
+- does not create State
+- does not create Delta
+- does not call the LLM
 
-- `rfs trace-slice`
-- `rfs trace-slice-proposal`
-- `rfs trace-slice-validate`
-- `rfs trace-slice-proposal-llm`
-- `rfs trace-slice-validate-llm`
-- `rfs context-pack`
-- `rfs context-pack --trace-slice`
-- `rfs context-pack --trace-slice-validated`
-- `rfs ask`
-- `rfs ask-json`
-- `rfs intent`
-- `rfs model get`
-- `rfs model set` does not write RCK, although it does write `.rfs/config.json`
-- `rfs model list`
-- `rfs status`
-- `rfs log`
+## 8. Command governance
 
-## 8. Agent legacy status
+Available internal commands:
 
-Current status:
+- `/status`
+- `/log`
+- `/model`
+- `/model <model>`
+- `/context`
+- `/trace`
+- `/anchor "name"`
+- `/help`
+- `/exit`
 
-- `rfs agent` remains legacy current.
-- `rfs agent --record` remains legacy current.
-- `rfs agent-json` remains experimental.
-- No migration has been completed yet.
-- No deprecation has been issued yet.
-- Legacy bridges remain in place.
+Rules:
 
-Reopen only with a clear decision on:
+- informational commands do not write RCK
+- `/model <model>` only writes `.rfs/config.json`
+- `/context` and `/trace` are summaries, not dumps
+- `/anchor` writes Anchor only
 
-- security,
-- tool parity,
-- sandbox behavior,
-- and whether `agent-json` can actually replace the legacy path.
+The technical command surface remains available as backend/debug tooling.
 
-## 9. LLM proposal status
+## 9. Context budget usage reporting
 
-Current status:
+Simple, Complete, and Plan modes surface a controlled context report when they build a context:
 
-- `trace-slice-proposal-llm` exists.
-- `trace-slice-validate-llm` exists.
-- The LLM only proposes.
-- Parsing is strict.
-- Shape is mandatory.
-- RFS validation remains the authority.
-- `contents`, `diffs`, `stdout`, `stderr`, and `jsonl` are not accepted as proposal payloads.
-- No RCK is written by the proposal path.
+- estimated chars
+- estimated tokens
+- model budget
+- context usage
+- transport size
+- transport risk
+- truncated
 
-## 10. Known risks
+Interpretation:
 
-- `agent-json` depends on Pi tools enforcement and is not a safe replacement for legacy `agent` yet.
-- LLM proposal remains experimental and must stay subordinated to validation.
-- There are already many experimental command paths; do not add more without a clear decision.
-- ContextPack scoped exports select payloads according to policy; this is not a summary-only mode.
-- Anchors are conceptually integrated, but anchor-aware selection may continue to evolve.
-- Legacy bridges are still live.
+- model budget may be `unknown` when no clean source exists
+- context window budget and process-argument transport risk are different problems
+- a model can have enough window and still fail on the OS argument limit
+
+## 10. Known risk
+
+Complete mode can fail with:
+
+```text
+Argument list too long
+```
+
+Status:
+
+- known risk
+- not corrected in this cycle
+- does not block Direct, Simple, or Plan
+- PT12 confirmed that if the failure happens before the main LLM response, no State or Delta is created and RCK is not corrupted
+
+Future mitigations that remain out of scope for this cycle:
+
+- pass the prompt by stdin
+- use a controlled temporary file
+- compact the ContextPack
+- add a transport budget warning
+- degrade Complete to Simple when needed
+- add real per-model budget metadata in config
 
 ## 11. Stop point
 
 This is the stop point of the current cycle.
 
-Do not continue adding features in this cycle.
+Do not add more runtime features in this cycle.
 Do not add new commands.
 Do not touch `Rufus.RCK.Core`.
 Do not migrate legacy agent behavior.
-Do not deprecate legacy bridges.
+Do not deprecate bridges.
 Do not create `ModelRouter`.
 
 The next work should begin only if a new phase is explicitly opened.
 
-## 12. Post-closeout backlog
+## 12. Validation summary
 
-### P25 — Reconsider `agent` / `agent --record`
+PT12 external validation in `ChessBoardApp` confirmed:
 
-- resolve security / parity / sandbox concerns
-- decide whether `agent-json` can replace the legacy path
-- define RCK evidence for agent execution
+- internal commands OK
+- `/model` config-only OK
+- `/anchor` explicit OK
+- Direct mode OK
+- Simple mode OK
+- Plan mode OK
+- Complete mode failed in a controlled way with `Argument list too long`
+- leak/safety grep checks were clean
+- no commits
+- no push
+- no source-code changes
+- no RCK Core changes
 
-### P26 — Deprecate legacy bridges
+## 13. Non-goals
 
-- only after ask / agent / recording / fallback behavior is stabilized
+This cycle does not:
 
-### Future possibilities
-
-- agent selection by agent id, without `ModelRouter`
-- ContextPack summary mode if a real need appears
-- TraceSlice persistence if the justification becomes strong enough
-- more tests around LLM proposal behavior
-
-## 13. Validation checklist
-
-Planned closeout validations:
-
-- `git status --short --branch`
-- `dotnet build tools/rfs/Rufus.Cli.sln`
-- `dotnet run --project tools/rfs/tests/Rufus.Cli.ParserChecks/Rufus.Cli.ParserChecks.csproj`
-- `git diff --check`
-
-No external runtime validation is required for this phase because the phase is documentation-only.
+- add an autonomous agent that edits code
+- add apply-patch behavior
+- add a write sandbox
+- migrate legacy `rfs agent`
+- deprecate legacy bridges
+- create `ModelRouter`
+- correct `Argument list too long`
+- change prompt transport
+- pass prompts by stdin
+- use temporary files for transport
+- compact ContextPack
+- touch `Rufus.RCK.Core`

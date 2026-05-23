@@ -116,6 +116,11 @@ internal static class RfsTuiSession
                     continue;
                 }
 
+                if (TryHandleTopLevelCommand(input, repoRoot))
+                {
+                    continue;
+                }
+
                 if (await RunPromptModeSelectionAsync(input, repoRoot))
                 {
                     break;
@@ -702,6 +707,61 @@ internal static class RfsTuiSession
         }
     }
 
+    private static bool TryHandleTopLevelCommand(string input, string repoRoot)
+    {
+        if (!TryParseAnchorCommand(input, out var anchorLabel))
+        {
+            return false;
+        }
+
+        if (anchorLabel is null)
+        {
+            Console.WriteLine("Usage:");
+            Console.WriteLine("  /anchor \"milestone-name\"");
+            return true;
+        }
+
+        var result = RckWorkspaceAnchorWriter.CreateExplicitAnchor(anchorLabel, repoRoot);
+        foreach (var line in result.FormatConsoleLines())
+        {
+            Console.WriteLine(line);
+        }
+
+        return true;
+    }
+
+    private static bool TryParseAnchorCommand(string input, out string? anchorLabel)
+    {
+        anchorLabel = null;
+        const string command = "/anchor";
+
+        if (!input.StartsWith(command, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (input.Length > command.Length && !char.IsWhiteSpace(input[command.Length]))
+        {
+            return false;
+        }
+
+        var remainder = input[command.Length..].Trim();
+        if (remainder.Length == 0)
+        {
+            return true;
+        }
+
+        if (remainder.StartsWith('"') && remainder.EndsWith('"'))
+        {
+            remainder = remainder[1..^1].Trim();
+        }
+
+        anchorLabel = remainder.Length == 0 || remainder.Contains('\n') || remainder.Contains('\r')
+            ? null
+            : remainder;
+        return true;
+    }
+
     private static void RenderHelp()
     {
         Console.WriteLine("RFS TUI");
@@ -714,6 +774,7 @@ internal static class RfsTuiSession
         Console.WriteLine("  4 Plan");
         Console.WriteLine();
         Console.WriteLine("Comandos internos:");
+        Console.WriteLine("  /anchor \"name\"   Create a milestone anchor on current RCK HEAD.");
         Console.WriteLine("  /status");
         Console.WriteLine("  /help");
         Console.WriteLine("  /exit");

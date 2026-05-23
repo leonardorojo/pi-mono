@@ -155,6 +155,7 @@ Important:
 - `rfs ask --record`
 - `rfs intent --record`
 - `rfs agent --record`
+- TUI internal `/anchor "name"` milestone command
 
 ### Does not write RCK
 

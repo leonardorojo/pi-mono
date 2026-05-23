@@ -29,7 +29,7 @@ public static class RckWorkspaceInitializer
         var headCreated = EnsureHead(paths, state.Id);
 
         var anchor = BuildGenesisAnchor(state);
-        var anchorCreated = EnsureGenesisAnchor(paths, anchor);
+        var anchorCreated = RckWorkspaceAnchorWriter.EnsureAnchor(paths, anchor);
 
         return RckWorkspaceInitResult.SuccessResult(
             repoRoot,
@@ -116,17 +116,6 @@ public static class RckWorkspaceInitializer
         return true;
     }
 
-    private static bool EnsureGenesisAnchor(RckWorkspacePaths paths, RckAnchor anchor)
-    {
-        var anchorPath = Path.Combine(paths.AnchorsDirectory, $"{anchor.Id}.json");
-        if (File.Exists(anchorPath))
-        {
-            return false;
-        }
-
-        File.WriteAllText(anchorPath, SerializeAnchorEnvelope(anchor), Utf8NoBom);
-        return true;
-    }
 
     private static RckState BuildGenesisState(string repoRoot, string workspaceName, GitWorkspaceContext gitContext)
     {
@@ -191,26 +180,6 @@ public static class RckWorkspaceInitializer
         return JsonSerializer.Serialize(envelope, IndentedJsonOptions);
     }
 
-    private static string SerializeAnchorEnvelope(RckAnchor anchor)
-    {
-        var envelope = new
-        {
-            schemaVersion = 1,
-            type = "rufus.rck.anchor",
-            id = anchor.Id.ToString(),
-            stateId = anchor.StateId.ToString(),
-            parentAnchorIds = anchor.ParentAnchorIds.Select(parent => parent.ToString()).ToArray(),
-            meta = new
-            {
-                createdAtUtc = anchor.Meta.CreatedAtUtc,
-                anchor.Meta.CreatedBy,
-                anchor.Meta.Label,
-                anchor.Meta.Reason,
-            },
-        };
-
-        return JsonSerializer.Serialize(envelope, IndentedJsonOptions);
-    }
 
     private static object SerializeRckRef(RckRef rckRef)
     {

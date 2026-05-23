@@ -21,6 +21,7 @@ Short version:
 - Legacy current commands: `rfs agent`, `rfs agent --record`.
 - RCK writers: `rfs ask --record`, `rfs intent --record`, `rfs agent --record`.
 - The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI; PT7 implements the Simple mode path and final-response recording on top of the Simple Context contract; PT8 implements the Complete mode path with proposal -> validation -> validated ContextPack -> final-response recording; PT9 implements the Plan mode path with Simple Context reuse and final-response recording; PT9.5 adds context budget usage reporting without changing transport behavior.
+- The TUI also exposes `/anchor "name"` for explicit milestone anchors on the current RCK HEAD.
 - Do not confuse proposal with the final TraceSlice, or TraceSlice with ContextPack.
 - Do not add new commands before closing the current cycle.
 

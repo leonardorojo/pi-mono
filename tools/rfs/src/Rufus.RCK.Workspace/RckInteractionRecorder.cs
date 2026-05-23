@@ -144,7 +144,7 @@ public static class RckInteractionRecorder
                 nextState.Id,
                 meta: new RckAnchorMeta(DateTimeOffset.UtcNow, createdBy, anchorLabel, "detected new git commit during recorded interaction"));
 
-            anchorCreated = EnsureAnchor(paths, anchor);
+            anchorCreated = RckWorkspaceAnchorWriter.EnsureAnchor(paths, anchor);
             anchorId = anchor.Id;
         }
 
@@ -187,18 +187,6 @@ public static class RckInteractionRecorder
         return true;
     }
 
-    private static bool EnsureAnchor(RckWorkspacePaths paths, RckAnchor anchor)
-    {
-        Directory.CreateDirectory(paths.AnchorsDirectory);
-        var anchorPath = Path.Combine(paths.AnchorsDirectory, $"{anchor.Id}.json");
-        if (File.Exists(anchorPath))
-        {
-            return false;
-        }
-
-        File.WriteAllText(anchorPath, SerializeAnchorEnvelope(anchor), Utf8NoBom);
-        return true;
-    }
 
     private static string BuildInteractionStatePayload(
         RckInteractionRecord record,
@@ -437,26 +425,6 @@ public static class RckInteractionRecorder
         return JsonSerializer.Serialize(envelope, IndentedJsonOptions);
     }
 
-    private static string SerializeAnchorEnvelope(RckAnchor anchor)
-    {
-        var envelope = new
-        {
-            schemaVersion = 1,
-            type = "rufus.rck.anchor",
-            id = anchor.Id.ToString(),
-            stateId = anchor.StateId.ToString(),
-            parentAnchorIds = anchor.ParentAnchorIds.Select(parent => parent.ToString()).ToArray(),
-            meta = new
-            {
-                createdAtUtc = anchor.Meta.CreatedAtUtc,
-                anchor.Meta.CreatedBy,
-                anchor.Meta.Label,
-                anchor.Meta.Reason,
-            },
-        };
-
-        return JsonSerializer.Serialize(envelope, IndentedJsonOptions);
-    }
 
     private static object SerializeRckRef(RckRef rckRef)
     {

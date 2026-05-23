@@ -164,6 +164,18 @@ await RunRckTuiDirectRecordingCaseAsync(
     name: "tui direct recording stores direct pipeline summary",
     failures: failures);
 
+await RunRckTuiCommitBoundaryAnchorCaseAsync(
+    name: "tui recorder creates a commit-boundary anchor when git commit changes",
+    failures: failures);
+
+await RunRfsTuiAnchorUsageSessionCaseAsync(
+    name: "bare rfs /anchor without a name prints usage and does not call the LLM",
+    failures: failures);
+
+await RunRfsTuiAnchorCommandSessionCaseAsync(
+    name: "bare rfs /anchor creates a milestone anchor on current HEAD",
+    failures: failures);
+
 await RunRfsTuiSimpleModeRecordingSessionCaseAsync(
     name: "bare rfs prompt selects simple mode and records a simple interaction",
     prompt: "Implement reset board action",
@@ -2793,6 +2805,295 @@ static async Task RunRckTuiDirectRecordingCaseAsync(string name, List<string> fa
         var cause = deltaPayloadRoot.GetProperty("cause");
         AssertStringEqual(name, failures, "delta.cause.mode", "tui-direct", cause.GetProperty("mode").GetString());
         AssertStringEqual(name, failures, "delta.cause.pipelineSummary.kind", "direct", cause.GetProperty("pipelineSummary").GetProperty("kind").GetString());
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunRckTuiCommitBoundaryAnchorCaseAsync(string name, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-commit-boundary-anchor-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var configNameResult = await RunProcessAsync(tempRoot, "git", "config", "user.name", "Rufus Test");
+        var configEmailResult = await RunProcessAsync(tempRoot, "git", "config", "user.email", "rufus@test.local");
+        if (configNameResult.ExitCode != 0 || configEmailResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to configure git identity for the temp repo.");
+            return;
+        }
+
+        var seedPath = Path.Combine(tempRoot, "README.md");
+        await File.WriteAllTextAsync(seedPath, "seed\n");
+        var addResult = await RunProcessAsync(tempRoot, "git", "add", "README.md");
+        if (addResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to stage the seed file: {addResult.Stderr}");
+            return;
+        }
+
+        var commitResult = await RunProcessAsync(tempRoot, "git", "commit", "-m", "seed commit");
+        if (commitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to create the seed commit: {commitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj"), "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var firstRecord = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(
+                "Record the first interaction.",
+                "First interaction recorded.",
+                provider: "test-provider",
+                model: "test-model"),
+            tempRoot);
+
+        if (!firstRecord.Success)
+        {
+            failures.Add($"[{name}] expected first RecordTui to succeed but got error: {firstRecord.ErrorMessage}");
+            return;
+        }
+
+        var statusAfterFirst = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfterFirst.StateCount != statusBefore.StateCount + 1 ||
+            statusAfterFirst.DeltaCount != statusBefore.DeltaCount + 1 ||
+            statusAfterFirst.AnchorCount != statusBefore.AnchorCount)
+        {
+            failures.Add($"[{name}] expected first record to add only state+delta, not anchor.");
+        }
+
+        await File.AppendAllTextAsync(seedPath, "second change\n");
+        var addSecondResult = await RunProcessAsync(tempRoot, "git", "add", "README.md");
+        if (addSecondResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to stage the second change: {addSecondResult.Stderr}");
+            return;
+        }
+
+        var commitSecondResult = await RunProcessAsync(tempRoot, "git", "commit", "-m", "second commit");
+        if (commitSecondResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to create the second commit: {commitSecondResult.Stderr}");
+            return;
+        }
+
+        var secondRecord = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(
+                "Record the second interaction after a commit boundary.",
+                "Second interaction recorded.",
+                provider: "test-provider",
+                model: "test-model"),
+            tempRoot);
+
+        if (!secondRecord.Success)
+        {
+            failures.Add($"[{name}] expected second RecordTui to succeed but got error: {secondRecord.ErrorMessage}");
+            return;
+        }
+
+        if (!secondRecord.AnchorCreated)
+        {
+            failures.Add($"[{name}] expected commit-boundary anchor to be created on the second record.");
+        }
+
+        var statusAfterSecond = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfterSecond.StateCount != statusBefore.StateCount + 2 ||
+            statusAfterSecond.DeltaCount != statusBefore.DeltaCount + 2 ||
+            statusAfterSecond.AnchorCount != statusBefore.AnchorCount + 1)
+        {
+            failures.Add($"[{name}] expected commit-boundary record to add a single anchor on top of the state/delta pair.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunRfsTuiAnchorUsageSessionCaseAsync(string name, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-anchor-usage-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/anchor\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        if (tuiResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+        }
+
+        if (!tuiResult.Stdout.Contains("Usage:", StringComparison.Ordinal) ||
+            !tuiResult.Stdout.Contains("/anchor \"milestone-name\"", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected /anchor without a name to print usage.");
+        }
+
+        if (tuiResult.Stdout.Contains("Anchor created:", StringComparison.Ordinal) ||
+            tuiResult.Stdout.Contains("Respuesta:", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected /anchor without a name to avoid LLM or anchor creation output.");
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfter.StateCount != statusBefore.StateCount ||
+            statusAfter.DeltaCount != statusBefore.DeltaCount ||
+            statusAfter.AnchorCount != statusBefore.AnchorCount)
+        {
+            failures.Add($"[{name}] expected /anchor without a name to leave RCK counts unchanged.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunRfsTuiAnchorCommandSessionCaseAsync(string name, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-anchor-command-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var headPath = Path.Combine(tempRoot, ".rfs", "rck", "HEAD");
+        var headBefore = await File.ReadAllTextAsync(headPath);
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/anchor manual-test-anchor\n/status\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        if (tuiResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+        }
+
+        var requiredFragments = new[]
+        {
+            "Anchor created:",
+            "name: manual-test-anchor",
+            "state:",
+            "id:",
+        };
+
+        foreach (var fragment in requiredFragments)
+        {
+            if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        if (tuiResult.Stdout.Contains("Respuesta:", StringComparison.Ordinal) ||
+            tuiResult.Stdout.Contains("¿Cómo querés procesar este prompt?", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected /anchor to bypass the main LLM pipeline.");
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfter.StateCount != statusBefore.StateCount ||
+            statusAfter.DeltaCount != statusBefore.DeltaCount ||
+            statusAfter.AnchorCount != statusBefore.AnchorCount + 1)
+        {
+            failures.Add($"[{name}] expected /anchor to add exactly one anchor without changing HEAD/state/delta counts.");
+        }
+
+        var headAfter = await File.ReadAllTextAsync(headPath);
+        if (!string.Equals(headBefore.Trim(), headAfter.Trim(), StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected /anchor to leave HEAD unchanged.");
+        }
     }
     catch (Exception ex)
     {

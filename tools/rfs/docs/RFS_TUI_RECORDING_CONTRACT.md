@@ -122,11 +122,13 @@ Controlled data rule:
 
 Anchor is not created for each TUI interaction.
 
-Anchors are created only on:
+Anchor is created only on:
 
 - init / genesis
 - git commit change
 - explicit `/anchor`
+
+Explicit `/anchor` creates an Anchor on the current State without creating a new State/Delta pair.
 
 The commit-boundary anchor remains structural and automatic.
 It is not a per-step interaction marker.

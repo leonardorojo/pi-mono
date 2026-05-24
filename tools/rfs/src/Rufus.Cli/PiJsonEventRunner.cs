@@ -16,6 +16,7 @@ public sealed record PiJsonAskResult(
 public static class PiJsonEventRunner
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(120);
+    private const int StdinPromptThresholdChars = 32_000;
 
     public static async Task<PiJsonAskResult> RunAskAsync(
         string workingDirectory,
@@ -29,14 +30,22 @@ public static class PiJsonEventRunner
             return new PiJsonAskResult(false, prompt, string.Empty, "Missing prompt.", null, null);
         }
 
+        var useStdinPrompt = trimmedPrompt.Length > StdinPromptThresholdChars;
+
         var startInfo = new ProcessStartInfo
         {
             FileName = "pi",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = useStdinPrompt,
             WorkingDirectory = workingDirectory
         };
+
+        if (useStdinPrompt)
+        {
+            startInfo.StandardInputEncoding = Encoding.UTF8;
+        }
 
         startInfo.ArgumentList.Add("--mode");
         startInfo.ArgumentList.Add("json");
@@ -45,7 +54,10 @@ public static class PiJsonEventRunner
         startInfo.ArgumentList.Add("--no-extensions");
         startInfo.ArgumentList.Add("--no-context-files");
         ApplyWorkspaceModel(startInfo, workspaceModel);
-        startInfo.ArgumentList.Add(trimmedPrompt);
+        if (!useStdinPrompt)
+        {
+            startInfo.ArgumentList.Add(trimmedPrompt);
+        }
 
         using var process = new Process { StartInfo = startInfo };
 
@@ -59,6 +71,13 @@ public static class PiJsonEventRunner
         catch (Exception ex)
         {
             return new PiJsonAskResult(false, trimmedPrompt, string.Empty, $"Failed to start pi JSON process: {ex.Message}", null, null);
+        }
+
+        if (useStdinPrompt)
+        {
+            await process.StandardInput.WriteAsync(trimmedPrompt);
+            await process.StandardInput.FlushAsync();
+            process.StandardInput.Close();
         }
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -169,14 +188,22 @@ public static class PiJsonEventRunner
             return new PiJsonAgentResult(false, task, string.Empty, "Missing task.", null, null, Array.Empty<PiJsonToolEvent>());
         }
 
+        var useStdinPrompt = trimmedTask.Length > StdinPromptThresholdChars;
+
         var startInfo = new ProcessStartInfo
         {
             FileName = "pi",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = useStdinPrompt,
             WorkingDirectory = workingDirectory
         };
+
+        if (useStdinPrompt)
+        {
+            startInfo.StandardInputEncoding = Encoding.UTF8;
+        }
 
         // JSON event stream mode, headless. Enable a restricted set of read-only tools.
         startInfo.ArgumentList.Add("--mode");
@@ -188,7 +215,10 @@ public static class PiJsonEventRunner
         startInfo.ArgumentList.Add("--no-extensions");
         startInfo.ArgumentList.Add("--no-context-files");
         ApplyWorkspaceModel(startInfo, workspaceModel);
-        startInfo.ArgumentList.Add(trimmedTask);
+        if (!useStdinPrompt)
+        {
+            startInfo.ArgumentList.Add(trimmedTask);
+        }
 
         using var process = new Process { StartInfo = startInfo };
 
@@ -202,6 +232,13 @@ public static class PiJsonEventRunner
         catch (Exception ex)
         {
             return new PiJsonAgentResult(false, trimmedTask, string.Empty, $"Failed to start pi JSON process: {ex.Message}", null, null, Array.Empty<PiJsonToolEvent>());
+        }
+
+        if (useStdinPrompt)
+        {
+            await process.StandardInput.WriteAsync(trimmedTask);
+            await process.StandardInput.FlushAsync();
+            process.StandardInput.Close();
         }
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.Agenting.TraceSlice;
+using Rufus.Cli.Intent;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
@@ -948,11 +949,54 @@ if (args[0] == "intent")
 {
     var intentArgs = args.Skip(1).ToArray();
     var recordIntent = intentArgs.Any(arg => string.Equals(arg, "--record", StringComparison.Ordinal));
-    var prompt = string.Join(" ", intentArgs.Where(arg => !string.Equals(arg, "--record", StringComparison.Ordinal))).Trim();
+    var useLlmIntent = intentArgs.Any(arg => string.Equals(arg, "--llm", StringComparison.Ordinal));
+
+    if (recordIntent && useLlmIntent)
+    {
+        Console.Error.WriteLine("rfs intent: --record cannot be combined with --llm in this phase.");
+        return 1;
+    }
+
+    var prompt = string.Join(
+        " ",
+        intentArgs.Where(arg =>
+            !string.Equals(arg, "--record", StringComparison.Ordinal) &&
+            !string.Equals(arg, "--llm", StringComparison.Ordinal))).Trim();
+
     if (string.IsNullOrWhiteSpace(prompt))
     {
         Console.Error.WriteLine("Missing prompt.");
         return 1;
+    }
+
+    if (useLlmIntent)
+    {
+        var llmIntentAgent = new PiIntentInferenceAgent();
+        var llmTask = new AgentTask(
+            id: $"intent-llm-{Guid.NewGuid():N}",
+            kind: "infer-intent",
+            goal: "inferir intent operativo del prompt con LLM",
+            input: prompt,
+            expectedOutput: "PromptIntent JSON");
+
+        var llmResult = await llmIntentAgent.ExecuteAsync(llmTask);
+        if (llmResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(llmResult.Output))
+        {
+            if (!string.IsNullOrWhiteSpace(llmResult.Summary))
+            {
+                Console.Error.WriteLine(llmResult.Summary);
+            }
+
+            foreach (var error in llmResult.Errors)
+            {
+                Console.Error.WriteLine(error);
+            }
+
+            return 1;
+        }
+
+        Console.WriteLine(llmResult.Output);
+        return 0;
     }
 
     var intentAgent = new IntentInferenceAgent();
@@ -1251,7 +1295,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs ask-json <prompt>");
     Console.WriteLine("  rfs agent [--record] <task>");
     Console.WriteLine("  rfs agent-json <task>");
-    Console.WriteLine("  rfs intent [--record] <prompt>");
+    Console.WriteLine("  rfs intent [--record|--llm] <prompt>");
     Console.WriteLine();
     Console.WriteLine("Modos:");
     Console.WriteLine("  pi         = passthrough interactivo a Pi TUI");
@@ -1259,7 +1303,7 @@ static void PrintHelp()
     Console.WriteLine("  ask-json   = prototipo experimental con Pi JSON Event Stream");
     Console.WriteLine("  agent      = agente headless con tools read-only + streaming");
     Console.WriteLine("  agent-json = prototipo experimental con Pi JSON Event Stream; relies on Pi --tools enforcement for read-only behavior");
-    Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico con opción --record para RCK");
+    Console.WriteLine("  intent     = ejecuta IntentInferenceAgent mock/determinístico; usa --record para RCK y --llm para el experimento Pi-backed");
     Console.WriteLine("  trace-slice = exporta un corte determinístico del RCK activo como JSON");
     Console.WriteLine("  trace-slice-proposal = prototipo experimental determinístico/anchor-aware; emite JSON puro sin escribir RCK");
     Console.WriteLine("  trace-slice-proposal-llm = prototipo experimental Pi-backed; el LLM solo propone TraceSliceProposal JSON y RFS sigue validando después");

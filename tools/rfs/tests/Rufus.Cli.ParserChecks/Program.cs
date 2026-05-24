@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Rufus.Cli.Intent;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.Agenting;
@@ -79,6 +80,43 @@ await RunIntentInferenceFailureCaseAsync(
         input: "Summarize the diff evidence.",
         expectedOutput: null),
     expectedErrorContains: "Kind='infer-intent'",
+    failures: failures);
+
+await RunPromptIntentJsonCodecCaseAsync(
+    name: "prompt intent codec accepts lowercase llm json",
+    json: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\",\"board\"],\"constraints\":[\"do not write RCK\"]}",
+    expectedIntent: "implement-reset-board",
+    expectedSummary: "Implement the reset board action.",
+    failures: failures);
+
+await RunPromptIntentJsonCodecFailureCaseAsync(
+    name: "prompt intent codec rejects invalid json",
+    json: "{\"intent\":\"implement-reset-board\",\"summary\":\"missing brace\"",
+    expectedErrorContains: "Invalid PromptIntent JSON",
+    failures: failures);
+
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent parses llm json and emits canonical prompt intent",
+    task: new AgentTask(
+        id: "task-llm-1",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Implement reset board action",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\"],\"constraints\":[]}",
+    expectedIntent: "implement-reset-board",
+    failures: failures);
+
+await RunPiIntentInferenceAgentFailureCaseAsync(
+    name: "pi intent agent rejects invalid llm json",
+    task: new AgentTask(
+        id: "task-llm-2",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Explain where Jujuy is located",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "not-json",
+    expectedErrorContains: "Invalid PromptIntent JSON",
     failures: failures);
 
 await RunIntentCliCaseAsync(
@@ -2362,6 +2400,206 @@ static async Task RunIntentInferenceFailureCaseAsync(
     }
 }
 
+static Task RunPromptIntentJsonCodecCaseAsync(
+    string name,
+    string json,
+    string expectedIntent,
+    string expectedSummary,
+    List<string> failures)
+{
+    try
+    {
+        var parsed = PromptIntentJsonCodec.Parse(json);
+        if (!string.Equals(parsed.Intent, expectedIntent, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected PromptIntent.Intent '{expectedIntent}' but got '{parsed.Intent}'.");
+        }
+
+        if (!string.Equals(parsed.Summary, expectedSummary, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected PromptIntent.Summary '{expectedSummary}' but got '{parsed.Summary}'.");
+        }
+
+        if (parsed.Entities.Count != 2)
+        {
+            failures.Add($"[{name}] expected 2 entities but got {parsed.Entities.Count}.");
+        }
+
+        if (parsed.Constraints.Count != 1)
+        {
+            failures.Add($"[{name}] expected 1 constraint but got {parsed.Constraints.Count}.");
+        }
+
+        using var document = JsonDocument.Parse(PromptIntentJsonCodec.Write(parsed));
+        var root = document.RootElement;
+        if (!root.TryGetProperty("Intent", out var intentProperty) || !string.Equals(intentProperty.GetString(), expectedIntent, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected canonical JSON Intent property.");
+        }
+
+        if (!root.TryGetProperty("Summary", out var summaryProperty) || !string.Equals(summaryProperty.GetString(), expectedSummary, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected canonical JSON Summary property.");
+        }
+
+        if (!root.TryGetProperty("Entities", out var entitiesProperty) || entitiesProperty.ValueKind != JsonValueKind.Array)
+        {
+            failures.Add($"[{name}] expected canonical JSON Entities array.");
+        }
+
+        if (!root.TryGetProperty("Constraints", out var constraintsProperty) || constraintsProperty.ValueKind != JsonValueKind.Array)
+        {
+            failures.Add($"[{name}] expected canonical JSON Constraints array.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+
+    return Task.CompletedTask;
+}
+
+static Task RunPromptIntentJsonCodecFailureCaseAsync(
+    string name,
+    string json,
+    string expectedErrorContains,
+    List<string> failures)
+{
+    try
+    {
+        if (PromptIntentJsonCodec.TryParse(json, out var promptIntent, out var errorMessage))
+        {
+            failures.Add($"[{name}] expected parsing to fail but it succeeded with intent '{promptIntent?.Intent}'.");
+        }
+        else if (string.IsNullOrWhiteSpace(errorMessage) || !errorMessage.Contains(expectedErrorContains, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected error containing '{expectedErrorContains}' but got '{errorMessage ?? "(null)"}'.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+
+    return Task.CompletedTask;
+}
+
+static async Task RunPiIntentInferenceAgentCaseAsync(
+    string name,
+    AgentTask task,
+    string llmAnswerJson,
+    string expectedIntent,
+    List<string> failures)
+{
+    try
+    {
+        var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
+        var agent = new PiIntentInferenceAgent(transport);
+        var result = await agent.ExecuteAsync(task);
+
+        if (result.Status != AgentTaskStatus.Succeeded)
+        {
+            failures.Add($"[{name}] expected Status=Succeeded but got {result.Status}.");
+        }
+
+        if (!string.Equals(result.TaskId, task.Id, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected TaskId '{task.Id}' but got '{result.TaskId}'.");
+        }
+
+        if (!string.Equals(result.AgentId, "pi-intent-inference", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected AgentId 'pi-intent-inference' but got '{result.AgentId}'.");
+        }
+
+        if (!string.Equals(result.ExecutionModel.Provider, "pi", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected execution provider 'pi' but got '{result.ExecutionModel.Provider}'.");
+        }
+
+        if (!string.Equals(result.ExecutionModel.Model, "gpt-5.4-mini", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected execution model 'gpt-5.4-mini' but got '{result.ExecutionModel.Model}'.");
+        }
+
+        if (transport.CallCount != 1)
+        {
+            failures.Add($"[{name}] expected the LLM transport to be called once but got {transport.CallCount} calls.");
+        }
+
+        if (string.IsNullOrWhiteSpace(transport.LastPrompt) || !transport.LastPrompt.Contains("Required JSON shape:", StringComparison.Ordinal) || !transport.LastPrompt.Contains(task.Input!, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected the generated LLM prompt to include the JSON contract and user prompt.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.Output))
+        {
+            failures.Add($"[{name}] expected Output to be populated.");
+        }
+        else
+        {
+            var parsed = PromptIntentJsonCodec.Parse(result.Output);
+            if (!string.Equals(parsed.Intent, expectedIntent, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected PromptIntent.Intent '{expectedIntent}' but got '{parsed.Intent}'.");
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(result.Summary))
+        {
+            failures.Add($"[{name}] expected Summary to be populated.");
+        }
+
+        if (result.Evidence.Count == 0)
+        {
+            failures.Add($"[{name}] expected Evidence to be populated.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+}
+
+static async Task RunPiIntentInferenceAgentFailureCaseAsync(
+    string name,
+    AgentTask task,
+    string llmAnswerJson,
+    string expectedErrorContains,
+    List<string> failures)
+{
+    try
+    {
+        var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
+        var agent = new PiIntentInferenceAgent(transport);
+        var result = await agent.ExecuteAsync(task);
+
+        if (result.Status != AgentTaskStatus.Failed)
+        {
+            failures.Add($"[{name}] expected Status=Failed but got {result.Status}.");
+        }
+
+        if (transport.CallCount != 1)
+        {
+            failures.Add($"[{name}] expected the LLM transport to be called once but got {transport.CallCount} calls.");
+        }
+
+        if (result.Errors.Count == 0)
+        {
+            failures.Add($"[{name}] expected Errors to be populated.");
+        }
+        else if (!result.Errors[0].Contains(expectedErrorContains, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected Errors to contain '{expectedErrorContains}' but got '{result.Errors[0]}'.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+}
+
 static async Task RunIntentCliCaseAsync(
     string name,
     string prompt,
@@ -4021,5 +4259,36 @@ static void AssertBooleanEqual(string name, List<string> failures, string field,
     if (expected != actual)
     {
         failures.Add($"[{name}] expected {field} to equal '{expected}' but found '{actual}'.");
+    }
+}
+
+sealed class FakeIntentLlmTransport : IIntentLlmTransport
+{
+    private readonly bool _success;
+    private readonly string _answerJson;
+    private readonly string? _errorMessage;
+
+    public FakeIntentLlmTransport(bool success, string answerJson, string? errorMessage = null)
+    {
+        _success = success;
+        _answerJson = answerJson;
+        _errorMessage = errorMessage;
+    }
+
+    public int CallCount { get; private set; }
+
+    public string? LastWorkingDirectory { get; private set; }
+
+    public string? LastPrompt { get; private set; }
+
+    public string? LastModel { get; private set; }
+
+    public Task<PiJsonAskResult> AskAsync(string workingDirectory, string prompt, string model, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        LastWorkingDirectory = workingDirectory;
+        LastPrompt = prompt;
+        LastModel = model;
+        return Task.FromResult(new PiJsonAskResult(_success, prompt, _answerJson, _errorMessage, "pi", model));
     }
 }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.Tui;
@@ -248,7 +249,7 @@ internal static class RfsTuiRenderer
         WriteOptionalList("omissions", trace.Omissions);
     }
 
-    internal static void WriteHelp()
+    internal static void WriteHelp(IReadOnlyList<RfsTuiCommandInfo> commands)
     {
         WriteSectionTitle("Write a prompt, then choose:");
         Console.WriteLine();
@@ -258,15 +259,19 @@ internal static class RfsTuiRenderer
         WriteModeOption("4", "Plan", "plan only");
         Console.WriteLine();
         WriteSectionTitle("Commands:");
-        WriteCommandLine("/status", "show session status");
-        WriteCommandLine("/log", "show recent RCK interactions");
-        WriteCommandLine("/model", "show current model");
-        WriteCommandLine("/model <name>", "set workspace model");
-        WriteCommandLine("/context", "show last context summary");
-        WriteCommandLine("/trace", "show last TraceSlice summary");
-        WriteCommandLine("/anchor \"name\"", "create milestone anchor");
-        WriteCommandLine("/help", "show this help");
-        WriteCommandLine("/exit", "exit RFS");
+        WriteCommandEntries(commands);
+    }
+
+    internal static void WriteCommandSuggestions(string input, IReadOnlyList<RfsTuiCommandInfo> suggestions)
+    {
+        WriteSectionTitle("Did you mean?");
+        WriteCommandEntries(suggestions);
+    }
+
+    internal static void WriteUnknownCommand(string input)
+    {
+        WriteWarningLine($"Unknown command: {input}");
+        WriteMutedLine("Type /help to show available commands.");
     }
 
     private static void WriteModeOption(string number, string mode, string description)
@@ -276,9 +281,26 @@ internal static class RfsTuiRenderer
     }
 
     private static void WriteCommandLine(string command, string description)
+        => WriteCommandLine(command, description, 18);
+
+    private static void WriteCommandLine(string command, string description, int width)
     {
-        var paddedCommand = command.PadRight(18);
+        var paddedCommand = command.PadRight(width);
         Console.WriteLine($"  {Style(paddedCommand, ConsoleColor.Cyan, bold: true)} {Style(description, ConsoleColor.DarkGray)}");
+    }
+
+    private static void WriteCommandEntries(IReadOnlyList<RfsTuiCommandInfo> commands)
+    {
+        if (commands.Count == 0)
+        {
+            return;
+        }
+
+        var width = Math.Max(18, commands.Max(command => command.Usage.Length));
+        foreach (var command in commands)
+        {
+            WriteCommandLine(command.Usage, command.Description, width);
+        }
     }
 
     private static void WriteLabeledValue(string label, string value)

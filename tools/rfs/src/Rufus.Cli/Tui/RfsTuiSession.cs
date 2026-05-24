@@ -632,6 +632,53 @@ internal static class RfsTuiSession
 
     private static bool TryHandleTopLevelCommand(string input, string repoRoot)
     {
+        if (input.StartsWith("/", StringComparison.Ordinal))
+        {
+            var exactCommand = RfsTuiCommandCatalog.FindExactMatch(input);
+            if (exactCommand is null)
+            {
+                var suggestions = RfsTuiCommandCatalog.GetSuggestions(input);
+                if (suggestions.Count > 0)
+                {
+                    RfsTuiRenderer.WriteCommandSuggestions(input, suggestions);
+                }
+                else
+                {
+                    RfsTuiRenderer.WriteUnknownCommand(input);
+                }
+
+                return true;
+            }
+
+            switch (exactCommand.Kind)
+            {
+                case RfsTuiCommandKind.Status:
+                    RenderStatus(repoRoot);
+                    return true;
+                case RfsTuiCommandKind.Log:
+                    RenderLog(repoRoot);
+                    return true;
+                case RfsTuiCommandKind.ModelShow:
+                    RenderModel(repoRoot);
+                    return true;
+                case RfsTuiCommandKind.ModelSet:
+                    return HandleModelSetCommand(input, repoRoot);
+                case RfsTuiCommandKind.Context:
+                    RenderContext();
+                    return true;
+                case RfsTuiCommandKind.Trace:
+                    RenderTrace();
+                    return true;
+                case RfsTuiCommandKind.Anchor:
+                    return HandleAnchorCommand(input, repoRoot);
+                case RfsTuiCommandKind.Help:
+                    RenderHelp();
+                    return true;
+                case RfsTuiCommandKind.Exit:
+                    return true;
+            }
+        }
+
         if (string.Equals(input, "/model", StringComparison.Ordinal))
         {
             RenderModel(repoRoot);
@@ -714,8 +761,31 @@ internal static class RfsTuiSession
         return true;
     }
 
+    private static bool HandleAnchorCommand(string input, string repoRoot)
+    {
+        if (!TryParseAnchorCommand(input, out var anchorLabel))
+        {
+            return false;
+        }
+
+        if (anchorLabel is null)
+        {
+            Console.WriteLine("Usage:");
+            Console.WriteLine("  /anchor \"milestone-name\"");
+            return true;
+        }
+
+        var result = RckWorkspaceAnchorWriter.CreateExplicitAnchor(anchorLabel, repoRoot);
+        foreach (var line in result.FormatConsoleLines())
+        {
+            Console.WriteLine(line);
+        }
+
+        return true;
+    }
+
     private static void RenderHelp()
-        => RfsTuiRenderer.WriteHelp();
+        => RfsTuiRenderer.WriteHelp(RfsTuiCommandCatalog.GetHelpCommands());
 
     private static bool HandleModelSetCommand(string input, string repoRoot)
     {

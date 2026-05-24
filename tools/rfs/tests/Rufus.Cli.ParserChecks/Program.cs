@@ -159,6 +159,8 @@ await RunContextPackTraceSliceValidatedCliCaseAsync(
     failures: failures);
 
 RunRfsTuiModeSelectionParserCases(failures);
+RunRfsTuiCommandSuggestionCases(failures);
+await RunRfsTuiCommandSuggestionSessionCaseAsync("tui slash suggestions are filtered and unknown commands are rejected", failures);
 
 await RunRckTuiDirectRecordingCaseAsync(
     name: "tui direct recording stores direct pipeline summary",
@@ -2469,6 +2471,178 @@ static void RunRfsTuiModeSelectionParserCases(List<string> failures)
     }
 }
 
+static void RunRfsTuiCommandSuggestionCases(List<string> failures)
+{
+    var cases = new[]
+    {
+        new
+        {
+            Input = "/he",
+            Expected = new[]
+            {
+                (Usage: "/help", Description: "Show this help"),
+            },
+        },
+        new
+        {
+            Input = "/mo",
+            Expected = new[]
+            {
+                (Usage: "/model", Description: "Show current model"),
+                (Usage: "/model <model>", Description: "Set workspace model"),
+            },
+        },
+        new
+        {
+            Input = "/con",
+            Expected = new[]
+            {
+                (Usage: "/context", Description: "Show last context summary"),
+            },
+        },
+    };
+
+    foreach (var testCase in cases)
+    {
+        var suggestions = RfsTuiCommandCatalog.GetSuggestions(testCase.Input).ToArray();
+        if (suggestions.Length != testCase.Expected.Length)
+        {
+            failures.Add($"[tui command suggestions] input '{testCase.Input}' expected {testCase.Expected.Length} suggestions but got {suggestions.Length}.");
+            continue;
+        }
+
+        for (var index = 0; index < testCase.Expected.Length; index++)
+        {
+            var expected = testCase.Expected[index];
+            var actual = suggestions[index];
+            if (!string.Equals(actual.Usage, expected.Usage, StringComparison.Ordinal))
+            {
+                failures.Add($"[tui command suggestions] input '{testCase.Input}' suggestion {index} expected usage '{expected.Usage}' but got '{actual.Usage}'.");
+            }
+
+            if (!string.Equals(actual.Description, expected.Description, StringComparison.Ordinal))
+            {
+                failures.Add($"[tui command suggestions] input '{testCase.Input}' suggestion {index} expected description '{expected.Description}' but got '{actual.Description}'.");
+            }
+        }
+    }
+
+    var exactModel = RfsTuiCommandCatalog.FindExactMatch("/model")?.Usage;
+    if (!string.Equals(exactModel, "/model", StringComparison.Ordinal))
+    {
+        failures.Add($"[tui command suggestions] expected exact '/model' to resolve to '/model' but got '{exactModel ?? "(null)"}'.");
+    }
+
+    var helpCommands = RfsTuiCommandCatalog.GetHelpCommands().ToArray();
+    var requiredHelpUsages = new[] { "/help", "/model", "/model <model>", "/context" };
+    foreach (var usage in requiredHelpUsages)
+    {
+        if (!helpCommands.Any(command => string.Equals(command.Usage, usage, StringComparison.Ordinal)))
+        {
+            failures.Add($"[tui command suggestions] expected help catalog to include '{usage}'.");
+        }
+    }
+}
+
+static async Task RunRfsTuiCommandSuggestionSessionCaseAsync(string name, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-command-suggestions-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/he\n/mo\n/con\n/tr\n/x\n/help\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        if (tuiResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+        }
+
+        var requiredFragments = new[]
+        {
+            "Did you mean?",
+            "/help",
+            "/model",
+            "/model <model>",
+            "/context",
+            "/trace",
+            "Unknown command: /x",
+            "Type /help to show available commands.",
+            "Write a prompt, then choose:",
+            "Commands:",
+            "/anchor \"name\"",
+            "/status",
+        };
+
+        foreach (var fragment in requiredFragments)
+        {
+            if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        var forbiddenFragments = new[]
+        {
+            "Building lightweight context...",
+            "Building governed context...",
+            "Asking main LLM without RCK context...",
+            "Recorded State + Delta:",
+            "Respuesta:",
+        };
+
+        foreach (var fragment in forbiddenFragments)
+        {
+            if (tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout not to contain '{fragment}'.");
+            }
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        if (statusAfter.StateCount != statusBefore.StateCount || statusAfter.DeltaCount != statusBefore.DeltaCount || statusAfter.AnchorCount != statusBefore.AnchorCount)
+        {
+            failures.Add($"[{name}] expected slash command suggestions to leave RCK counts unchanged.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
 static async Task RunRfsTuiPromptModeSelectionSessionCaseAsync(
     string name,
     string prompt,
@@ -2598,7 +2772,7 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
             "Write a prompt, then choose:",
             "Commands:",
             "/anchor \"name\"",
-            "/model <name>",
+            "/model <model>",
         };
 
         foreach (var fragment in requiredFragments)

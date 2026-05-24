@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Rufus.Agenting;
@@ -69,12 +70,24 @@ public static class RfsCompleteModePipeline
             return RckTraceSliceProposalBuildResult.Failure(BuildIntentFailureMessage(firstError));
         }
 
-        if (!TryBuildTraceSliceProposalIntent(intentResult.Output, out var proposalIntent, out var intentErrorMessage))
+        if (!TryBuildTraceSliceProposalIntent(intentResult.Output, intentAgent.Id, out var proposalIntent, out var intentErrorMessage))
         {
             return RckTraceSliceProposalBuildResult.Failure(BuildIntentFailureMessage(intentErrorMessage));
         }
 
+        if (stageWriter is not null)
+        {
+            RfsTuiRenderer.WriteCompleteStageDetail("intent", proposalIntent.Kind);
+            RfsTuiRenderer.WriteCompleteStageDetail("summary", RfsTuiText.TruncateInline(proposalIntent.Summary, 96));
+            RfsTuiRenderer.WriteCompleteStageDetail("source", proposalIntent.Source);
+        }
+
         stageWriter?.Invoke("[2/5] Building TraceSlice proposal...");
+        if (stageWriter is not null)
+        {
+            RfsTuiRenderer.WriteCompleteStageDetail("proposal", "deterministic");
+            RfsTuiRenderer.WriteCompleteStageDetail("requested selection", "5 states · 5 deltas · 0 anchors");
+        }
 
         var plannerInputJson = JsonSerializer.Serialize(new
         {
@@ -163,6 +176,13 @@ public static class RfsCompleteModePipeline
                 validationResult.ErrorMessage ?? "rfs complete mode: failed to validate TraceSliceProposal.");
         }
 
+        var validationStatus = ReadValidationStatus(validationResult.Json);
+
+        if (stageWriter is not null)
+        {
+            RfsTuiRenderer.WriteCompleteStageDetail("validation", validationStatus);
+        }
+
         stageWriter?.Invoke("[4/5] Building ContextPack...");
         var contextPackResult = RckTraceSliceContextPackBuilder.BuildFromValidatedTraceSlice(validationResult.Json, currentDirectory);
         if (!contextPackResult.Success || string.IsNullOrWhiteSpace(contextPackResult.Json))
@@ -176,6 +196,18 @@ public static class RfsCompleteModePipeline
             validationResult.Json,
             contextPackResult.Json,
             normalizedPrompt: prompt.Trim());
+
+        var contextUsageReport = RckContextUsageEstimator.Create(summary.EstimatedChars, summary.EstimatedTokens, modelBudgetTokens: null, summary.Truncated);
+        if (stageWriter is not null)
+        {
+            RfsTuiRenderer.WriteCompleteStageDetail("scope", summary.ContextPackScope ?? "trace-slice-validated");
+            RfsTuiRenderer.WriteCompleteStageDetail(
+                "selected states/deltas/anchors",
+                $"{summary.SelectedStateIds.Count} / {summary.SelectedDeltaIds.Count} / {summary.SelectedAnchorIds.Count}");
+            RfsTuiRenderer.WriteCompleteStageDetail("estimated tokens", contextUsageReport.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture));
+            RfsTuiRenderer.WriteCompleteStageDetail("transport", contextUsageReport.TransportSizeChars > 32000 ? "stdin" : "argv");
+            RfsTuiRenderer.WriteCompleteStageDetail("transport risk", contextUsageReport.TransportRisk);
+        }
 
         return summary;
     }
@@ -197,6 +229,7 @@ public static class RfsCompleteModePipeline
 
     private static bool TryBuildTraceSliceProposalIntent(
         string intentOutputJson,
+        string intentSource,
         out RckTraceSliceProposalIntentProjection intentProjection,
         out string? errorMessage)
     {
@@ -210,7 +243,7 @@ public static class RfsCompleteModePipeline
             intentProjection = new RckTraceSliceProposalIntentProjection(
                 Kind: GetRequiredString(root, "Intent"),
                 Summary: GetRequiredString(root, "Summary"),
-                Source: "intent-inference-agent");
+                Source: intentSource);
             return true;
         }
         catch (Exception ex)
@@ -331,6 +364,12 @@ public static class RfsCompleteModePipeline
     private static int EstimateTokens(int chars)
     {
         return (int)Math.Ceiling(chars / 4.0);
+    }
+
+    private static string ReadValidationStatus(string validatedTraceSliceJson)
+    {
+        using var document = JsonDocument.Parse(validatedTraceSliceJson);
+        return GetRequiredString(GetRequiredObject(document.RootElement, "validation"), "status");
     }
 
     private static string BuildMaterializationPolicySummary(JsonElement materializationPolicyElement)

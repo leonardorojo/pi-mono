@@ -135,6 +135,11 @@ internal static class RfsTuiRenderer
         Console.WriteLine(stageLine);
     }
 
+    internal static void WriteCompleteStageDetail(string label, string value)
+    {
+        Console.WriteLine($"  {Style(label + ":", ConsoleColor.DarkGray)} {Style(value, ConsoleColor.White, bold: true)}");
+    }
+
     internal static void WriteResponse(string answer)
     {
         WriteSectionTitle("Respuesta:");

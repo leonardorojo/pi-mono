@@ -135,6 +135,11 @@ await RunCompleteModePipelineWithIntentLlmFailureCaseAsync(
     expectedErrorContains: "Complete mode failed while inferring intent.",
     failures: failures);
 
+RunCompleteModeFailureRendererCase(
+    name: "complete mode failure renderer does not report recorded state delta on intent failure",
+    reason: "Complete mode failed while inferring intent.",
+    failures: failures);
+
 await RunIntentCliCaseAsync(
     name: "intent cli renders result",
     prompt: "Implement rfs show command",
@@ -246,9 +251,20 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     {
         "[Complete]",
         "[1/5] Inferring intent...",
+        "  intent:",
+        "  summary:",
+        "  source: pi-intent-inference",
         "[2/5] Building TraceSlice proposal...",
+        "  proposal: deterministic",
+        "  requested selection: 5 states · 5 deltas · 0 anchors",
         "[3/5] Validating proposal...",
+        "  validation: accepted",
         "[4/5] Building ContextPack...",
+        "  scope:",
+        "  selected states/deltas/anchors:",
+        "  estimated tokens:",
+        "  transport:",
+        "  transport risk:",
         "[5/5] Asking main LLM...",
         "Context:",
         "validation:",
@@ -2728,6 +2744,57 @@ static async Task RunCompleteModePipelineWithIntentLlmFailureCaseAsync(
     catch (Exception ex)
     {
         failures.Add($"[{name}] threw {ex}");
+    }
+}
+
+static void RunCompleteModeFailureRendererCase(
+    string name,
+    string reason,
+    List<string> failures)
+{
+    var originalOut = Console.Out;
+    var originalErr = Console.Error;
+    using var stdout = new StringWriter();
+    using var stderr = new StringWriter();
+
+    try
+    {
+        Console.SetOut(stdout);
+        Console.SetError(stderr);
+        RfsTuiRenderer.WriteCompleteFailure(reason);
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+        return;
+    }
+    finally
+    {
+        Console.SetOut(originalOut);
+        Console.SetError(originalErr);
+    }
+
+    var stdoutText = stdout.ToString();
+    var stderrText = stderr.ToString();
+
+    if (!stdoutText.Contains("No State/Delta was recorded.", StringComparison.Ordinal))
+    {
+        failures.Add($"[{name}] expected stdout to contain 'No State/Delta was recorded.' but it was missing.");
+    }
+
+    if (stdoutText.Contains("Recorded State + Delta:", StringComparison.Ordinal))
+    {
+        failures.Add($"[{name}] expected stdout not to contain 'Recorded State + Delta:'.");
+    }
+
+    if (!stderrText.Contains("Complete mode failed while inferring intent.", StringComparison.Ordinal))
+    {
+        failures.Add($"[{name}] expected stderr to contain the intent-failure banner.");
+    }
+
+    if (!stderrText.Contains("Reason:", StringComparison.Ordinal))
+    {
+        failures.Add($"[{name}] expected stderr to contain 'Reason:'.");
     }
 }
 

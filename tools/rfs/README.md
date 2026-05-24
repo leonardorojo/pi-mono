@@ -13,7 +13,7 @@ Canonical Simple Context reference: [`docs/RFS_SIMPLE_CONTEXT_CONTRACT.md`](docs
 Short version:
 
 - `rfs` with no arguments enters the RFS TUI session, including the live Direct, Simple, Complete, and Plan mode paths.
-- The TUI also shows a live slash-command palette while you type `/`; execution still happens on Enter, and redirected input falls back to plain line reading.
+- The TUI also shows a live slash-command palette while you type `/`; execution still happens on Enter, slash commands dispatch directly without opening the 1/2/3/4 prompt-mode menu, and redirected input falls back to plain line reading.
 - Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`.
 - Deterministic baseline pipeline: `rfs trace-slice "<prompt>"` -> `rfs context-pack --trace-slice "<prompt>"`.
 - Governed deterministic pipeline: `rfs trace-slice-proposal "<prompt>"` -> `rfs trace-slice-validate "<prompt>"` -> `rfs context-pack --trace-slice-validated "<prompt>"`.
@@ -30,7 +30,7 @@ Short version:
 ## TUI UX contract
 
 The future `rfs` experience is documented in [`docs/RFS_TUI_UX_CONTRACT.md`](docs/RFS_TUI_UX_CONTRACT.md).
-That contract defines `rfs` without arguments as the primary entrypoint, automatic workspace initialization when `.rfs` is missing, prompt-first mode selection, automatic State + Delta recording, and anchors as milestones only.
+That contract defines `rfs` without arguments as the primary entrypoint, automatic workspace initialization when `.rfs` is missing, prompt-first mode selection, direct slash-command dispatch, automatic State + Delta recording, and anchors as milestones only.
 The TUI uses a Pi-inspired visual style, but color is decorative only; `NO_COLOR` disables ANSI output when set.
 
 ## Current shape

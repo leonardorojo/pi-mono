@@ -82,7 +82,7 @@ Model:
 
 Header intent:
 
-The TUI uses a Pi-inspired visual style for hierarchy and spacing, but it is still RFS and not Pi. Color is decorative; `NO_COLOR` should suppress ANSI output when supported.
+The TUI uses a Pi-inspired visual style for hierarchy and spacing, but it is still RFS and not Pi. Color is decorative; `NO_COLOR` should suppress ANSI output when supported. On interactive entry, the screen is cleared once before the header is rendered; redirected runs must not clear.
 
 - show the repo/workspace identity
 - show the active model
@@ -100,7 +100,7 @@ The user types the task directly:
 
 Only after Enter, RFS asks how to process the prompt:
 
-The slash-command palette is live while typing `/` in the interactive TUI. It is help only: it does not execute commands until Enter. When input/output are redirected, the TUI falls back to plain line reading.
+The slash-command palette is live while typing `/` in the interactive TUI. It is help only: it does not execute commands until Enter. When the entered line starts with `/`, the TUI dispatches the internal command directly instead of opening the 1/2/3/4 prompt-mode menu. When input/output are redirected, the TUI falls back to plain line reading.
 
 ```text
 ¿Cómo querés procesarlo?

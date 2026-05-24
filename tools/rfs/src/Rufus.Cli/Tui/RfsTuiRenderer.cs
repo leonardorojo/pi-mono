@@ -251,13 +251,6 @@ internal static class RfsTuiRenderer
 
     internal static void WriteHelp(IReadOnlyList<RfsTuiCommandInfo> commands)
     {
-        WriteSectionTitle("Write a prompt, then choose:");
-        Console.WriteLine();
-        WriteModeOption("1", "Direct", "no RCK context");
-        WriteModeOption("2", "Simple", "recent memory");
-        WriteModeOption("3", "Complete", "governed context");
-        WriteModeOption("4", "Plan", "plan only");
-        Console.WriteLine();
         WriteSectionTitle("Commands:");
         WriteCommandEntries(commands);
     }

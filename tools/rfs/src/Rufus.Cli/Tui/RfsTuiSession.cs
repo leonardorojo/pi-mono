@@ -46,6 +46,7 @@ internal static class RfsTuiSession
             status = RckWorkspaceStatusReader.Read(inputDirectory);
         }
 
+        RfsTuiTerminal.ClearIfInteractive();
         RenderHeader(status, RckWorkspaceModelConfigStore.TryReadDefaultModel(status.RepoRoot));
         await RunPromptLoopAsync(status.RepoRoot);
         return 0;
@@ -81,38 +82,9 @@ internal static class RfsTuiSession
                     break;
                 }
 
-                if (string.Equals(input, "/status", StringComparison.Ordinal))
+                if (input.StartsWith("/", StringComparison.Ordinal))
                 {
-                    RenderStatus(repoRoot);
-                    continue;
-                }
-
-                if (string.Equals(input, "/help", StringComparison.Ordinal))
-                {
-                    RenderHelp();
-                    continue;
-                }
-
-                if (string.Equals(input, "/log", StringComparison.Ordinal))
-                {
-                    RenderLog(repoRoot);
-                    continue;
-                }
-
-                if (string.Equals(input, "/context", StringComparison.Ordinal))
-                {
-                    RenderContext();
-                    continue;
-                }
-
-                if (string.Equals(input, "/trace", StringComparison.Ordinal))
-                {
-                    RenderTrace();
-                    continue;
-                }
-
-                if (TryHandleTopLevelCommand(input, repoRoot))
-                {
+                    TryHandleTopLevelCommand(input, repoRoot);
                     continue;
                 }
 

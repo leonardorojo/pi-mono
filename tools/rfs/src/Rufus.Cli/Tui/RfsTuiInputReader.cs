@@ -33,7 +33,7 @@ internal static class RfsTuiInputReader
     }
 
     private static bool CanUseLivePalette()
-        => !Console.IsInputRedirected && !Console.IsOutputRedirected;
+        => RfsTuiTerminal.IsInteractive;
 
     private static string? ReadInteractiveLine()
     {

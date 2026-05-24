@@ -2613,7 +2613,7 @@ static async Task RunRfsTuiCommandSuggestionSessionCaseAsync(string name, List<s
         }
 
         var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
-        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/he\n/mo\n/con\n/tr\n/x\n/help\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/he\n/mo\n/con\n/tr\n/xyz\n/help\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
         if (tuiResult.ExitCode != 0)
         {
             failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
@@ -2633,9 +2633,8 @@ static async Task RunRfsTuiCommandSuggestionSessionCaseAsync(string name, List<s
             "/model <model>",
             "/context",
             "/trace",
-            "Unknown command: /x",
+            "Unknown command: /xyz",
             "Type /help to show available commands.",
-            "Write a prompt, then choose:",
             "Commands:",
             "/anchor \"name\"",
             "/status",
@@ -2651,6 +2650,11 @@ static async Task RunRfsTuiCommandSuggestionSessionCaseAsync(string name, List<s
 
         var forbiddenFragments = new[]
         {
+            "Write a prompt, then choose:",
+            "  1 Direct",
+            "  2 Simple",
+            "  3 Complete",
+            "  4 Plan",
             "Building lightweight context...",
             "Building governed context...",
             "Asking main LLM without RCK context...",
@@ -2795,7 +2799,7 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
         }
 
         var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
-        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/status\n/help\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/status\n/help\n/xyz\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
         if (tuiResult.ExitCode != 0)
         {
             failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
@@ -2814,7 +2818,6 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
             "Model:",
             "RCK: states",
             "Git:",
-            "Write a prompt, then choose:",
             "Commands:",
             "/anchor \"name\"",
             "/model <model>",
@@ -2825,6 +2828,23 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
             if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
             {
                 failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        var forbiddenFragments = new[]
+        {
+            "Write a prompt, then choose:",
+            "  1 Direct",
+            "  2 Simple",
+            "  3 Complete",
+            "  4 Plan",
+        };
+
+        foreach (var fragment in forbiddenFragments)
+        {
+            if (tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected slash commands to bypass the mode-selection menu, but found '{fragment}'.");
             }
         }
 
@@ -2905,7 +2925,6 @@ static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, L
             "No TraceSlice has been built in this session yet.",
             "Model updated:",
             "Current model:",
-            "Write a prompt, then choose:",
             "Commands:",
         };
 
@@ -2925,6 +2944,23 @@ static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, L
         if (!tuiResult.Stdout.Contains("current model:", StringComparison.OrdinalIgnoreCase))
         {
             failures.Add($"[{name}] expected /status or /model output to include current model.");
+        }
+
+        var forbiddenFragments = new[]
+        {
+            "Write a prompt, then choose:",
+            "  1 Direct",
+            "  2 Simple",
+            "  3 Complete",
+            "  4 Plan",
+        };
+
+        foreach (var fragment in forbiddenFragments)
+        {
+            if (tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected informational slash commands to bypass the mode-selection menu, but found '{fragment}'.");
+            }
         }
 
         var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
@@ -3411,7 +3447,8 @@ static async Task RunRfsTuiAnchorCommandSessionCaseAsync(string name, List<strin
         }
 
         if (tuiResult.Stdout.Contains("Respuesta:", StringComparison.Ordinal) ||
-            tuiResult.Stdout.Contains("¿Cómo querés procesarlo?", StringComparison.Ordinal))
+            tuiResult.Stdout.Contains("¿Cómo querés procesarlo?", StringComparison.Ordinal) ||
+            tuiResult.Stdout.Contains("Write a prompt, then choose:", StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected /anchor to bypass the main LLM pipeline.");
         }

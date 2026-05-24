@@ -203,6 +203,12 @@ Note:
 | `rfs agent-json` | Pi JSON/tools experimental |
 | `rfs pi` | passthrough / TUI |
 
+Complete-mode transport note:
+
+- the Pi JSON runner keeps argv for prompts at or below 32000 chars
+- it switches to stdin above that threshold to avoid `Argument list too long`
+- this is a transport safeguard, not a change to the model context window, ContextPack, or RCK recording rules
+
 ## 7. North Star and anti-drift rules
 
 - Do not touch RCK Core unless there is an explicit architectural decision.

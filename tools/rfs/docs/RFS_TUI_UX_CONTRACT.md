@@ -1,6 +1,6 @@
 # RFS TUI UX Contract
 
-PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the Simple Context contract for Simple mode, PT7 implements the live Simple mode path on top of that contract, PT8 implements the live Complete mode path on top of proposal/validation/context-pack reuse, PT9 implements the live Plan mode path on top of Simple Context reuse, PT9.5 adds context budget usage reporting without changing transport behavior, PT10 adds `/anchor` plus commit-boundary anchors, PT11 polishes internal commands, PT12 validates the live TUI in `ChessBoardApp`, and PT13 is the documentation stop point.
+PT5 status: bare `rfs` now enters a minimal TUI shell with auto-init, header rendering, `/status` / `/help` / `/exit`, prompt-first mode selection, and a real Direct mode path. PT5 also defines the finalized TUI recording contract for the main-LLM response path. PT6 defines the Simple Context contract for Simple mode, PT7 implements the live Simple mode path on top of that contract, PT8 implements the live Complete mode path on top of proposal/validation/context-pack reuse, PT9 implements the live Plan mode path on top of Simple Context reuse, PT9.5 adds context budget usage reporting, PT13 adds Complete-mode transport hardening (argv up to 32000 chars, stdin above that), PT10 adds `/anchor` plus commit-boundary anchors, PT11 polishes internal commands, PT12 validates the live TUI in `ChessBoardApp`, and PT13 is the documentation stop point.
 
 ## 1. North Star
 
@@ -224,19 +224,19 @@ Simple, Complete, and Plan modes now surface a small context-usage report when t
 
 Context window usage and process-argument transport risk are different problems.
 The model may have a large window and still fail if the OS argument length limit is exceeded.
+Complete mode now avoids that transport limit by keeping short prompts on argv and switching long prompts to stdin above 32000 chars.
 
-Current PT9.5 behavior:
+Current PT9.5 / PT13 behavior:
 
 - report `model budget: unknown` when no clean budget source exists in repo metadata
 - report `context usage: unknown` when budget is unknown
 - keep transport risk as a simple char-based heuristic
-- do not change transport, prompt passing, or pipeline behavior yet
+- keep the prompt transport change narrowly scoped to the JSON runner
+- do not compact the ContextPack
+- do not change the materialization policy
 
-Future mitigations remain out of scope for PT9.5:
+Remaining mitigations stay out of scope:
 
-- pass prompt by stdin
-- pass prompt through a controlled temporary file
-- compact the ContextPack
 - warn before transport overflow
 - degrade Complete to Simple when needed
 - add per-model budget metadata in config

@@ -8,8 +8,9 @@
 - It does not add runtime behavior.
 - It does not add commands.
 - It does not touch `Rufus.RCK.Core`.
-- It does not change transport.
-- It does not correct `Argument list too long`.
+- It does not compact `ContextPack`.
+- It does not change recording.
+- It documents the completed transport hardening for long Complete-mode prompts.
 
 PT12 was validated externally in `ChessBoardApp` and confirmed the live TUI state before this stop point.
 
@@ -99,8 +100,8 @@ PT12 validated the TUI in a real repository and confirmed:
 - Direct mode records `State + Delta`
 - Simple mode records `State + Delta`
 - Plan mode records `State + Delta`
-- Complete mode shows its governed stages and can fail before the main LLM call with `Argument list too long`
-- the TUI remains operable after that failure
+- Complete mode shows its governed stages and uses argv for prompts up to 32000 chars, then stdin above that to avoid `Argument list too long`
+- the TUI remains operable after that transport guardrail
 
 ## 5. Mode contracts
 
@@ -202,10 +203,11 @@ Interpretation:
 - model budget may be `unknown` when no clean source exists
 - context window budget and process-argument transport risk are different problems
 - a model can have enough window and still fail on the OS argument limit
+- long Complete-mode prompts now avoid that transport limit by switching to stdin above 32000 chars
 
-## 10. Known risk
+## 10. Transport risk status
 
-Complete mode can fail with:
+Complete mode could previously fail with:
 
 ```text
 Argument list too long
@@ -213,14 +215,13 @@ Argument list too long
 
 Status:
 
-- known risk
-- not corrected in this cycle
+- mitigated for long prompts
 - does not block Direct, Simple, or Plan
 - PT12 confirmed that if the failure happens before the main LLM response, no State or Delta is created and RCK is not corrupted
+- the runtime fix keeps argv for prompts at or below 32000 chars and uses stdin above that threshold
 
-Future mitigations that remain out of scope for this cycle:
+Still out of scope in this cycle:
 
-- pass the prompt by stdin
 - use a controlled temporary file
 - compact the ContextPack
 - add a transport budget warning
@@ -267,9 +268,6 @@ This cycle does not:
 - migrate legacy `rfs agent`
 - deprecate legacy bridges
 - create `ModelRouter`
-- correct `Argument list too long`
-- change prompt transport
-- pass prompts by stdin
 - use temporary files for transport
 - compact ContextPack
 - touch `Rufus.RCK.Core`

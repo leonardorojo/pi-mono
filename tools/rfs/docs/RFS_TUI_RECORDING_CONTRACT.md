@@ -307,8 +307,8 @@ This contract does not:
 PT12 externally validated the live TUI against a real repository and confirmed the intended recording boundary:
 
 - Direct, Simple, and Plan modes create one State + one Delta only after the main LLM responds
-- Complete mode can fail before the main LLM response with `Argument list too long`
-- when that failure happens, no State or Delta is created
-- the TUI remains operable after the failure
+- Complete mode now keeps short prompts on argv and sends long prompts via stdin before launching Pi, so the main LLM can respond instead of tripping `Argument list too long`
+- when the LLM responds, one State and one Delta are recorded afterward
+- the TUI remains operable after the transport guardrail
 - no raw JSONL, stdout/stderr dumps, diffs, or file contents were accepted into the recorded summaries
 - the validation did not require a Core schema change

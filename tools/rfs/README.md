@@ -20,7 +20,7 @@ Short version:
 - Experimental / diagnostic commands: `rfs ask-json`, `rfs agent-json`, `rfs trace-slice-proposal`, `rfs trace-slice-validate`, `rfs trace-slice-proposal-llm`, `rfs trace-slice-validate-llm`, `rfs context-pack --trace-slice-validated`.
 - Legacy current commands: `rfs agent`, `rfs agent --record`.
 - RCK writers: `rfs ask --record`, `rfs intent --record`, `rfs agent --record`.
-- The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI; PT7 implements the Simple mode path and final-response recording on top of the Simple Context contract; PT8 implements the Complete mode path with proposal -> validation -> validated ContextPack -> final-response recording; PT9 implements the Plan mode path with Simple Context reuse and final-response recording; PT9.5 adds context budget usage reporting without changing transport behavior; PT10 adds `/anchor` plus commit-boundary anchors; PT11 polishes internal commands (`/status`, `/log`, `/model`, `/context`, `/trace`, `/help`, `/exit`); PT12 validated the live TUI externally in `ChessBoardApp`; PT13 is the documentation stop point.
+- The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI; PT7 implements the Simple mode path and final-response recording on top of the Simple Context contract; PT8 implements the Complete mode path with proposal -> validation -> validated ContextPack -> final-response recording; PT9 implements the Plan mode path with Simple Context reuse and final-response recording; PT9.5 adds context budget usage reporting; PT13 documents Complete-mode transport hardening (argv for prompts up to 32000 chars, stdin above that) and closes the documentation stop point.
 - The TUI also exposes `/anchor "name"` for explicit milestone anchors on the current RCK HEAD; `/model <model>` updates only `.rfs/config.json`.
 - Do not confuse proposal with the final TraceSlice, or TraceSlice with ContextPack.
 - Do not add new commands before closing the current cycle.
@@ -158,7 +158,7 @@ Each command lists: what it does, whether it writes `.rfs/rck`, whether it is re
   - Pi / JSONL / RPC / legacy: Pi + JSONL by default; optional legacy fallback via `RFS_USE_LEGACY_ASK_BRIDGE=1`.
 
 - `rfs ask-json <prompt>`
-  - Description: experimental one-shot prototype that runs `pi --mode json`, parses stdout as JSONL, and prints a human answer.
+  - Description: experimental one-shot prototype that runs `pi --mode json`, parses stdout as JSONL, and prints a human answer; prompts longer than 32000 chars are handed to Pi through stdin by the JSON runner.
   - Writes RCK: no.
   - Read-only: yes.
   - Experimental: yes / diagnostic.
@@ -279,12 +279,12 @@ RFS disables extensions and context files for this RPC call so stdout stays dedi
 The command prints provider + model id, includes the display name when Pi returns one, and marks the current workspace model with `*` when it matches `.rfs/config.json`.
 
 `rfs ask-json` is an experimental validation path for Pi JSON Event Stream mode.
-It runs `pi --mode json --no-session --no-tools --no-extensions --no-context-files <prompt>` from the caller cwd, keeps stderr separate, parses stdout line-by-line as JSONL, accumulates `message_update.assistantMessageEvent.type == "text_delta"`, and prefers the structured final assistant text from `message_end`, `turn_end`, or `agent_end` when present.
+It runs `pi --mode json --no-session --no-tools --no-extensions --no-context-files <prompt>` from the caller cwd for short prompts, switches to stdin above 32000 chars, keeps stderr separate, parses stdout line-by-line as JSONL, accumulates `message_update.assistantMessageEvent.type == "text_delta"`, and prefers the structured final assistant text from `message_end`, `turn_end`, or `agent_end` when present.
 It does not modify `.rfs/rck`, does not replace `rfs ask`, and does not touch the legacy Node bridges.
 
 New experimental command (P7 prototype):
 
-- `rfs agent-json <task>`: prototype JSON Event Stream agent. This runs `pi --mode json` with a restricted read-only `--tools` list (`read,grep,find,ls`), parses JSONL events, captures observed tool_execution_* events, and prints a concise human-friendly summary. This command is explicitly experimental at runtime and in documentation. Each execution prints: `Experimental: relies on Pi --tools enforcement for read-only behavior.` See tools/rfs/docs/RFS_PI_PROGRAMMATIC_INTEGRATION_AUDIT.md for audit notes.
+- `rfs agent-json <task>`: prototype JSON Event Stream agent. This runs `pi --mode json` with a restricted read-only `--tools` list (`read,grep,find,ls`), parses JSONL events, captures observed tool_execution_* events, and prints a concise human-friendly summary. Prompts longer than 32000 chars are handed to Pi through stdin by the JSON runner. This command is explicitly experimental at runtime and in documentation. Each execution prints: `Experimental: relies on Pi --tools enforcement for read-only behavior.` See tools/rfs/docs/RFS_PI_PROGRAMMATIC_INTEGRATION_AUDIT.md for audit notes.
 - `rfs intent <prompt>`: minimal CLI harness for `Rufus.Agenting.Intent.IntentInferenceAgent`. It creates an `AgentTask` with `Kind = infer-intent`, `Goal = inferir intent operativo del prompt`, and `Input = <prompt>`, then prints `Status`, `AgentId`, `ExecutionModel`, `Summary`, `Output`, `Evidence`, `Warnings`, and `Errors` when present. It does not call Pi and does not write `.rfs/rck`.
 
 Example:

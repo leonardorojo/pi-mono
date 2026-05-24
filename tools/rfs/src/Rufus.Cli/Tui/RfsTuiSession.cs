@@ -55,7 +55,7 @@ internal static class RfsTuiSession
         => RfsTuiRenderer.WriteAutoInit(initResult);
 
     private static void RenderHeader(RckWorkspaceStatus status, string? workspaceModel)
-        => RfsTuiRenderer.WriteHeader(status, Path.GetFileName(Path.TrimEndingDirectorySeparator(status.RepoRoot)), workspaceModel);
+        => RfsTuiRenderer.WriteHeader(status, Path.GetFileName(Path.TrimEndingDirectorySeparator(status.RepoRoot)), workspaceModel, leadingBlankLine: true);
 
     private static async Task RunPromptLoopAsync(string repoRoot)
     {

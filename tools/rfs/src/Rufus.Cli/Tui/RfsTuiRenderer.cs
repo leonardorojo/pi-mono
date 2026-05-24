@@ -21,11 +21,16 @@ internal static class RfsTuiRenderer
         WriteStatusLine(initResult.AnchorCreated, "genesis anchor created", "genesis anchor already existed");
     }
 
-    internal static void WriteHeader(RckWorkspaceStatus status, string repoName, string? workspaceModel)
+    internal static void WriteHeader(RckWorkspaceStatus status, string repoName, string? workspaceModel, bool leadingBlankLine = false)
     {
         var modelLabel = string.IsNullOrWhiteSpace(workspaceModel) ? "(inherited)" : workspaceModel.Trim();
         var branchLabel = string.IsNullOrWhiteSpace(status.GitContext.Branch) ? "(detached)" : status.GitContext.Branch;
         var dirtyLabel = status.GitContext.Dirty.ToString().ToLowerInvariant();
+
+        if (leadingBlankLine)
+        {
+            Console.WriteLine();
+        }
 
         WriteTitle($"RFS · {repoName}");
         WriteDivider();

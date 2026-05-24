@@ -6,6 +6,7 @@ internal static class RfsTuiInputReader
 {
     private const string MoveCursorUpOneLine = "\u001b[1F";
     private const string ClearLine = "\u001b[2K";
+    private const char ControlD = '\u0004';
 
     internal static string? ReadLine()
     {
@@ -32,19 +33,25 @@ internal static class RfsTuiInputReader
         }
     }
 
+    internal static bool ShouldUseCommandPalette(string buffer)
+        => buffer.Length > 0 && buffer[0] == '/';
+
     private static bool CanUseLivePalette()
         => RfsTuiTerminal.IsInteractive;
 
     private static string? ReadInteractiveLine()
     {
         var buffer = new StringBuilder();
-        var renderedLineCount = Render(buffer);
+        var renderedLineCount = 1;
+        var commandPaletteVisible = false;
+
+        RfsTuiRenderer.WritePrompt();
 
         while (true)
         {
             var key = Console.ReadKey(intercept: true);
 
-            if (key.KeyChar == '\u0004')
+            if (key.KeyChar == ControlD)
             {
                 Console.WriteLine();
                 return null;
@@ -61,7 +68,17 @@ internal static class RfsTuiInputReader
                 if (buffer.Length > 0)
                 {
                     buffer.Length--;
-                    renderedLineCount = Render(buffer, renderedLineCount);
+                    var nextShouldUseCommandPalette = ShouldUseCommandPalette(buffer.ToString());
+                    if (commandPaletteVisible || nextShouldUseCommandPalette)
+                    {
+                        renderedLineCount = Render(buffer, renderedLineCount);
+                    }
+                    else
+                    {
+                        Console.Write("\b \b");
+                    }
+
+                    commandPaletteVisible = nextShouldUseCommandPalette;
                 }
 
                 continue;
@@ -73,7 +90,17 @@ internal static class RfsTuiInputReader
             }
 
             buffer.Append(key.KeyChar);
-            renderedLineCount = Render(buffer, renderedLineCount);
+            var shouldUseCommandPalette = ShouldUseCommandPalette(buffer.ToString());
+            if (commandPaletteVisible || shouldUseCommandPalette)
+            {
+                renderedLineCount = Render(buffer, renderedLineCount);
+            }
+            else
+            {
+                Console.Write(key.KeyChar);
+            }
+
+            commandPaletteVisible = shouldUseCommandPalette;
         }
     }
 
@@ -85,7 +112,7 @@ internal static class RfsTuiInputReader
         }
 
         var renderedLineCount = 1;
-        var showCommandPalette = buffer.Length > 0 && buffer[0] == '/';
+        var showCommandPalette = ShouldUseCommandPalette(buffer.ToString());
 
         RfsTuiRenderer.WritePrompt();
         Console.Write(buffer.ToString());

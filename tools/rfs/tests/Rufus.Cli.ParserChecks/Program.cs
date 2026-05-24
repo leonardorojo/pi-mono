@@ -2513,6 +2513,11 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
             Input = "/x",
             Expected = Array.Empty<(string Usage, string Description)>(),
         },
+        new
+        {
+            Input = "hola",
+            Expected = Array.Empty<(string Usage, string Description)>(),
+        },
     };
 
     foreach (var testCase in cases)
@@ -2537,6 +2542,24 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
             {
                 failures.Add($"[tui command suggestions] input '{testCase.Input}' suggestion {index} expected description '{expected.Description}' but got '{actual.Description}'.");
             }
+        }
+    }
+
+    var paletteEligibilityCases = new[]
+    {
+        (Input: string.Empty, Expected: false),
+        (Input: "hola", Expected: false),
+        (Input: "hello/", Expected: false),
+        (Input: "/", Expected: true),
+        (Input: "/he", Expected: true),
+    };
+
+    foreach (var testCase in paletteEligibilityCases)
+    {
+        var actual = RfsTuiInputReader.ShouldUseCommandPalette(testCase.Input);
+        if (actual != testCase.Expected)
+        {
+            failures.Add($"[tui command suggestions] expected palette eligibility for '{testCase.Input}' to be {testCase.Expected} but got {actual}.");
         }
     }
 

@@ -236,6 +236,7 @@ The immediate closeout sequence for this command-governance cycle is:
 Current status:
 
 - PT13 is the documentation stop point for the live TUI cycle
+- live slash-command discoverability is handled by the TUI palette, not by new runtime commands
 - no new runtime command work belongs to this cycle
 - future changes require a new phase
 

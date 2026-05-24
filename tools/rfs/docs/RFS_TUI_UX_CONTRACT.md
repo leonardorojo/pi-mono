@@ -100,6 +100,8 @@ The user types the task directly:
 
 Only after Enter, RFS asks how to process the prompt:
 
+The slash-command palette is live while typing `/` in the interactive TUI. It is help only: it does not execute commands until Enter. When input/output are redirected, the TUI falls back to plain line reading.
+
 ```text
 ¿Cómo querés procesarlo?
 

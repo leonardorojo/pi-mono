@@ -266,16 +266,15 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
         "  transport:",
         "  transport risk:",
         "[5/5] Asking main LLM...",
-        "Context:",
-        "validation:",
-        "selection:",
-        "selected states/deltas/anchors:",
-        "transport:",
-        "transport risk:",
         "Respuesta:",
         "Recorded State + Delta:",
     },
     expectPromptEcho: false,
+    forbiddenFragments: new[]
+    {
+        "Context:",
+        "Context ready:",
+    },
     expectedStateCountDelta: 1,
     expectedDeltaCountDelta: 1,
     expectedAnchorCountDelta: 0,
@@ -3157,6 +3156,7 @@ static async Task RunRfsTuiPromptModeSelectionSessionCaseAsync(
     string input,
     string[] expectedFragments,
     bool expectPromptEcho,
+    string[]? forbiddenFragments = null,
     int expectedStateCountDelta = 0,
     int expectedDeltaCountDelta = 0,
     int expectedAnchorCountDelta = 0,
@@ -3202,6 +3202,17 @@ static async Task RunRfsTuiPromptModeSelectionSessionCaseAsync(
             if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
             {
                 failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        if (forbiddenFragments is not null)
+        {
+            foreach (var fragment in forbiddenFragments)
+            {
+                if (tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected stdout to not contain '{fragment}' but it was present.");
+                }
             }
         }
 

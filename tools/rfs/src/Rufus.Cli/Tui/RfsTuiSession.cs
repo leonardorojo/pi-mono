@@ -316,18 +316,6 @@ internal static class RfsTuiSession
             return false;
         }
 
-        RfsTuiRenderer.WriteCompleteContextSummary(
-            completeResult.ValidationStatus,
-            completeResult.TraceSliceSelectionStrategy,
-            completeResult.ContextPackScope,
-            completeResult.IntentSource,
-            completeResult.SelectedStateIds.Count,
-            completeResult.SelectedDeltaIds.Count,
-            completeResult.SelectedAnchorIds.Count,
-            completeContextUsageReport,
-            completeResult.Warnings,
-            completeResult.Omissions);
-
         RfsTuiRenderer.WriteCompleteStage("[5/5] Asking main LLM...");
 
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(

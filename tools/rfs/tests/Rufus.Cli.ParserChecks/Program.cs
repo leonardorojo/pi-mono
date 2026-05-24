@@ -245,11 +245,15 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     expectedFragments: new[]
     {
         "[Complete]",
-        "Building governed context...",
+        "[1/5] Inferring intent...",
+        "[2/5] Building TraceSlice proposal...",
+        "[3/5] Validating proposal...",
+        "[4/5] Building ContextPack...",
+        "[5/5] Asking main LLM...",
         "Context:",
         "validation:",
         "selection:",
-        "states/deltas/anchors:",
+        "selected states/deltas/anchors:",
         "transport:",
         "transport risk:",
         "Respuesta:",

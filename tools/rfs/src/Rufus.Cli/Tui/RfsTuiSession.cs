@@ -297,9 +297,14 @@ internal static class RfsTuiSession
 
     private static async Task<bool> RunCompleteModeAsync(string repoRoot, string prompt)
     {
-        RfsTuiRenderer.WriteModeBanner("Complete", "Building governed context...");
+        RfsTuiRenderer.WriteModeBanner("Complete", "");
 
-        var completeResult = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot);
+        var completeResult = await RfsCompleteModePipeline.BuildAsync(
+            prompt,
+            repoRoot,
+            5,
+            intentAgent: null,
+            stageWriter: RfsTuiRenderer.WriteCompleteStage);
         var completeContextUsageReport = BuildContextUsageReport(
             completeResult.EstimatedChars,
             completeResult.EstimatedTokens,
@@ -322,6 +327,8 @@ internal static class RfsTuiSession
             completeContextUsageReport,
             completeResult.Warnings,
             completeResult.Omissions);
+
+        RfsTuiRenderer.WriteCompleteStage("[5/5] Asking main LLM...");
 
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(
             repoRoot,

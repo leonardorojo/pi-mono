@@ -20,20 +20,23 @@ public static class RfsCompleteModePipeline
         string prompt,
         string? currentDirectory = null,
         int maxRecentInteractions = 5,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string>? stageWriter = null)
         => await BuildProposalAsync(
             prompt,
             currentDirectory,
             maxRecentInteractions,
             intentAgent: null,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            stageWriter).ConfigureAwait(false);
 
     public static async Task<RckTraceSliceProposalBuildResult> BuildProposalAsync(
         string prompt,
         string? currentDirectory,
         int maxRecentInteractions,
         IAgent? intentAgent,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string>? stageWriter = null)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
@@ -49,6 +52,8 @@ public static class RfsCompleteModePipeline
         }
 
         intentAgent ??= ResolveIntentAgent(currentDirectory);
+
+        stageWriter?.Invoke("[1/5] Inferring intent...");
 
         var intentTask = new AgentTask(
             id: $"intent-{Guid.NewGuid():N}",
@@ -68,6 +73,8 @@ public static class RfsCompleteModePipeline
         {
             return RckTraceSliceProposalBuildResult.Failure(BuildIntentFailureMessage(intentErrorMessage));
         }
+
+        stageWriter?.Invoke("[2/5] Building TraceSlice proposal...");
 
         var plannerInputJson = JsonSerializer.Serialize(new
         {
@@ -124,28 +131,31 @@ public static class RfsCompleteModePipeline
         string prompt,
         string? currentDirectory = null,
         int maxRecentInteractions = 5,
-        CancellationToken cancellationToken = default)
-        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, cancellationToken).ConfigureAwait(false);
+        CancellationToken cancellationToken = default,
+        Action<string>? stageWriter = null)
+        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, cancellationToken, stageWriter).ConfigureAwait(false);
 
     public static async Task<RfsCompleteModeBuildResult> BuildAsync(
         string prompt,
         string? currentDirectory,
         int maxRecentInteractions,
         IAgent? intentAgent,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string>? stageWriter = null)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
             return RfsCompleteModeBuildResult.Failure("rfs complete mode requires a prompt.");
         }
 
-        var proposalResult = await BuildProposalAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent, cancellationToken).ConfigureAwait(false);
+        var proposalResult = await BuildProposalAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent, cancellationToken, stageWriter).ConfigureAwait(false);
         if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
         {
             return RfsCompleteModeBuildResult.Failure(
                 proposalResult.ErrorMessage ?? "rfs complete mode: failed to build TraceSliceProposal.");
         }
 
+        stageWriter?.Invoke("[3/5] Validating proposal...");
         var validationResult = RckTraceSliceProposalValidator.Validate(proposalResult.ProposalJson, currentDirectory, maxStates: 5, maxDeltas: 5);
         if (!validationResult.Success || string.IsNullOrWhiteSpace(validationResult.Json))
         {
@@ -153,6 +163,7 @@ public static class RfsCompleteModePipeline
                 validationResult.ErrorMessage ?? "rfs complete mode: failed to validate TraceSliceProposal.");
         }
 
+        stageWriter?.Invoke("[4/5] Building ContextPack...");
         var contextPackResult = RckTraceSliceContextPackBuilder.BuildFromValidatedTraceSlice(validationResult.Json, currentDirectory);
         if (!contextPackResult.Success || string.IsNullOrWhiteSpace(contextPackResult.Json))
         {

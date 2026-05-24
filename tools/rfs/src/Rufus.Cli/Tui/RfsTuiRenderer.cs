@@ -72,7 +72,10 @@ internal static class RfsTuiRenderer
     internal static void WriteModeBanner(string modeLabel, string subtitle)
     {
         WriteSectionTitle($"[{modeLabel}]");
-        WriteMutedLine(subtitle);
+        if (!string.IsNullOrWhiteSpace(subtitle))
+        {
+            WriteMutedLine(subtitle);
+        }
     }
 
     internal static void WriteSimpleContextSummary(RfsTuiSimpleContextSummary summary)
@@ -119,12 +122,17 @@ internal static class RfsTuiRenderer
         WriteKeyValue("selection", selectionStrategy ?? "(unknown)");
         WriteKeyValue("scope", contextPackScope ?? "(unknown)");
         WriteKeyValue("intent source", intentSource ?? "(unknown)");
-        WriteKeyValue("states/deltas/anchors", $"{selectedStateCount} / {selectedDeltaCount} / {selectedAnchorCount}");
+        WriteKeyValue("selected states/deltas/anchors", $"{selectedStateCount} / {selectedDeltaCount} / {selectedAnchorCount}");
         WriteKeyValue("estimated tokens", contextUsageReport.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture));
         WriteKeyValue("transport", contextUsageReport.TransportSizeChars > 32000 ? "stdin" : "argv");
         WriteKeyValue("transport risk", contextUsageReport.TransportRisk);
         WriteOptionalList("warnings", warnings);
         WriteOptionalList("omissions", omissions);
+    }
+
+    internal static void WriteCompleteStage(string stageLine)
+    {
+        Console.WriteLine(stageLine);
     }
 
     internal static void WriteResponse(string answer)
@@ -225,7 +233,7 @@ internal static class RfsTuiRenderer
             WriteKeyValue("selection", complete.SelectionStrategy ?? "(unknown)");
             WriteKeyValue("scope", complete.ContextPackScope ?? "(unknown)");
             WriteKeyValue("intent source", complete.IntentSource ?? "(unknown)");
-            WriteKeyValue("states/deltas/anchors", $"{complete.SelectedStateCount} / {complete.SelectedDeltaCount} / {complete.SelectedAnchorCount}");
+            WriteKeyValue("selected states/deltas/anchors", $"{complete.SelectedStateCount} / {complete.SelectedDeltaCount} / {complete.SelectedAnchorCount}");
             WriteKeyValue("estimated tokens", complete.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture));
             WriteKeyValue("transport", complete.EstimatedChars > 32000 ? "stdin" : "argv");
             WriteKeyValue("transport risk", complete.TransportRisk);

@@ -64,8 +64,7 @@ internal static class RfsTuiSession
         {
             while (true)
             {
-                RfsTuiRenderer.WritePrompt();
-                var line = Console.ReadLine();
+                var line = RfsTuiInputReader.ReadLine();
                 if (line is null)
                 {
                     break;

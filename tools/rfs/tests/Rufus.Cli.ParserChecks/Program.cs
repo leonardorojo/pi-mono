@@ -2500,6 +2500,19 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
                 (Usage: "/context", Description: "Show last context summary"),
             },
         },
+        new
+        {
+            Input = "/tr",
+            Expected = new[]
+            {
+                (Usage: "/trace", Description: "Show last TraceSlice summary"),
+            },
+        },
+        new
+        {
+            Input = "/x",
+            Expected = Array.Empty<(string Usage, string Description)>(),
+        },
     };
 
     foreach (var testCase in cases)
@@ -2533,6 +2546,12 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
         failures.Add($"[tui command suggestions] expected exact '/model' to resolve to '/model' but got '{exactModel ?? "(null)"}'.");
     }
 
+    var exactHelp = RfsTuiCommandCatalog.FindExactMatch("/help")?.Usage;
+    if (!string.Equals(exactHelp, "/help", StringComparison.Ordinal))
+    {
+        failures.Add($"[tui command suggestions] expected exact '/help' to resolve to '/help' but got '{exactHelp ?? "(null)"}'.");
+    }
+
     var helpCommands = RfsTuiCommandCatalog.GetHelpCommands().ToArray();
     var requiredHelpUsages = new[] { "/help", "/model", "/model <model>", "/context" };
     foreach (var usage in requiredHelpUsages)
@@ -2541,6 +2560,32 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
         {
             failures.Add($"[tui command suggestions] expected help catalog to include '{usage}'.");
         }
+    }
+
+    var originalIn = Console.In;
+    var originalOut = Console.Out;
+    try
+    {
+        using var redirectedInput = new StringReader("/help\n");
+        using var redirectedOutput = new StringWriter();
+        Console.SetIn(redirectedInput);
+        Console.SetOut(redirectedOutput);
+
+        var line = RfsTuiInputReader.ReadLine();
+        if (!string.Equals(line, "/help", StringComparison.Ordinal))
+        {
+            failures.Add($"[tui command suggestions] expected redirected input fallback to return '/help' but got '{line ?? "(null)"}'.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(redirectedOutput.ToString()))
+        {
+            failures.Add("[tui command suggestions] expected redirected input fallback to stay quiet when input/output are redirected.");
+        }
+    }
+    finally
+    {
+        Console.SetIn(originalIn);
+        Console.SetOut(originalOut);
     }
 }
 

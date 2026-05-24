@@ -268,6 +268,18 @@ internal static class RfsTuiRenderer
         WriteCommandEntries(suggestions);
     }
 
+    internal static int WriteCommandPalette(IReadOnlyList<RfsTuiCommandInfo> suggestions)
+    {
+        if (suggestions.Count == 0)
+        {
+            WriteMutedLine("No matching commands");
+            return 1;
+        }
+
+        WriteCommandEntries(suggestions);
+        return suggestions.Count;
+    }
+
     internal static void WriteUnknownCommand(string input)
     {
         WriteWarningLine($"Unknown command: {input}");

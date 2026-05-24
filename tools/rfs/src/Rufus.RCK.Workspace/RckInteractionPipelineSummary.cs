@@ -26,6 +26,8 @@ public sealed record RckInteractionPipelineSummary
 
     public string? ProposalSource { get; }
 
+    public string? IntentSource { get; }
+
     public string? MaterializationPolicySummary { get; }
 
     public int? RecentInteractionCount { get; }
@@ -69,6 +71,7 @@ public sealed record RckInteractionPipelineSummary
         string? intentSummary = null,
         string? proposalSummary = null,
         string? proposalSource = null,
+        string? intentSource = null,
         string? materializationPolicySummary = null,
         int? recentInteractionCount = null,
         IReadOnlyList<string>? selectedStateIds = null,
@@ -99,6 +102,7 @@ public sealed record RckInteractionPipelineSummary
         IntentSummary = intentSummary;
         ProposalSummary = proposalSummary;
         ProposalSource = proposalSource;
+        IntentSource = intentSource;
         MaterializationPolicySummary = materializationPolicySummary;
         RecentInteractionCount = recentInteractionCount;
         SelectedStateIds = selectedStateIds;

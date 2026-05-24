@@ -67,6 +67,7 @@ internal sealed record RfsTuiCompleteContextSummary(
     string? SelectionStrategy,
     string? ValidationStatus,
     string? ContextPackScope,
+    string? IntentSource,
     int SelectedStateCount,
     int SelectedDeltaCount,
     int SelectedAnchorCount,

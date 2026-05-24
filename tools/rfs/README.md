@@ -14,14 +14,14 @@ Short version:
 
 - `rfs` with no arguments enters the RFS TUI session, including the live Direct, Simple, Complete, and Plan mode paths.
 - The TUI also shows a live slash-command palette while you type `/`; execution still happens on Enter, slash commands dispatch directly without opening the 1/2/3/4 prompt-mode menu, and redirected input falls back to plain line reading.
-- Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`.
+- Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`, `rfs intent --llm`.
 - Deterministic baseline pipeline: `rfs trace-slice "<prompt>"` -> `rfs context-pack --trace-slice "<prompt>"`.
-- Governed deterministic pipeline: `rfs trace-slice-proposal "<prompt>"` -> `rfs trace-slice-validate "<prompt>"` -> `rfs context-pack --trace-slice-validated "<prompt>"`.
+
 - LLM experimental proposal pipeline: `rfs trace-slice-proposal-llm "<prompt>"` -> `rfs trace-slice-validate-llm "<prompt>"`.
 - Experimental / diagnostic commands: `rfs ask-json`, `rfs agent-json`, `rfs trace-slice-proposal`, `rfs trace-slice-validate`, `rfs trace-slice-proposal-llm`, `rfs trace-slice-validate-llm`, `rfs context-pack --trace-slice-validated`.
 - Legacy current commands: `rfs agent`, `rfs agent --record`.
 - RCK writers: `rfs ask --record`, `rfs intent --record`, `rfs agent --record`.
-- The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI; PT7 implements the Simple mode path and final-response recording on top of the Simple Context contract; PT8 implements the Complete mode path with proposal -> validation -> validated ContextPack -> final-response recording; PT9 implements the Plan mode path with Simple Context reuse and final-response recording; PT9.5 adds context budget usage reporting; PT11 keeps the shell output compact; PT13 documents Complete-mode transport hardening (argv for prompts up to 32000 chars, stdin above that) and closes the documentation stop point.
+- The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI; PT7 implements the Simple mode path and final-response recording on top of the Simple Context contract; PT8 implements the Complete mode path with LLM-backed intent -> proposal -> validation -> validated ContextPack -> final-response recording; PT9 implements the Plan mode path with Simple Context reuse and final-response recording; PT9.5 adds context budget usage reporting; PT11 keeps the shell output compact; PT13 documents Complete-mode transport hardening (argv for prompts up to 32000 chars, stdin above that) and closes the documentation stop point.
 - External validation in `ChessBoardApp` confirmed that a very large Complete-mode prompt (~398k chars / ~99k tokens) still reaches the LLM, creates State + Delta, and avoids `Argument list too long` after the stdin transport switch.
 
 - Do not confuse proposal with the final TraceSlice, or TraceSlice with ContextPack.

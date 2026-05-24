@@ -119,6 +119,22 @@ await RunPiIntentInferenceAgentFailureCaseAsync(
     expectedErrorContains: "Invalid PromptIntent JSON",
     failures: failures);
 
+await RunCompleteModePipelineWithIntentLlmCaseAsync(
+    name: "complete mode uses LLM-backed intent and retains deterministic proposal/validation",
+    repoRoot: "/home/rufus/DEV/leonardorojo/ChessBoardApp",
+    prompt: "Implement reset board action",
+    llmAnswerJson: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\"],\"constraints\":[\"do not write RCK\"]}",
+    expectedIntent: "implement-reset-board",
+    failures: failures);
+
+await RunCompleteModePipelineWithIntentLlmFailureCaseAsync(
+    name: "complete mode fails before proposal when intent JSON is invalid",
+    repoRoot: "/home/rufus/DEV/leonardorojo/ChessBoardApp",
+    prompt: "Implement reset board action",
+    llmAnswerJson: "not-json",
+    expectedErrorContains: "Complete mode failed while inferring intent.",
+    failures: failures);
+
 await RunIntentCliCaseAsync(
     name: "intent cli renders result",
     prompt: "Implement rfs show command",
@@ -2495,7 +2511,7 @@ static async Task RunPiIntentInferenceAgentCaseAsync(
     try
     {
         var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
-        var agent = new PiIntentInferenceAgent(transport);
+        var agent = new PiIntentInferenceAgent(model: "gpt-5.4-mini", transport: transport);
         var result = await agent.ExecuteAsync(task);
 
         if (result.Status != AgentTaskStatus.Succeeded)
@@ -2572,7 +2588,7 @@ static async Task RunPiIntentInferenceAgentFailureCaseAsync(
     try
     {
         var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
-        var agent = new PiIntentInferenceAgent(transport);
+        var agent = new PiIntentInferenceAgent(model: "gpt-5.4-mini", transport: transport);
         var result = await agent.ExecuteAsync(task);
 
         if (result.Status != AgentTaskStatus.Failed)
@@ -2592,6 +2608,117 @@ static async Task RunPiIntentInferenceAgentFailureCaseAsync(
         else if (!result.Errors[0].Contains(expectedErrorContains, StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected Errors to contain '{expectedErrorContains}' but got '{result.Errors[0]}'.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+}
+
+static async Task RunCompleteModePipelineWithIntentLlmCaseAsync(
+    string name,
+    string repoRoot,
+    string prompt,
+    string llmAnswerJson,
+    string expectedIntent,
+    List<string> failures)
+{
+    try
+    {
+        var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
+        var intentAgent = new PiIntentInferenceAgent(repoRoot, "gpt-5.4-mini", transport);
+        var result = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot, 5, intentAgent);
+
+        if (!result.Success)
+        {
+            failures.Add($"[{name}] expected Success=true but got false. Error: {result.ErrorMessage}");
+            return;
+        }
+
+        if (!string.Equals(result.IntentSource, "pi-intent-inference", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected IntentSource 'pi-intent-inference' but got '{result.IntentSource}'.");
+        }
+
+        if (!string.Equals(result.IntentKind, expectedIntent, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected IntentKind '{expectedIntent}' but got '{result.IntentKind}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.IntentSummary))
+        {
+            failures.Add($"[{name}] expected IntentSummary to be populated.");
+        }
+
+        if (!string.Equals(result.ProposalSource, "trace-slice-planner", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected ProposalSource 'trace-slice-planner' but got '{result.ProposalSource}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.ValidationStatus))
+        {
+            failures.Add($"[{name}] expected ValidationStatus to be populated.");
+        }
+
+        if (result.SelectedStateIds.Count == 0 || result.SelectedDeltaIds.Count == 0)
+        {
+            failures.Add($"[{name}] expected selected states/deltas to be populated.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.PromptToSend))
+        {
+            failures.Add($"[{name}] expected PromptToSend to be populated.");
+        }
+
+        if (transport.CallCount != 1)
+        {
+            failures.Add($"[{name}] expected the intent LLM to be called once but got {transport.CallCount} calls.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+}
+
+static async Task RunCompleteModePipelineWithIntentLlmFailureCaseAsync(
+    string name,
+    string repoRoot,
+    string prompt,
+    string llmAnswerJson,
+    string expectedErrorContains,
+    List<string> failures)
+{
+    try
+    {
+        var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
+        var intentAgent = new PiIntentInferenceAgent(repoRoot, "gpt-5.4-mini", transport);
+        var result = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot, 5, intentAgent);
+
+        if (result.Success)
+        {
+            failures.Add($"[{name}] expected Success=false but got true.");
+        }
+
+        if (result.ErrorMessage is null || !result.ErrorMessage.Contains(expectedErrorContains, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected ErrorMessage to contain '{expectedErrorContains}' but got '{result.ErrorMessage}'.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.PromptToSend))
+        {
+            failures.Add($"[{name}] expected PromptToSend to be null/empty on failure.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.IntentSource))
+        {
+            failures.Add($"[{name}] expected IntentSource to be empty on failure.");
+        }
+
+        if (transport.CallCount != 1)
+        {
+            failures.Add($"[{name}] expected the intent LLM to be called once but got {transport.CallCount} calls.");
         }
     }
     catch (Exception ex)

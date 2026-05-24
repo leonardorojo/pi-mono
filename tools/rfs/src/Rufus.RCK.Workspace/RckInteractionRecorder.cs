@@ -329,6 +329,7 @@ public static class RckInteractionRecorder
             intentSummary = pipelineSummary.IntentSummary,
             proposalSummary = pipelineSummary.ProposalSummary,
             proposalSource = pipelineSummary.ProposalSource,
+            intentSource = pipelineSummary.IntentSource,
             materializationPolicySummary = pipelineSummary.MaterializationPolicySummary,
             recentInteractionCount = pipelineSummary.RecentInteractionCount,
             selectedStateIds = pipelineSummary.SelectedStateIds,

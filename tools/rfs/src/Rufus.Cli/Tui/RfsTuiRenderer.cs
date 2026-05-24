@@ -106,6 +106,7 @@ internal static class RfsTuiRenderer
         string? validationStatus,
         string? selectionStrategy,
         string? contextPackScope,
+        string? intentSource,
         int selectedStateCount,
         int selectedDeltaCount,
         int selectedAnchorCount,
@@ -117,6 +118,7 @@ internal static class RfsTuiRenderer
         WriteKeyValue("validation", validationStatus ?? "(unknown)");
         WriteKeyValue("selection", selectionStrategy ?? "(unknown)");
         WriteKeyValue("scope", contextPackScope ?? "(unknown)");
+        WriteKeyValue("intent source", intentSource ?? "(unknown)");
         WriteKeyValue("states/deltas/anchors", $"{selectedStateCount} / {selectedDeltaCount} / {selectedAnchorCount}");
         WriteKeyValue("estimated tokens", contextUsageReport.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture));
         WriteKeyValue("transport", contextUsageReport.TransportSizeChars > 32000 ? "stdin" : "argv");
@@ -151,7 +153,10 @@ internal static class RfsTuiRenderer
 
     internal static void WriteCompleteFailure(string reason)
     {
-        WriteErrorLine("Complete mode failed before the main LLM answered.");
+        var isIntentFailure = reason.Contains("inferring intent", StringComparison.OrdinalIgnoreCase);
+        WriteErrorLine(isIntentFailure
+            ? "Complete mode failed while inferring intent."
+            : "Complete mode failed before the main LLM answered.");
         WriteWarningLine("No State/Delta was recorded.");
         Console.Error.WriteLine();
         WriteErrorHeading("Reason:");
@@ -219,6 +224,7 @@ internal static class RfsTuiRenderer
             WriteKeyValue("validation", complete.ValidationStatus ?? "(unknown)");
             WriteKeyValue("selection", complete.SelectionStrategy ?? "(unknown)");
             WriteKeyValue("scope", complete.ContextPackScope ?? "(unknown)");
+            WriteKeyValue("intent source", complete.IntentSource ?? "(unknown)");
             WriteKeyValue("states/deltas/anchors", $"{complete.SelectedStateCount} / {complete.SelectedDeltaCount} / {complete.SelectedAnchorCount}");
             WriteKeyValue("estimated tokens", complete.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture));
             WriteKeyValue("transport", complete.EstimatedChars > 32000 ? "stdin" : "argv");

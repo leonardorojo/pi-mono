@@ -3,6 +3,7 @@ using System.Text.Json;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.Agenting.TraceSlice;
+using Rufus.Cli.Intent;
 using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.Tui;
@@ -20,6 +21,19 @@ public static class RfsCompleteModePipeline
         string? currentDirectory = null,
         int maxRecentInteractions = 5,
         CancellationToken cancellationToken = default)
+        => await BuildProposalAsync(
+            prompt,
+            currentDirectory,
+            maxRecentInteractions,
+            intentAgent: null,
+            cancellationToken).ConfigureAwait(false);
+
+    public static async Task<RckTraceSliceProposalBuildResult> BuildProposalAsync(
+        string prompt,
+        string? currentDirectory,
+        int maxRecentInteractions,
+        IAgent? intentAgent,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
@@ -34,11 +48,12 @@ public static class RfsCompleteModePipeline
                 quickIndexResult.ErrorMessage ?? "rfs trace-slice-proposal: failed to read TraceSliceProposal input.");
         }
 
-        var intentAgent = new IntentInferenceAgent();
+        intentAgent ??= ResolveIntentAgent(currentDirectory);
+
         var intentTask = new AgentTask(
             id: $"intent-{Guid.NewGuid():N}",
             kind: "infer-intent",
-            goal: "infer deterministic operational intent for a trace slice proposal",
+            goal: "infer operational intent for a complete-mode trace slice proposal",
             input: normalizedPrompt,
             expectedOutput: "PromptIntent JSON");
 
@@ -46,12 +61,12 @@ public static class RfsCompleteModePipeline
         if (intentResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(intentResult.Output))
         {
             var firstError = intentResult.Errors.FirstOrDefault();
-            return RckTraceSliceProposalBuildResult.Failure(firstError ?? "rfs trace-slice-proposal: intent inference failed.");
+            return RckTraceSliceProposalBuildResult.Failure(BuildIntentFailureMessage(firstError));
         }
 
         if (!TryBuildTraceSliceProposalIntent(intentResult.Output, out var proposalIntent, out var intentErrorMessage))
         {
-            return RckTraceSliceProposalBuildResult.Failure(intentErrorMessage ?? "rfs trace-slice-proposal: failed to project intent result.");
+            return RckTraceSliceProposalBuildResult.Failure(BuildIntentFailureMessage(intentErrorMessage));
         }
 
         var plannerInputJson = JsonSerializer.Serialize(new
@@ -83,6 +98,7 @@ public static class RfsCompleteModePipeline
             proposalJson: plannerResult.Output,
             intentKind: proposalIntent.Kind,
             intentSummary: proposalIntent.Summary,
+            intentSource: intentAgent.Id,
             proposalSummary: proposalSummary,
             proposalSource: plannerAgent.Id,
             warnings: warnings);
@@ -109,13 +125,21 @@ public static class RfsCompleteModePipeline
         string? currentDirectory = null,
         int maxRecentInteractions = 5,
         CancellationToken cancellationToken = default)
+        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, cancellationToken).ConfigureAwait(false);
+
+    public static async Task<RfsCompleteModeBuildResult> BuildAsync(
+        string prompt,
+        string? currentDirectory,
+        int maxRecentInteractions,
+        IAgent? intentAgent,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
             return RfsCompleteModeBuildResult.Failure("rfs complete mode requires a prompt.");
         }
 
-        var proposalResult = await BuildProposalAsync(prompt, currentDirectory, maxRecentInteractions, cancellationToken).ConfigureAwait(false);
+        var proposalResult = await BuildProposalAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent, cancellationToken).ConfigureAwait(false);
         if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
         {
             return RfsCompleteModeBuildResult.Failure(
@@ -143,6 +167,21 @@ public static class RfsCompleteModePipeline
             normalizedPrompt: prompt.Trim());
 
         return summary;
+    }
+
+    private static string BuildIntentFailureMessage(string? detail)
+        => string.IsNullOrWhiteSpace(detail)
+            ? "Complete mode failed while inferring intent."
+            : $"Complete mode failed while inferring intent. {detail.Trim()}";
+
+    private static IAgent ResolveIntentAgent(string? currentDirectory)
+    {
+        var workingDirectory = string.IsNullOrWhiteSpace(currentDirectory)
+            ? Directory.GetCurrentDirectory()
+            : currentDirectory;
+
+        var model = RckWorkspaceModelConfigStore.TryReadDefaultModel(workingDirectory);
+        return new PiIntentInferenceAgent(workingDirectory, model);
     }
 
     private static bool TryBuildTraceSliceProposalIntent(
@@ -211,6 +250,7 @@ public static class RfsCompleteModePipeline
             intentSummary: proposalResult.IntentSummary,
             proposalSummary: proposalResult.ProposalSummary,
             proposalSource: proposalResult.ProposalSource,
+            intentSource: proposalResult.IntentSource,
             validationStatus: validationStatus,
             traceSliceSelectionStrategy: selectionStrategy,
             contextPackScope: contextPackScope,
@@ -453,6 +493,7 @@ public sealed record RckTraceSliceProposalBuildResult
     public string? IntentSummary { get; }
     public string? ProposalSummary { get; }
     public string? ProposalSource { get; }
+    public string? IntentSource { get; }
     public IReadOnlyList<string> Warnings { get; }
 
     private RckTraceSliceProposalBuildResult(
@@ -463,6 +504,7 @@ public sealed record RckTraceSliceProposalBuildResult
         string? intentSummary,
         string? proposalSummary,
         string? proposalSource,
+        string? intentSource,
         IReadOnlyList<string> warnings)
     {
         Success = success;
@@ -472,20 +514,22 @@ public sealed record RckTraceSliceProposalBuildResult
         IntentSummary = intentSummary;
         ProposalSummary = proposalSummary;
         ProposalSource = proposalSource;
+        IntentSource = intentSource;
         Warnings = warnings;
     }
 
     public static RckTraceSliceProposalBuildResult Failure(string errorMessage)
-        => new(false, errorMessage, null, null, null, null, null, Array.Empty<string>());
+        => new(false, errorMessage, null, null, null, null, null, null, Array.Empty<string>());
 
     public static RckTraceSliceProposalBuildResult SuccessResult(
         string proposalJson,
         string intentKind,
         string intentSummary,
+        string intentSource,
         string proposalSummary,
         string proposalSource,
         IReadOnlyList<string> warnings)
-        => new(true, null, proposalJson, intentKind, intentSummary, proposalSummary, proposalSource, warnings);
+        => new(true, null, proposalJson, intentKind, intentSummary, proposalSummary, proposalSource, intentSource, warnings);
 }
 
 public sealed record RfsCompleteModeBuildResult
@@ -497,6 +541,7 @@ public sealed record RfsCompleteModeBuildResult
     public string? IntentSummary { get; }
     public string? ProposalSummary { get; }
     public string? ProposalSource { get; }
+    public string? IntentSource { get; }
     public string? ValidationStatus { get; }
     public string? TraceSliceSelectionStrategy { get; }
     public string? ContextPackScope { get; }
@@ -519,6 +564,7 @@ public sealed record RfsCompleteModeBuildResult
         string? intentSummary,
         string? proposalSummary,
         string? proposalSource,
+        string? intentSource,
         string? validationStatus,
         string? traceSliceSelectionStrategy,
         string? contextPackScope,
@@ -540,6 +586,7 @@ public sealed record RfsCompleteModeBuildResult
         IntentSummary = intentSummary;
         ProposalSummary = proposalSummary;
         ProposalSource = proposalSource;
+        IntentSource = intentSource;
         ValidationStatus = validationStatus;
         TraceSliceSelectionStrategy = traceSliceSelectionStrategy;
         ContextPackScope = contextPackScope;
@@ -564,6 +611,7 @@ public sealed record RfsCompleteModeBuildResult
             intentSummary: null,
             proposalSummary: null,
             proposalSource: null,
+            intentSource: null,
             validationStatus: null,
             traceSliceSelectionStrategy: null,
             contextPackScope: null,
@@ -584,6 +632,7 @@ public sealed record RfsCompleteModeBuildResult
         string? intentSummary,
         string? proposalSummary,
         string? proposalSource,
+        string? intentSource,
         string? validationStatus,
         string? traceSliceSelectionStrategy,
         string? contextPackScope,
@@ -605,6 +654,7 @@ public sealed record RfsCompleteModeBuildResult
             intentSummary: intentSummary,
             proposalSummary: proposalSummary,
             proposalSource: proposalSource,
+            intentSource: intentSource,
             validationStatus: validationStatus,
             traceSliceSelectionStrategy: traceSliceSelectionStrategy,
             contextPackScope: contextPackScope,

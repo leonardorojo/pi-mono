@@ -2,6 +2,7 @@ using System.Text;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.Cli.PiIntegration;
+using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.Intent;
 
@@ -30,22 +31,36 @@ public sealed class PiIntentInferenceAgent : IAgent
 {
     private const string AgentId = "pi-intent-inference";
     private const string ExecutionProvider = "pi";
-    private const string ExecutionModel = "gpt-5.4-mini";
     private const string SupportedKind = "infer-intent";
+    private const string DefaultExecutionModel = "gpt-5.4-mini";
+
     private readonly IIntentLlmTransport _transport;
+    private readonly string _workingDirectory;
+    private readonly string _executionModel;
 
     public string Id => AgentId;
 
     public AgentDescriptor Descriptor { get; }
 
-    public PiIntentInferenceAgent(IIntentLlmTransport? transport = null)
+    public PiIntentInferenceAgent(string? workingDirectory = null, string? model = null, IIntentLlmTransport? transport = null)
     {
         _transport = transport ?? new PiJsonIntentLlmTransport();
+        _workingDirectory = string.IsNullOrWhiteSpace(workingDirectory)
+            ? Directory.GetCurrentDirectory()
+            : workingDirectory;
+
+        var resolvedModel = string.IsNullOrWhiteSpace(model)
+            ? RckWorkspaceModelConfigStore.TryReadDefaultModel(_workingDirectory)
+            : model.Trim();
+        _executionModel = string.IsNullOrWhiteSpace(resolvedModel)
+            ? DefaultExecutionModel
+            : resolvedModel.Trim();
+
         Descriptor = new AgentDescriptor(
             id: Id,
             name: "LLM Intent Inference Agent",
             role: "Infer operational intent from user prompt using LLM.",
-            executionModel: new AgentExecutionModel(ExecutionProvider, ExecutionModel),
+            executionModel: new AgentExecutionModel(ExecutionProvider, _executionModel),
             capabilities: new[] { "infer-intent" });
     }
 
@@ -63,9 +78,9 @@ public sealed class PiIntentInferenceAgent : IAgent
         var llmPrompt = BuildPrompt(sourcePrompt);
 
         var askResult = await _transport.AskAsync(
-            Directory.GetCurrentDirectory(),
+            _workingDirectory,
             llmPrompt,
-            ExecutionModel,
+            _executionModel,
             cancellationToken);
 
         if (!askResult.Success || string.IsNullOrWhiteSpace(askResult.Answer))
@@ -102,7 +117,7 @@ public sealed class PiIntentInferenceAgent : IAgent
         {
             new AgentEvidence("input", "task.input", sourcePrompt),
             new AgentEvidence("agent", Id, Descriptor.Name),
-            new AgentEvidence("execution-model", $"{ExecutionProvider}/{ExecutionModel}", $"provider={ExecutionProvider}; model={ExecutionModel}"),
+            new AgentEvidence("execution-model", $"{ExecutionProvider}/{_executionModel}", $"provider={ExecutionProvider}; model={_executionModel}"),
             new AgentEvidence("prompt", "llm-prompt", "intent-only JSON request"),
         };
 
@@ -138,7 +153,7 @@ public sealed class PiIntentInferenceAgent : IAgent
         return builder.ToString();
     }
 
-    private static AgentTaskResult CreateFailure(
+    private AgentTaskResult CreateFailure(
         AgentTask task,
         string errorMessage,
         string sourcePrompt,
@@ -150,7 +165,7 @@ public sealed class PiIntentInferenceAgent : IAgent
         {
             new("input", "task.input", sourcePrompt),
             new("agent", AgentId, "LLM Intent Inference Agent"),
-            new("execution-model", $"{ExecutionProvider}/{ExecutionModel}", $"provider={ExecutionProvider}; model={ExecutionModel}"),
+            new("execution-model", $"{ExecutionProvider}/{_executionModel}", $"provider={ExecutionProvider}; model={_executionModel}"),
         };
 
         if (!string.IsNullOrWhiteSpace(provider) || !string.IsNullOrWhiteSpace(model))
@@ -167,10 +182,9 @@ public sealed class PiIntentInferenceAgent : IAgent
             task.Id,
             AgentTaskStatus.Failed,
             AgentId,
-            new AgentExecutionModel(ExecutionProvider, ExecutionModel),
+            new AgentExecutionModel(ExecutionProvider, _executionModel),
             summary: "LLM intent inference failed.",
             evidence: evidence,
             errors: new[] { errorMessage });
     }
-
 }

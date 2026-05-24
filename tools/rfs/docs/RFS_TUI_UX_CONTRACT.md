@@ -174,7 +174,7 @@ Pipeline:
 
 ```text
 Prompt
-→ Intent
+→ LLM-backed Intent
 → TraceSliceProposal
 → RFS validation
 → TraceSlice final
@@ -199,6 +199,8 @@ Characteristics:
 - proposal output is not authoritative
 - validation is authoritative
 - the resulting context is materialized only after validation
+- Complete uses two real LLM calls: LLM-backed intent inference and the final answer
+- TraceSliceProposal, validation, and ContextPack remain deterministic
 
 ### 5.4 Mode 4 — Plan
 

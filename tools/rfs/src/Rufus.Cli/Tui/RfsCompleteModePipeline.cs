@@ -80,6 +80,7 @@ public static class RfsCompleteModePipeline
             RfsTuiRenderer.WriteCompleteStageDetail("intent", proposalIntent.Kind);
             RfsTuiRenderer.WriteCompleteStageDetail("summary", RfsTuiText.TruncateInline(proposalIntent.Summary, 96));
             RfsTuiRenderer.WriteCompleteStageDetail("source", proposalIntent.Source);
+            RfsTuiRenderer.WriteCompleteStageDetail("model", intentResult.ExecutionModel.Model);
         }
 
         stageWriter?.Invoke("[2/5] Building TraceSlice proposal...");
@@ -223,8 +224,7 @@ public static class RfsCompleteModePipeline
             ? Directory.GetCurrentDirectory()
             : currentDirectory;
 
-        var model = RckWorkspaceModelConfigStore.TryReadDefaultModel(workingDirectory);
-        return new PiIntentInferenceAgent(workingDirectory, model);
+        return new PiIntentInferenceAgent(workingDirectory);
     }
 
     private static bool TryBuildTraceSliceProposalIntent(

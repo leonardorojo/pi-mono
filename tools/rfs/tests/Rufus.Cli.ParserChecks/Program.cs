@@ -107,6 +107,18 @@ await RunPiIntentInferenceAgentCaseAsync(
     expectedIntent: "implement-reset-board",
     failures: failures);
 
+await RunIntentCliLlmCaseAsync(
+    name: "intent cli llm renders fixed lightweight model",
+    prompt: "Implement reset board action",
+    expectedIntent: "implement-reset-board",
+    failures: failures);
+
+await RunPiJsonRunnerWorkspaceModelCaseAsync(
+    name: "pi json runner preserves workspace default for main llm",
+    prompt: "Implement reset board action",
+    expectedModel: "gpt-5.4-mini",
+    failures: failures);
+
 await RunPiIntentInferenceAgentFailureCaseAsync(
     name: "pi intent agent rejects invalid llm json",
     task: new AgentTask(
@@ -2530,8 +2542,18 @@ static async Task RunPiIntentInferenceAgentCaseAsync(
     try
     {
         var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
-        var agent = new PiIntentInferenceAgent(model: "gpt-5.4-mini", transport: transport);
+        var agent = new PiIntentInferenceAgent(transport: transport);
         var result = await agent.ExecuteAsync(task);
+
+        if (!string.Equals(agent.Descriptor.ExecutionModel.Provider, "pi", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected agent descriptor provider 'pi' but got '{agent.Descriptor.ExecutionModel.Provider}'.");
+        }
+
+        if (!string.Equals(agent.Descriptor.ExecutionModel.Model, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected agent descriptor model 'claude-haiku-4.5' but got '{agent.Descriptor.ExecutionModel.Model}'.");
+        }
 
         if (result.Status != AgentTaskStatus.Succeeded)
         {
@@ -2553,14 +2575,19 @@ static async Task RunPiIntentInferenceAgentCaseAsync(
             failures.Add($"[{name}] expected execution provider 'pi' but got '{result.ExecutionModel.Provider}'.");
         }
 
-        if (!string.Equals(result.ExecutionModel.Model, "gpt-5.4-mini", StringComparison.Ordinal))
+        if (!string.Equals(result.ExecutionModel.Model, "claude-haiku-4.5", StringComparison.Ordinal))
         {
-            failures.Add($"[{name}] expected execution model 'gpt-5.4-mini' but got '{result.ExecutionModel.Model}'.");
+            failures.Add($"[{name}] expected execution model 'claude-haiku-4.5' but got '{result.ExecutionModel.Model}'.");
         }
 
         if (transport.CallCount != 1)
         {
             failures.Add($"[{name}] expected the LLM transport to be called once but got {transport.CallCount} calls.");
+        }
+
+        if (!string.Equals(transport.LastModel, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected transport model 'claude-haiku-4.5' but got '{transport.LastModel}'.");
         }
 
         if (string.IsNullOrWhiteSpace(transport.LastPrompt) || !transport.LastPrompt.Contains("Required JSON shape:", StringComparison.Ordinal) || !transport.LastPrompt.Contains(task.Input!, StringComparison.Ordinal))
@@ -2607,8 +2634,13 @@ static async Task RunPiIntentInferenceAgentFailureCaseAsync(
     try
     {
         var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
-        var agent = new PiIntentInferenceAgent(model: "gpt-5.4-mini", transport: transport);
+        var agent = new PiIntentInferenceAgent(transport: transport);
         var result = await agent.ExecuteAsync(task);
+
+        if (!string.Equals(agent.Descriptor.ExecutionModel.Model, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected agent descriptor model 'claude-haiku-4.5' but got '{agent.Descriptor.ExecutionModel.Model}'.");
+        }
 
         if (result.Status != AgentTaskStatus.Failed)
         {
@@ -2618,6 +2650,11 @@ static async Task RunPiIntentInferenceAgentFailureCaseAsync(
         if (transport.CallCount != 1)
         {
             failures.Add($"[{name}] expected the LLM transport to be called once but got {transport.CallCount} calls.");
+        }
+
+        if (!string.Equals(transport.LastModel, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected transport model 'claude-haiku-4.5' but got '{transport.LastModel}'.");
         }
 
         if (result.Errors.Count == 0)
@@ -2643,11 +2680,25 @@ static async Task RunCompleteModePipelineWithIntentLlmCaseAsync(
     string expectedIntent,
     List<string> failures)
 {
+    var originalOut = Console.Out;
+    using var stdout = new StringWriter();
     try
     {
+        Console.SetOut(stdout);
         var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
-        var intentAgent = new PiIntentInferenceAgent(repoRoot, "gpt-5.4-mini", transport);
-        var result = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot, 5, intentAgent);
+        var intentAgent = new PiIntentInferenceAgent(repoRoot, transport: transport);
+        var result = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot, 5, intentAgent, stageWriter: _ => { });
+
+        var completeConsole = stdout.ToString();
+        if (!completeConsole.Contains("model: claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected complete-mode console output to include model: claude-haiku-4.5 but it was missing.");
+        }
+
+        if (!string.Equals(intentAgent.Descriptor.ExecutionModel.Model, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected intent agent descriptor model 'claude-haiku-4.5' but got '{intentAgent.Descriptor.ExecutionModel.Model}'.");
+        }
 
         if (!result.Success)
         {
@@ -2694,10 +2745,25 @@ static async Task RunCompleteModePipelineWithIntentLlmCaseAsync(
         {
             failures.Add($"[{name}] expected the intent LLM to be called once but got {transport.CallCount} calls.");
         }
+
+        if (!string.Equals(transport.LastModel, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected the intent transport model 'claude-haiku-4.5' but got '{transport.LastModel}'.");
+        }
+
+        var workspaceDefault = RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot);
+        if (!string.IsNullOrWhiteSpace(workspaceDefault) && !string.Equals(workspaceDefault, "claude-haiku-4.5", StringComparison.Ordinal) && string.Equals(transport.LastModel, workspaceDefault, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected intent transport model not to inherit workspace default '{workspaceDefault}'.");
+        }
     }
     catch (Exception ex)
     {
         failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        Console.SetOut(originalOut);
     }
 }
 
@@ -2712,8 +2778,13 @@ static async Task RunCompleteModePipelineWithIntentLlmFailureCaseAsync(
     try
     {
         var transport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
-        var intentAgent = new PiIntentInferenceAgent(repoRoot, "gpt-5.4-mini", transport);
+        var intentAgent = new PiIntentInferenceAgent(repoRoot, transport: transport);
         var result = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot, 5, intentAgent);
+
+        if (!string.Equals(intentAgent.Descriptor.ExecutionModel.Model, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected intent agent descriptor model 'claude-haiku-4.5' but got '{intentAgent.Descriptor.ExecutionModel.Model}'.");
+        }
 
         if (result.Success)
         {
@@ -2738,6 +2809,11 @@ static async Task RunCompleteModePipelineWithIntentLlmFailureCaseAsync(
         if (transport.CallCount != 1)
         {
             failures.Add($"[{name}] expected the intent LLM to be called once but got {transport.CallCount} calls.");
+        }
+
+        if (!string.Equals(transport.LastModel, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected the intent transport model 'claude-haiku-4.5' but got '{transport.LastModel}'.");
         }
     }
     catch (Exception ex)
@@ -2879,6 +2955,199 @@ static async Task RunIntentCliCaseAsync(
     catch (Exception ex)
     {
         failures.Add($"[{name}] threw {ex}");
+    }
+}
+
+static async Task RunIntentCliLlmCaseAsync(
+    string name,
+    string prompt,
+    string expectedIntent,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-intent-llm-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    var modelFilePath = Path.Combine(tempRoot, "model.txt");
+    var scriptPath = Path.Combine(tempRoot, "pi");
+    var script = "#!/usr/bin/env bash\n" +
+                 "set -euo pipefail\n" +
+                 $"printf '%s' \"${{RUFUSCHAT_LLM_MODEL:-missing}}\" > \"{modelFilePath}\"\n" +
+                 "echo '{\"type\":\"session\"}'\n" +
+                 "cat <<EOF\n" +
+                 "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"${RUFUSCHAT_LLM_MODEL:-missing}\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"intent\\\":\\\"implement-reset-board\\\",\\\"summary\\\":\\\"Implement the reset board action.\\\",\\\"entities\\\":[\\\"reset board\\\"],\\\"constraints\\\":[]}\"}]}}\n" +
+                 "EOF\n" +
+                 "exit 0\n";
+
+    await File.WriteAllTextAsync(scriptPath, script);
+    if (!OperatingSystem.IsWindows())
+    {
+        File.SetUnixFileMode(
+            scriptPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+    }
+
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = repoRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add("--project");
+        startInfo.ArgumentList.Add(cliProjectPath);
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add("intent");
+        startInfo.ArgumentList.Add("--llm");
+        startInfo.ArgumentList.Add(prompt);
+
+        using var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            failures.Add($"[{name}] failed to start dotnet run for rfs intent --llm.");
+            return;
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        if (process.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {process.ExitCode}. stderr: {stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {stderr.Trim()}.");
+        }
+
+        var modelEcho = await File.ReadAllTextAsync(modelFilePath);
+        if (!string.Equals(modelEcho, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected the pi transport model file to contain 'claude-haiku-4.5' but got '{modelEcho}'.");
+        }
+
+        var requiredFragments = new[]
+        {
+            "{",
+            "  \"Intent\": \"" + expectedIntent + "\"",
+            "  \"Summary\": \"Implement the reset board action.\"",
+            "  \"Entities\": [",
+            "    \"reset board\"",
+            "  ],",
+            "  \"Constraints\": []",
+            "}"
+        };
+
+        foreach (var fragment in requiredFragments)
+        {
+            if (!stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunPiJsonRunnerWorkspaceModelCaseAsync(
+    string name,
+    string prompt,
+    string expectedModel,
+    List<string> failures)
+{
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-pi-json-workspace-model-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    var scriptPath = Path.Combine(tempRoot, "pi");
+    var script = "#!/usr/bin/env bash\n" +
+                 "set -euo pipefail\n" +
+                 "echo '{\"type\":\"session\"}'\n" +
+                 "cat <<EOF\n" +
+                 "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"${RUFUSCHAT_LLM_MODEL:-missing}\",\"content\":[{\"type\":\"text\",\"text\":\"structured answer\"}]}}\n" +
+                 "EOF\n" +
+                 "exit 0\n";
+
+    await File.WriteAllTextAsync(scriptPath, script);
+    if (!OperatingSystem.IsWindows())
+    {
+        File.SetUnixFileMode(
+            scriptPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+    }
+
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+        var result = await PiJsonEventRunner.RunAskAsync(tempRoot, prompt, expectedModel);
+
+        if (!result.Success)
+        {
+            failures.Add($"[{name}] expected Success=true but got false. Error: {result.ErrorMessage}");
+        }
+
+        if (!string.Equals(result.Provider, "test-provider", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected provider 'test-provider' but got '{result.Provider}'.");
+        }
+
+        if (!string.Equals(result.Model, expectedModel, StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected model '{expectedModel}' but got '{result.Model}'.");
+        }
+
+        if (!string.Equals(result.Answer, "structured answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected answer 'structured answer' but got '{result.Answer}'.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
     }
 }
 
@@ -4003,7 +4272,7 @@ static async Task RunRfsTuiSimpleModeRecordingSessionCaseAsync(string name, stri
         var scriptPath = Path.Combine(tempRoot, "pi");
         var script = "#!/usr/bin/env bash\n" +
                      "set -euo pipefail\n" +
-                     "cat <<'EOF'\n" +
+                     "cat <<EOF\n" +
                      "{\"type\":\"session\"}\n" +
                      "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"Simple mode works.\"}]}}\n" +
                      "EOF\n";
@@ -4233,7 +4502,7 @@ static async Task RunRfsTuiPlanModeRecordingSessionCaseAsync(string name, string
         var scriptPath = Path.Combine(tempRoot, "pi");
         var script = "#!/usr/bin/env bash\n" +
                      "set -euo pipefail\n" +
-                     "cat <<'EOF'\n" +
+                     "cat <<EOF\n" +
                      "{\"type\":\"session\"}\n" +
                      "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"Plan:\\n1. Reuse Simple Context.\\n2. Return a concise implementation plan only.\"}]}}\n" +
                      "EOF\n";

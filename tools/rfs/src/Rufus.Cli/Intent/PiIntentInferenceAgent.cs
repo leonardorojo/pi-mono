@@ -2,7 +2,6 @@ using System.Text;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.Cli.PiIntegration;
-using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.Intent;
 
@@ -32,7 +31,7 @@ public sealed class PiIntentInferenceAgent : IAgent
     private const string AgentId = "pi-intent-inference";
     private const string ExecutionProvider = "pi";
     private const string SupportedKind = "infer-intent";
-    private const string DefaultExecutionModel = "gpt-5.4-mini";
+    private const string DefaultExecutionModel = "claude-haiku-4.5";
 
     private readonly IIntentLlmTransport _transport;
     private readonly string _workingDirectory;
@@ -49,12 +48,9 @@ public sealed class PiIntentInferenceAgent : IAgent
             ? Directory.GetCurrentDirectory()
             : workingDirectory;
 
-        var resolvedModel = string.IsNullOrWhiteSpace(model)
-            ? RckWorkspaceModelConfigStore.TryReadDefaultModel(_workingDirectory)
-            : model.Trim();
-        _executionModel = string.IsNullOrWhiteSpace(resolvedModel)
+        _executionModel = string.IsNullOrWhiteSpace(model)
             ? DefaultExecutionModel
-            : resolvedModel.Trim();
+            : model.Trim();
 
         Descriptor = new AgentDescriptor(
             id: Id,

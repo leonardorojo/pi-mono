@@ -82,6 +82,8 @@ Model:
 
 Header intent:
 
+The TUI uses a Pi-inspired visual style for hierarchy and spacing, but it is still RFS and not Pi. Color is decorative; `NO_COLOR` should suppress ANSI output when supported.
+
 - show the repo/workspace identity
 - show the active model
 - show RCK scale and progress

@@ -30,6 +30,7 @@ Short version:
 
 The future `rfs` experience is documented in [`docs/RFS_TUI_UX_CONTRACT.md`](docs/RFS_TUI_UX_CONTRACT.md).
 That contract defines `rfs` without arguments as the primary entrypoint, automatic workspace initialization when `.rfs` is missing, prompt-first mode selection, automatic State + Delta recording, and anchors as milestones only.
+The TUI uses a Pi-inspired visual style, but color is decorative only; `NO_COLOR` disables ANSI output when set.
 
 ## Current shape
 

@@ -52,34 +52,10 @@ internal static class RfsTuiSession
     }
 
     private static void RenderAutoInit(RckWorkspaceInitResult initResult)
-    {
-        Console.WriteLine("RFS");
-        Console.WriteLine("────────────────────────");
-        Console.WriteLine("Workspace not initialized.");
-        Console.WriteLine();
-        Console.WriteLine("Initializing RFS workspace...");
-        Console.WriteLine(initResult.ConfigCreated ? "✓ .rfs created" : "• .rfs already existed");
-        Console.WriteLine(initResult.RckDirectoriesCreated || initResult.HeadCreated || initResult.StateCreated || initResult.AnchorCreated
-            ? "✓ RCK initialized"
-            : "• RCK already initialized");
-        Console.WriteLine(initResult.StateCreated ? "✓ genesis state created" : "• genesis state already existed");
-        Console.WriteLine(initResult.AnchorCreated ? "✓ genesis anchor created" : "• genesis anchor already existed");
-    }
+        => RfsTuiRenderer.WriteAutoInit(initResult);
 
     private static void RenderHeader(RckWorkspaceStatus status, string? workspaceModel)
-    {
-        var repoName = Path.GetFileName(Path.TrimEndingDirectorySeparator(status.RepoRoot));
-        var modelLabel = string.IsNullOrWhiteSpace(workspaceModel) ? "(inherited)" : workspaceModel.Trim();
-        var branchLabel = string.IsNullOrWhiteSpace(status.GitContext.Branch) ? "(detached)" : status.GitContext.Branch;
-        var dirtyLabel = status.GitContext.Dirty.ToString().ToLowerInvariant();
-
-        Console.WriteLine($"RFS · {repoName}");
-        Console.WriteLine("────────────────────────");
-        Console.WriteLine($"Model: {modelLabel}");
-        Console.WriteLine($"RCK: states {status.StateCount} · deltas {status.DeltaCount} · anchors {status.AnchorCount}");
-        Console.WriteLine($"Git: {branchLabel} · dirty {dirtyLabel}");
-        Console.WriteLine();
-    }
+        => RfsTuiRenderer.WriteHeader(status, Path.GetFileName(Path.TrimEndingDirectorySeparator(status.RepoRoot)), workspaceModel);
 
     private static async Task RunPromptLoopAsync(string repoRoot)
     {
@@ -88,7 +64,7 @@ internal static class RfsTuiSession
         {
             while (true)
             {
-                Console.Write("> ");
+                RfsTuiRenderer.WritePrompt();
                 var line = Console.ReadLine();
                 if (line is null)
                 {
@@ -159,7 +135,7 @@ internal static class RfsTuiSession
 
         while (true)
         {
-            Console.Write("> ");
+            RfsTuiRenderer.WritePrompt();
             var line = Console.ReadLine();
             if (line is null)
             {
@@ -195,7 +171,7 @@ internal static class RfsTuiSession
                 case RfsTuiModeSelection.Exit:
                     return true;
                 default:
-                    Console.WriteLine("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.");
+                    RfsTuiRenderer.WriteWarningLine("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.");
                     break;
             }
         }
@@ -203,8 +179,7 @@ internal static class RfsTuiSession
 
     private static async Task<bool> RunSimpleModeAsync(string repoRoot, string prompt)
     {
-        Console.WriteLine("[Simple]");
-        Console.WriteLine("Building lightweight context...");
+        RfsTuiRenderer.WriteModeBanner("Simple", "Building lightweight context...");
 
         var simpleContextBuildResult = RckSimpleContextBuilder.Build(repoRoot, prompt);
         var simpleContext = simpleContextBuildResult.Context;
@@ -214,13 +189,20 @@ internal static class RfsTuiSession
             modelBudgetTokens: null,
             simpleContext.Budget.Truncated);
 
-        Console.WriteLine("Context:");
-        Console.WriteLine($"  recent interactions: {simpleContext.RecentInteractions.Count}");
-        Console.WriteLine($"  anchors: {simpleContext.Anchors.Count}");
-        Console.WriteLine($"  artifacts: {simpleContext.Artifacts.Count}");
-        Console.WriteLine($"  estimated tokens: {contextUsageReport.EstimatedTokens:N0}");
-        Console.WriteLine($"  transport risk: {contextUsageReport.TransportRisk}");
-        Console.WriteLine($"  truncated: {contextUsageReport.Truncated.ToString().ToLowerInvariant()}");
+        RfsTuiRenderer.WriteSimpleContextSummary(
+            new RfsTuiSimpleContextSummary(
+                simpleContext.RecentInteractions.Count,
+                simpleContext.Anchors.Count,
+                simpleContext.Artifacts.Count,
+                contextUsageReport.EstimatedChars,
+                contextUsageReport.EstimatedTokens,
+                FormatNullableInt(contextUsageReport.ModelBudgetTokens),
+                FormatNullablePercentage(contextUsageReport.ContextUsageRatio),
+                contextUsageReport.TransportSizeChars,
+                contextUsageReport.TransportRisk,
+                contextUsageReport.Truncated,
+                simpleContextBuildResult.Warnings.ToArray(),
+                simpleContextBuildResult.Omissions.ToArray()));
 
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(
             repoRoot,
@@ -237,20 +219,7 @@ internal static class RfsTuiSession
             return false;
         }
 
-        Console.WriteLine("Respuesta:");
-        Console.WriteLine("────────────────────────────────────────────");
-
-        if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
-        {
-            Console.WriteLine("(no assistant output)");
-        }
-        else
-        {
-            foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
-            {
-                Console.WriteLine(answerLine);
-            }
-        }
+        RfsTuiRenderer.WriteResponse(askJsonResult.Answer);
 
         var pipelineSummary = new RckInteractionPipelineSummary(
             "simple",
@@ -308,18 +277,14 @@ internal static class RfsTuiSession
             mode: "simple");
 
         Console.WriteLine();
-        Console.WriteLine("Recorded State + Delta:");
-        Console.WriteLine($"  state: {recordResult.StateId?.ToString() ?? "(unknown)"}");
-        Console.WriteLine($"  delta: {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
+        RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
 
         return false;
     }
 
     private static async Task<bool> RunDirectModeAsync(string repoRoot, string prompt)
     {
-        Console.WriteLine("[Direct]");
-        Console.WriteLine("Asking main LLM without RCK context...");
-        Console.WriteLine();
+        RfsTuiRenderer.WriteModeBanner("Direct", "Asking main LLM without RCK context...");
 
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(
             repoRoot,
@@ -336,20 +301,7 @@ internal static class RfsTuiSession
             return false;
         }
 
-        Console.WriteLine("Respuesta:");
-        Console.WriteLine("────────────────────────────────────────────");
-
-        if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
-        {
-            Console.WriteLine("(no assistant output)");
-        }
-        else
-        {
-            foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
-            {
-                Console.WriteLine(answerLine);
-            }
-        }
+        RfsTuiRenderer.WriteResponse(askJsonResult.Answer);
 
         var recordResult = RckInteractionRecorder.RecordTui(
             new RckTuiInteractionRecordInput(prompt, askJsonResult.Answer, askJsonResult.Provider, askJsonResult.Model),
@@ -367,17 +319,14 @@ internal static class RfsTuiSession
         SessionState.RecordDirect();
 
         Console.WriteLine();
-        Console.WriteLine("Recorded State + Delta:");
-        Console.WriteLine($"  state: {recordResult.StateId?.ToString() ?? "(unknown)"}");
-        Console.WriteLine($"  delta: {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
+        RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
 
         return false;
     }
 
     private static async Task<bool> RunCompleteModeAsync(string repoRoot, string prompt)
     {
-        Console.WriteLine("[Complete]");
-        Console.WriteLine("Building governed context...");
+        RfsTuiRenderer.WriteModeBanner("Complete", "Building governed context...");
 
         var completeResult = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot);
         var completeContextUsageReport = BuildContextUsageReport(
@@ -387,17 +336,20 @@ internal static class RfsTuiSession
             completeResult.Truncated);
         if (!completeResult.Success || string.IsNullOrWhiteSpace(completeResult.PromptToSend))
         {
-            RenderCompleteModeFailure(completeResult.ErrorMessage ?? "The complete pipeline did not produce a prompt.");
+            RfsTuiRenderer.WriteCompleteFailure(completeResult.ErrorMessage ?? "The complete pipeline did not produce a prompt.");
             return false;
         }
 
-        Console.WriteLine("Context:");
-        Console.WriteLine($"  validation: {completeResult.ValidationStatus ?? "(unknown)"}");
-        Console.WriteLine($"  selection: {completeResult.TraceSliceSelectionStrategy ?? "(unknown)"}");
-        Console.WriteLine($"  states/deltas/anchors: {completeResult.SelectedStateIds.Count} / {completeResult.SelectedDeltaIds.Count} / {completeResult.SelectedAnchorIds.Count}");
-        Console.WriteLine($"  estimated tokens: {completeResult.EstimatedTokens:N0}");
-        Console.WriteLine($"  transport: {(completeContextUsageReport.TransportSizeChars > 32000 ? "stdin" : "argv")}");
-        Console.WriteLine($"  transport risk: {completeContextUsageReport.TransportRisk}");
+        RfsTuiRenderer.WriteCompleteContextSummary(
+            completeResult.ValidationStatus,
+            completeResult.TraceSliceSelectionStrategy,
+            completeResult.ContextPackScope,
+            completeResult.SelectedStateIds.Count,
+            completeResult.SelectedDeltaIds.Count,
+            completeResult.SelectedAnchorIds.Count,
+            completeContextUsageReport,
+            completeResult.Warnings,
+            completeResult.Omissions);
 
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(
             repoRoot,
@@ -406,24 +358,11 @@ internal static class RfsTuiSession
 
         if (!askJsonResult.Success)
         {
-            RenderCompleteModeFailure(askJsonResult.ErrorMessage ?? "The main LLM request failed.");
+            RfsTuiRenderer.WriteCompleteFailure(askJsonResult.ErrorMessage ?? "The main LLM request failed.");
             return false;
         }
 
-        Console.WriteLine("Respuesta:");
-        Console.WriteLine("────────────────────────────────────────────");
-
-        if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
-        {
-            Console.WriteLine("(no assistant output)");
-        }
-        else
-        {
-            foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
-            {
-                Console.WriteLine(answerLine);
-            }
-        }
+        RfsTuiRenderer.WriteResponse(askJsonResult.Answer);
 
         var pipelineSummary = new RckInteractionPipelineSummary(
             "complete",
@@ -487,17 +426,14 @@ internal static class RfsTuiSession
                 completeResult.Omissions.ToArray()));
 
         Console.WriteLine();
-        Console.WriteLine("Recorded State + Delta:");
-        Console.WriteLine($"  state: {recordResult.StateId?.ToString() ?? "(unknown)"}");
-        Console.WriteLine($"  delta: {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
+        RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
 
         return false;
     }
 
     private static async Task<bool> RunPlanModeAsync(string repoRoot, string prompt)
     {
-        Console.WriteLine("[Plan]");
-        Console.WriteLine("Building planning context...");
+        RfsTuiRenderer.WriteModeBanner("Plan", "Building planning context...");
 
         var simpleContextBuildResult = RckSimpleContextBuilder.Build(repoRoot, prompt);
         var simpleContext = simpleContextBuildResult.Context;
@@ -513,32 +449,20 @@ internal static class RfsTuiSession
         var selectedDeltaIds = simpleContext.RecentInteractions.Where(interaction => !string.IsNullOrWhiteSpace(interaction.DeltaId)).Select(interaction => interaction.DeltaId!).ToArray();
         var selectedAnchorIds = simpleContext.Anchors.Select(anchor => anchor.Id).ToArray();
 
-        Console.WriteLine("Context:");
-        Console.WriteLine($"  context: simple");
-        Console.WriteLine($"  recent interactions: {recentInteractionCount}");
-        Console.WriteLine($"  anchors: {selectedAnchorIds.Length}");
-        Console.WriteLine($"  artifacts: {simpleContext.Artifacts.Count}");
-        Console.WriteLine($"  estimated tokens: {contextUsageReport.EstimatedTokens:N0}");
-        Console.WriteLine($"  transport risk: {contextUsageReport.TransportRisk}");
-        Console.WriteLine($"  truncated: {contextUsageReport.Truncated.ToString().ToLowerInvariant()}");
-
-        if (simpleContextBuildResult.Warnings.Count > 0)
-        {
-            Console.WriteLine("  warnings:");
-            foreach (var warning in simpleContextBuildResult.Warnings)
-            {
-                Console.WriteLine($"    - {warning}");
-            }
-        }
-
-        if (simpleContextBuildResult.Omissions.Count > 0)
-        {
-            Console.WriteLine("  omissions:");
-            foreach (var omission in simpleContextBuildResult.Omissions)
-            {
-                Console.WriteLine($"    - {omission}");
-            }
-        }
+        RfsTuiRenderer.WritePlanContextSummary(
+            new RfsTuiSimpleContextSummary(
+                recentInteractionCount,
+                selectedAnchorIds.Length,
+                simpleContext.Artifacts.Count,
+                contextUsageReport.EstimatedChars,
+                contextUsageReport.EstimatedTokens,
+                FormatNullableInt(contextUsageReport.ModelBudgetTokens),
+                FormatNullablePercentage(contextUsageReport.ContextUsageRatio),
+                contextUsageReport.TransportSizeChars,
+                contextUsageReport.TransportRisk,
+                contextUsageReport.Truncated,
+                simpleContextBuildResult.Warnings.ToArray(),
+                simpleContextBuildResult.Omissions.ToArray()));
 
         Console.WriteLine();
 
@@ -557,20 +481,7 @@ internal static class RfsTuiSession
             return false;
         }
 
-        Console.WriteLine("Respuesta:");
-        Console.WriteLine("────────────────────────────────────────────");
-
-        if (string.IsNullOrWhiteSpace(askJsonResult.Answer))
-        {
-            Console.WriteLine("(no assistant output)");
-        }
-        else
-        {
-            foreach (var answerLine in askJsonResult.Answer.Split('\n', StringSplitOptions.None))
-            {
-                Console.WriteLine(answerLine);
-            }
-        }
+        RfsTuiRenderer.WriteResponse(askJsonResult.Answer);
 
         var pipelineSummary = new RckInteractionPipelineSummary(
             "plan",
@@ -629,9 +540,7 @@ internal static class RfsTuiSession
                 simpleContextBuildResult.Omissions.ToArray()));
 
         Console.WriteLine();
-        Console.WriteLine("Recorded State + Delta:");
-        Console.WriteLine($"  state: {recordResult.StateId?.ToString() ?? "(unknown)"}");
-        Console.WriteLine($"  delta: {recordResult.DeltaId?.ToString() ?? "(unknown)"}");
+        RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
 
         return false;
     }
@@ -652,16 +561,7 @@ internal static class RfsTuiSession
         => value.HasValue ? value.Value.ToString("P1", CultureInfo.InvariantCulture) : "unknown";
 
     private static void RenderCompleteModeFailure(string reason)
-    {
-        Console.Error.WriteLine("Complete mode failed before the main LLM answered.");
-        Console.Error.WriteLine("No State/Delta was recorded.");
-        Console.Error.WriteLine();
-        Console.Error.WriteLine("Reason:");
-        foreach (var line in reason.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
-        {
-            Console.Error.WriteLine($"  {line}");
-        }
-    }
+        => RfsTuiRenderer.WriteCompleteFailure(reason);
 
     private static string BuildPlanPromptToSend(RckSimpleContext simpleContext)
     {
@@ -684,28 +584,10 @@ internal static class RfsTuiSession
     }
 
     private static void RenderModeSelectionMenu()
-    {
-        Console.WriteLine("¿Cómo querés procesarlo?");
-        Console.WriteLine();
-        Console.WriteLine("  1 Direct    — sin contexto RCK");
-        Console.WriteLine("  2 Simple    — memoria reciente liviana");
-        Console.WriteLine("  3 Complete  — TraceSlice + ContextPack validado");
-        Console.WriteLine("  4 Plan      — plan textual sin modificar código");
-        Console.WriteLine();
-        Console.WriteLine("Elegí 1-4, o /cancel:");
-    }
-
+        => RfsTuiRenderer.WriteModeSelectionMenu();
 
     private static void RenderModeSelectionHelp()
-    {
-        Console.WriteLine("Mode selection:");
-        Console.WriteLine("  1 Direct    no RCK context");
-        Console.WriteLine("  2 Simple    recent memory");
-        Console.WriteLine("  3 Complete  governed context");
-        Console.WriteLine("  4 Plan      plan only");
-        Console.WriteLine("  /cancel     return to prompt");
-        Console.WriteLine("  /exit       exit RFS");
-    }
+        => RfsTuiRenderer.WriteModeSelectionHelp();
 
     private static void RenderModeSelectionStub(string modeLabel, string prompt, string ptLabel)
     {
@@ -722,23 +604,7 @@ internal static class RfsTuiSession
         {
             var status = RckWorkspaceStatusReader.Read(repoRoot);
             var modelReadResult = RckWorkspaceModelConfigStore.Read(repoRoot);
-
-            Console.WriteLine($"RFS · {Path.GetFileName(Path.TrimEndingDirectorySeparator(status.RepoRoot))}");
-            Console.WriteLine("RCK:");
-            Console.WriteLine($"  head: {ShortenId(status.Head)}");
-            Console.WriteLine($"  states/deltas/anchors: {status.StateCount} / {status.DeltaCount} / {status.AnchorCount}");
-            Console.WriteLine();
-            Console.WriteLine("Git:");
-            Console.WriteLine($"  branch: {(string.IsNullOrWhiteSpace(status.GitContext.Branch) ? "(detached)" : status.GitContext.Branch)}");
-            Console.WriteLine($"  dirty: {status.GitContext.Dirty.ToString().ToLowerInvariant()}");
-            Console.WriteLine();
-            Console.WriteLine("Model:");
-            Console.WriteLine($"  {GetCurrentModelLabel(modelReadResult)} · {GetModelSourceLabel(modelReadResult)}");
-            Console.WriteLine();
-            Console.WriteLine("Session:");
-            Console.WriteLine($"  last mode: {SessionState.LastMode}");
-            Console.WriteLine($"  last context: {SessionState.LastContextKind}");
-            Console.WriteLine($"  last trace: {(SessionState.LastTrace is null ? "unavailable" : "available")}");
+            RfsTuiRenderer.WriteStatus(status, modelReadResult, SessionState);
         }
         catch (InvalidOperationException ex)
         {
@@ -755,91 +621,14 @@ internal static class RfsTuiSession
             return;
         }
 
-        var entries = logResult.Entries.Take(10).ToArray();
-        if (entries.Length == 0)
-        {
-            Console.WriteLine("No interactions yet.");
-            return;
-        }
-
-        Console.WriteLine("Recent interactions:");
-        foreach (var entry in entries)
-        {
-            Console.WriteLine($"- {entry.StateShortId} {entry.Mode} {entry.CreatedAtUtc:yyyy-MM-dd HH:mm:ss}Z");
-            Console.WriteLine($"  prompt: {TruncateInline(entry.Prompt)}");
-            Console.WriteLine($"  answer: {TruncateInline(entry.AnswerSummary)}");
-            Console.WriteLine($"  delta: {ShortenId(entry.DeltaShortId)}");
-            if (entry.Anchors.Count > 0)
-            {
-                Console.WriteLine($"  anchors: {entry.Anchors.Count}");
-            }
-        }
+        RfsTuiRenderer.WriteLog(logResult.Entries.Take(10).ToArray());
     }
 
     private static void RenderContext()
-    {
-        if (SessionState.LastContextKind == "simple" && SessionState.LastSimpleContext is not null)
-        {
-            var simple = SessionState.LastSimpleContext;
-            Console.WriteLine("Context:");
-            Console.WriteLine($"  recent interactions: {simple.RecentInteractions}");
-            Console.WriteLine($"  anchors: {simple.Anchors}");
-            Console.WriteLine($"  artifacts: {simple.Artifacts}");
-            Console.WriteLine($"  estimated tokens: {simple.EstimatedTokens:N0}");
-            Console.WriteLine($"  transport risk: {simple.TransportRisk}");
-            Console.WriteLine($"  truncated: {simple.Truncated.ToString().ToLowerInvariant()}");
-            return;
-        }
-
-        if (SessionState.LastContextKind == "complete" && SessionState.LastCompleteContext is not null)
-        {
-            var complete = SessionState.LastCompleteContext;
-            Console.WriteLine("Context:");
-            Console.WriteLine($"  validation: {complete.ValidationStatus ?? "(unknown)"}");
-            Console.WriteLine($"  selection: {complete.SelectionStrategy ?? "(unknown)"}");
-            Console.WriteLine($"  states/deltas/anchors: {complete.SelectedStateCount} / {complete.SelectedDeltaCount} / {complete.SelectedAnchorCount}");
-            Console.WriteLine($"  estimated tokens: {complete.EstimatedTokens:N0}");
-            Console.WriteLine($"  transport: {(complete.EstimatedChars > 32000 ? "stdin" : "argv")}");
-            Console.WriteLine($"  transport risk: {complete.TransportRisk}");
-            return;
-        }
-
-        Console.WriteLine("No context has been built yet.");
-    }
+        => RfsTuiRenderer.WriteContext(SessionState);
 
     private static void RenderTrace()
-    {
-        if (SessionState.LastTrace is null)
-        {
-            Console.WriteLine("No TraceSlice has been built in this session yet.");
-            return;
-        }
-
-        var trace = SessionState.LastTrace;
-        Console.WriteLine("Last TraceSlice / validation summary:");
-        Console.WriteLine($"  selection strategy: {trace.SelectionStrategy ?? "(unknown)"}");
-        Console.WriteLine($"  validation status: {trace.ValidationStatus ?? "(unknown)"}");
-        Console.WriteLine($"  selected states: {trace.SelectedStateCount}");
-        Console.WriteLine($"  selected deltas: {trace.SelectedDeltaCount}");
-        Console.WriteLine($"  selected anchors: {trace.SelectedAnchorCount}");
-        if (trace.Warnings.Count > 0)
-        {
-            Console.WriteLine("  warnings:");
-            foreach (var warning in trace.Warnings)
-            {
-                Console.WriteLine($"    - {warning}");
-            }
-        }
-
-        if (trace.Omissions.Count > 0)
-        {
-            Console.WriteLine("  omissions:");
-            foreach (var omission in trace.Omissions)
-            {
-                Console.WriteLine($"    - {omission}");
-            }
-        }
-    }
+        => RfsTuiRenderer.WriteTrace(SessionState.LastTrace);
 
     private static bool TryHandleTopLevelCommand(string input, string repoRoot)
     {
@@ -926,25 +715,7 @@ internal static class RfsTuiSession
     }
 
     private static void RenderHelp()
-    {
-        Console.WriteLine("Write a prompt, then choose:");
-        Console.WriteLine();
-        Console.WriteLine("  1 Direct    no RCK context");
-        Console.WriteLine("  2 Simple    recent memory");
-        Console.WriteLine("  3 Complete  governed context");
-        Console.WriteLine("  4 Plan      plan only");
-        Console.WriteLine();
-        Console.WriteLine("Commands:");
-        Console.WriteLine("  /status              Show session status");
-        Console.WriteLine("  /log                 Show recent RCK interactions");
-        Console.WriteLine("  /model               Show current model");
-        Console.WriteLine("  /model <name>        Set workspace model");
-        Console.WriteLine("  /context             Show last context summary");
-        Console.WriteLine("  /trace               Show last TraceSlice summary");
-        Console.WriteLine("  /anchor \"name\"       Create milestone anchor");
-        Console.WriteLine("  /help                Show this help");
-        Console.WriteLine("  /exit                Exit RFS");
-    }
+        => RfsTuiRenderer.WriteHelp();
 
     private static bool HandleModelSetCommand(string input, string repoRoot)
     {

@@ -85,13 +85,14 @@ internal static class RfsTuiInputReader
         }
 
         var renderedLineCount = 1;
+        var showCommandPalette = buffer.Length > 0 && buffer[0] == '/';
 
         RfsTuiRenderer.WritePrompt();
         Console.Write(buffer.ToString());
-        Console.WriteLine();
 
-        if (buffer.Length > 0 && buffer[0] == '/')
+        if (showCommandPalette)
         {
+            Console.WriteLine();
             renderedLineCount += RfsTuiRenderer.WriteCommandPalette(RfsTuiCommandCatalog.GetSuggestions(buffer.ToString()));
         }
 

@@ -234,6 +234,7 @@ Current PT9.5 / PT13 behavior:
 - keep the prompt transport change narrowly scoped to the JSON runner
 - do not compact the ContextPack
 - do not change the materialization policy
+- external validation in `ChessBoardApp` confirmed Complete mode with ~398k chars / ~99k tokens reached the LLM, created State + Delta, and did not hit `Argument list too long`
 
 Remaining mitigations stay out of scope:
 

@@ -101,6 +101,7 @@ PT12 validated the TUI in a real repository and confirmed:
 - Simple mode records `State + Delta`
 - Plan mode records `State + Delta`
 - Complete mode shows its governed stages and uses argv for prompts up to 32000 chars, then stdin above that to avoid `Argument list too long`
+- external validation in `ChessBoardApp` confirmed a ~398k-char Complete prompt reached the LLM, created State + Delta, and did not hit the transport error
 - the TUI remains operable after that transport guardrail
 
 ## 5. Mode contracts
@@ -251,7 +252,9 @@ PT12 external validation in `ChessBoardApp` confirmed:
 - Direct mode OK
 - Simple mode OK
 - Plan mode OK
-- Complete mode failed in a controlled way with `Argument list too long`
+- Complete mode validated with a long prompt (~398k chars / ~99k tokens) and did not hit `Argument list too long`
+- LLM responded
+- State + Delta were created
 - leak/safety grep checks were clean
 - no commits
 - no push

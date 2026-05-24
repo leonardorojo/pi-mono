@@ -208,6 +208,8 @@ Complete-mode transport note:
 - the Pi JSON runner keeps argv for prompts at or below 32000 chars
 - it switches to stdin above that threshold to avoid `Argument list too long`
 - this is a transport safeguard, not a change to the model context window, ContextPack, or RCK recording rules
+- external validation in `ChessBoardApp` confirmed the long-prompt path with ~398k chars / ~99k tokens, LLM response, and State + Delta creation
+- remaining risks are budget-policy questions, not argv transport; if a future phase wants efficiency or stricter bounds, it can add warning/compact/degrade policy separately
 
 ## 7. North Star and anti-drift rules
 

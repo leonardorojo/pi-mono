@@ -66,9 +66,16 @@ Example:
 ```text
 RFS · ChessBoardApp
 ────────────────────────
-Model: gpt-5.4-mini
-RCK: states 6 · deltas 5 · anchors 1
-Git: master · dirty true
+RCK:
+  head: b7d5a3d9
+  states/deltas/anchors: 6 / 5 / 1
+
+Git:
+  branch: master
+  dirty: true
+
+Model:
+  gpt-5.4-mini · workspace
 
 >
 ```
@@ -92,12 +99,14 @@ The user types the task directly:
 Only after Enter, RFS asks how to process the prompt:
 
 ```text
-¿Cómo querés procesar este prompt?
+¿Cómo querés procesarlo?
 
-1. Directo
-2. Simple
-3. Completo
-4. Plan
+  1 Direct    — sin contexto RCK
+  2 Simple    — memoria reciente liviana
+  3 Complete  — TraceSlice + ContextPack validado
+  4 Plan      — plan textual sin modificar código
+
+Elegí 1-4, o /cancel:
 ```
 
 Rules:

@@ -188,13 +188,16 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     input: "Implement reset board action\n3\n/exit\n",
     expectedFragments: new[]
     {
-        "[Complete mode]",
-        "[1/5] Inferring intent...",
+        "[Complete]",
+        "Building governed context...",
         "Context:",
         "validation:",
+        "selection:",
+        "states/deltas/anchors:",
+        "transport:",
+        "transport risk:",
         "Respuesta:",
-        "State created:",
-        "Delta created:",
+        "Recorded State + Delta:",
     },
     expectPromptEcho: false,
     expectedStateCountDelta: 1,
@@ -214,7 +217,7 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     input: "Implement reset board action\nx\n/cancel\n/exit\n",
     expectedFragments: new[]
     {
-        "Invalid mode. Choose 1, 2, 3, 4, or /cancel.",
+        "Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.",
         "Prompt cancelled.",
     },
     expectPromptEcho: false,
@@ -226,7 +229,9 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     input: "Implement reset board action\n/exit\n",
     expectedFragments: new[]
     {
-        "¿Cómo querés procesar este prompt?",
+        "¿Cómo querés procesarlo?",
+        "  1 Direct    — sin contexto RCK",
+        "Elegí 1-4, o /cancel:",
     },
     expectPromptEcho: false,
     failures: failures);
@@ -2590,10 +2595,10 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
             "Model:",
             "RCK: states",
             "Git:",
-            "Prompts:",
+            "Write a prompt, then choose:",
             "Commands:",
             "/anchor \"name\"",
-            "/model <model>",
+            "/model <name>",
         };
 
         foreach (var fragment in requiredFragments)
@@ -2670,16 +2675,18 @@ static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, L
 
         var requiredFragments = new[]
         {
+            "RFS ·",
             "RCK:",
+            "states/deltas/anchors:",
             "Git:",
             "Model:",
             "Session:",
             "Recent interactions:",
-            "No context has been built in this session yet.",
+            "No context has been built yet.",
             "No TraceSlice has been built in this session yet.",
             "Model updated:",
             "Current model:",
-            "Prompts:",
+            "Write a prompt, then choose:",
             "Commands:",
         };
 
@@ -3185,7 +3192,7 @@ static async Task RunRfsTuiAnchorCommandSessionCaseAsync(string name, List<strin
         }
 
         if (tuiResult.Stdout.Contains("Respuesta:", StringComparison.Ordinal) ||
-            tuiResult.Stdout.Contains("¿Cómo querés procesar este prompt?", StringComparison.Ordinal))
+            tuiResult.Stdout.Contains("¿Cómo querés procesarlo?", StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected /anchor to bypass the main LLM pipeline.");
         }
@@ -3304,21 +3311,17 @@ static async Task RunRfsTuiSimpleModeRecordingSessionCaseAsync(string name, stri
 
             var requiredFragments = new[]
             {
-                "[Simple mode]",
-                "Building Simple Context...",
+                "[Simple]",
+                "Building lightweight context...",
+                "Context:",
                 "recent interactions:",
                 "anchors:",
                 "artifacts:",
-                "estimated chars:",
                 "estimated tokens:",
-                "model budget:",
-                "context usage:",
-                "transport size:",
                 "transport risk:",
                 "truncated:",
                 "Respuesta:",
-                "State created:",
-                "Delta created:",
+                "Recorded State + Delta:",
             };
 
             foreach (var fragment in requiredFragments)
@@ -3538,22 +3541,17 @@ static async Task RunRfsTuiPlanModeRecordingSessionCaseAsync(string name, string
 
             var requiredFragments = new[]
             {
-                "[Plan mode]",
+                "[Plan]",
                 "Building planning context...",
-                "context: simple",
+                "Context:",
                 "recent interactions:",
                 "anchors:",
                 "artifacts:",
-                "estimated chars:",
                 "estimated tokens:",
-                "model budget:",
-                "context usage:",
-                "transport size:",
                 "transport risk:",
                 "truncated:",
                 "Respuesta:",
-                "State created:",
-                "Delta created:",
+                "Recorded State + Delta:",
             };
 
             foreach (var fragment in requiredFragments)

@@ -4,6 +4,9 @@ namespace Rufus.Cli.Tui;
 
 internal static class RfsTuiInputReader
 {
+    private const string MoveCursorUpOneLine = "\u001b[1F";
+    private const string ClearLine = "\u001b[2K";
+
     internal static string? ReadLine()
     {
         if (!CanUseLivePalette())
@@ -35,10 +38,7 @@ internal static class RfsTuiInputReader
     private static string? ReadInteractiveLine()
     {
         var buffer = new StringBuilder();
-        var hasRendered = false;
-
-        Render(buffer, appendSeparator: false);
-        hasRendered = true;
+        var renderedLineCount = Render(buffer);
 
         while (true)
         {
@@ -61,8 +61,7 @@ internal static class RfsTuiInputReader
                 if (buffer.Length > 0)
                 {
                     buffer.Length--;
-                    Render(buffer, appendSeparator: hasRendered);
-                    hasRendered = true;
+                    renderedLineCount = Render(buffer, renderedLineCount);
                 }
 
                 continue;
@@ -74,28 +73,37 @@ internal static class RfsTuiInputReader
             }
 
             buffer.Append(key.KeyChar);
-            Render(buffer, appendSeparator: hasRendered);
-            hasRendered = true;
+            renderedLineCount = Render(buffer, renderedLineCount);
         }
     }
 
-    private static void Render(StringBuilder buffer, bool appendSeparator)
+    private static int Render(StringBuilder buffer, int previousRenderedLineCount = 0)
     {
-        if (appendSeparator)
+        if (previousRenderedLineCount > 0)
         {
-            Console.WriteLine();
+            ClearRenderedBlock(previousRenderedLineCount);
         }
+
+        var renderedLineCount = 1;
 
         RfsTuiRenderer.WritePrompt();
         Console.Write(buffer.ToString());
         Console.WriteLine();
 
-        if (buffer.Length == 0 || buffer[0] != '/')
+        if (buffer.Length > 0 && buffer[0] == '/')
         {
-            return;
+            renderedLineCount += RfsTuiRenderer.WriteCommandPalette(RfsTuiCommandCatalog.GetSuggestions(buffer.ToString()));
         }
 
-        var suggestions = RfsTuiCommandCatalog.GetSuggestions(buffer.ToString());
-        RfsTuiRenderer.WriteCommandPalette(suggestions);
+        return renderedLineCount;
+    }
+
+    private static void ClearRenderedBlock(int lineCount)
+    {
+        for (var i = 0; i < lineCount; i++)
+        {
+            Console.Write(MoveCursorUpOneLine);
+            Console.Write(ClearLine);
+        }
     }
 }

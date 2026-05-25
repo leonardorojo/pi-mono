@@ -11,6 +11,7 @@ internal enum RfsTuiCommandKind
     ModelSet,
     Context,
     Trace,
+    Hermes,
     Anchor,
     Help,
     Exit,
@@ -126,6 +127,7 @@ internal static class RfsTuiCommandCatalog
         new(RfsTuiCommandKind.Trace, "/trace", "/trace", "Show last TraceSlice summary"),
         new(RfsTuiCommandKind.Anchor, "/anchor", "/anchor \"name\"", "Create milestone anchor", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.Help, "/help", "/help", "Show this help"),
+        new(RfsTuiCommandKind.Hermes, "/hermes", "/hermes", "Build Hermes handoff draft"),
         new(RfsTuiCommandKind.Exit, "/exit", "/exit", "Exit RFS", RfsTuiCommandMatchMode.Exact, ["exit"]),
     ];
 

@@ -9,6 +9,7 @@ internal static class RfsTuiModelPickerChecks
         RunSessionModelStateCases(failures);
         RunModelSelectionStateCases(failures);
         RunRendererAndPrincipalModelCases(failures);
+        RunHermesDraftCases(failures);
         RunCommandCatalogCases(failures);
     }
 
@@ -93,6 +94,7 @@ internal static class RfsTuiModelPickerChecks
         var helpCommands = RfsTuiCommandCatalog.GetHelpCommands();
         var modelShow = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelShow);
         var modelSet = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelSet);
+        var hermes = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes", StringComparison.Ordinal));
 
         if (modelShow is null || !string.Equals(modelShow.Description, "Open session model picker", StringComparison.Ordinal))
         {
@@ -104,10 +106,21 @@ internal static class RfsTuiModelPickerChecks
             failures.Add("[tui model picker] expected /model <model> help text to describe temporary session updates.");
         }
 
+        if (hermes is null || !string.Equals(hermes.Description, "Build Hermes handoff draft", StringComparison.Ordinal))
+        {
+            failures.Add("[tui model picker] expected /hermes help text to describe the handoff draft.");
+        }
+
         var exactModel = RfsTuiCommandCatalog.FindExactMatch("/model");
         if (exactModel is null || exactModel.Kind != RfsTuiCommandKind.ModelShow)
         {
             failures.Add("[tui model picker] expected /model to resolve to the picker command.");
+        }
+
+        var exactHermes = RfsTuiCommandCatalog.FindExactMatch("/hermes");
+        if (exactHermes is null || !string.Equals(exactHermes.Usage, "/hermes", StringComparison.Ordinal))
+        {
+            failures.Add("[tui model picker] expected /hermes to resolve to the Hermes handoff command.");
         }
 
         var modelSuggestions = RfsTuiCommandCatalog.GetSuggestions("/model");
@@ -165,6 +178,73 @@ internal static class RfsTuiModelPickerChecks
         if (!string.Equals(defaultExecutionModel.Model, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
         {
             failures.Add($"[tui model picker] expected empty session model to fall back to '{RfsTuiSessionState.DefaultSessionModel}' but got '{defaultExecutionModel.Model}'.");
+        }
+    }
+
+    private static void RunHermesDraftCases(List<string> failures)
+    {
+        var status = new RckWorkspaceStatus(
+            RepoRoot: "/tmp/rfs",
+            WorkspaceExists: true,
+            ConfigExists: true,
+            RckExists: true,
+            HeadExists: true,
+            Head: "abcdef1234567890",
+            StateCount: 1,
+            DeltaCount: 1,
+            AnchorCount: 1,
+            GitContext: new GitWorkspaceContext("feature/rufus-cli-design", "abcdef1234567890", Dirty: true, Array.Empty<GitWorkspaceArtifactChange>()));
+
+        var freshSession = new RfsTuiSessionState();
+        var unavailable = RfsTuiHermesPromptBuilder.TryBuild(status, freshSession);
+        if (unavailable.Success || unavailable.Draft is not null || !string.Equals(unavailable.ErrorMessage, "No hay una respuesta previa para generar handoff a Hermes.", StringComparison.Ordinal))
+        {
+            failures.Add("[tui model picker] expected /hermes to report that no prior answer is available before any RFS reply.");
+        }
+
+        var sessionState = new RfsTuiSessionState();
+        sessionState.RecordComplete(
+            new RfsTuiCompleteContextSummary(
+                SelectionStrategy: "trace-slice",
+                ValidationStatus: "validated",
+                ContextPackScope: "repo",
+                IntentSource: "llm",
+                SelectedStateCount: 5,
+                SelectedDeltaCount: 3,
+                SelectedAnchorCount: 2,
+                EstimatedChars: 1234,
+                EstimatedTokens: 321,
+                TransportRisk: "low",
+                Truncated: false,
+                Warnings: ["warning-1"],
+                Omissions: ["omission-1"]),
+            prompt: "¿Qué cambió en la última respuesta?",
+            answer: "Se validó el ContextPack y se respondió con una propuesta concreta.");
+
+        var draftResult = RfsTuiHermesPromptBuilder.TryBuild(status, sessionState);
+        if (!draftResult.Success || draftResult.Draft is null)
+        {
+            failures.Add("[tui model picker] expected /hermes to build a draft once a prior response exists.");
+            return;
+        }
+
+        var draft = draftResult.Draft;
+        if (!string.Equals(draft.RepoRoot, "/tmp/rfs", StringComparison.Ordinal) ||
+            !string.Equals(draft.Branch, "feature/rufus-cli-design", StringComparison.Ordinal) ||
+            !string.Equals(draft.DirtyState, "dirty", StringComparison.Ordinal))
+        {
+            failures.Add("[tui model picker] expected /hermes draft metadata to include repo root, branch, and dirty state.");
+        }
+
+        if (!draft.PromptText.Contains("Hermes handoff draft", StringComparison.Ordinal) ||
+            !draft.PromptText.Contains("Repo root: /tmp/rfs", StringComparison.Ordinal) ||
+            !draft.PromptText.Contains("Branch: feature/rufus-cli-design", StringComparison.Ordinal) ||
+            !draft.PromptText.Contains("Dirty state: dirty", StringComparison.Ordinal) ||
+            !draft.PromptText.Contains("Respuesta previa del LLM principal:", StringComparison.Ordinal) ||
+            !draft.PromptText.Contains("ContextPack summary:", StringComparison.Ordinal) ||
+            !draft.PromptText.Contains("Entrega esperada:", StringComparison.Ordinal))
+        {
+            failures.Add("[tui model picker] expected /hermes prompt text to include the required handoff sections.");
         }
     }
 }

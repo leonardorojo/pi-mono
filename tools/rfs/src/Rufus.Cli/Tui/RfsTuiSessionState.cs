@@ -10,6 +10,8 @@ internal sealed class RfsTuiSessionState
 
     public string LastContextKind { get; private set; } = "none";
 
+    public RfsTuiLastInteractionContext? LastInteraction { get; private set; }
+
     public RfsTuiSimpleContextSummary? LastSimpleContext { get; private set; }
 
     public RfsTuiCompleteContextSummary? LastCompleteContext { get; private set; }
@@ -19,6 +21,16 @@ internal sealed class RfsTuiSessionState
     public void ResetSessionModel()
     {
         CurrentSessionModel = DefaultSessionModel;
+    }
+
+    public void ResetInteraction()
+    {
+        LastMode = "none";
+        LastContextKind = "none";
+        LastInteraction = null;
+        LastSimpleContext = null;
+        LastCompleteContext = null;
+        LastTrace = null;
     }
 
     public void SetSessionModel(string model)
@@ -33,37 +45,41 @@ internal sealed class RfsTuiSessionState
     public string ResolveMainModel()
         => CurrentSessionModel;
 
-    public void RecordDirect()
+    public void RecordDirect(string prompt, string answer)
     {
         LastMode = "direct";
         LastContextKind = "none";
+        LastInteraction = new RfsTuiLastInteractionContext("direct", prompt, answer, null, null);
         LastSimpleContext = null;
         LastCompleteContext = null;
         LastTrace = null;
     }
 
-    public void RecordSimple(RfsTuiSimpleContextSummary summary, string mode)
+    public void RecordSimple(RfsTuiSimpleContextSummary summary, string mode, string prompt, string answer)
     {
         LastMode = mode;
         LastContextKind = "simple";
+        LastInteraction = new RfsTuiLastInteractionContext(mode, prompt, answer, summary, null);
         LastSimpleContext = summary;
         LastCompleteContext = null;
         LastTrace = null;
     }
 
-    public void RecordComplete(RfsTuiCompleteContextSummary summary)
+    public void RecordComplete(RfsTuiCompleteContextSummary summary, string prompt, string answer)
     {
         LastMode = "complete";
         LastContextKind = "complete";
+        LastInteraction = new RfsTuiLastInteractionContext("complete", prompt, answer, null, summary);
         LastCompleteContext = summary;
         LastTrace = RfsTuiTraceSummary.Create(summary);
         LastSimpleContext = null;
     }
 
-    public void RecordPlan(RfsTuiSimpleContextSummary summary)
+    public void RecordPlan(RfsTuiSimpleContextSummary summary, string prompt, string answer)
     {
         LastMode = "plan";
         LastContextKind = "simple";
+        LastInteraction = new RfsTuiLastInteractionContext("plan", prompt, answer, summary, null);
         LastSimpleContext = summary;
         LastCompleteContext = null;
         LastTrace = null;
@@ -117,4 +133,14 @@ internal sealed record RfsTuiTraceSummary(
             summary.SelectedAnchorCount,
             summary.Warnings,
             summary.Omissions);
+}
+
+internal sealed record RfsTuiLastInteractionContext(
+    string Mode,
+    string Prompt,
+    string Answer,
+    RfsTuiSimpleContextSummary? SimpleContext,
+    RfsTuiCompleteContextSummary? CompleteContext)
+{
+    public bool HasCompleteContextPack => CompleteContext is not null;
 }

@@ -259,7 +259,9 @@ internal static class RfsTuiSession
                 contextUsageReport.Truncated,
                 simpleContextBuildResult.Warnings.ToArray(),
                 simpleContextBuildResult.Omissions.ToArray()),
-            mode: "simple");
+            "simple",
+            prompt,
+            askJsonResult.Answer);
 
         Console.WriteLine();
         RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
@@ -301,7 +303,7 @@ internal static class RfsTuiSession
             return false;
         }
 
-        SessionState.RecordDirect();
+        SessionState.RecordDirect(prompt, askJsonResult.Answer);
 
         Console.WriteLine();
         RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
@@ -447,7 +449,9 @@ internal static class RfsTuiSession
                 completeContextUsageReport.TransportRisk,
                 completeContextUsageReport.Truncated,
                 completeResult.Warnings.ToArray(),
-                completeResult.Omissions.ToArray()));
+                completeResult.Omissions.ToArray()),
+            prompt,
+            principalAnswerOutput.FinalAnswer);
 
         Console.WriteLine();
         RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
@@ -561,7 +565,9 @@ internal static class RfsTuiSession
                 contextUsageReport.TransportRisk,
                 contextUsageReport.Truncated,
                 simpleContextBuildResult.Warnings.ToArray(),
-                simpleContextBuildResult.Omissions.ToArray()));
+                simpleContextBuildResult.Omissions.ToArray()),
+            prompt,
+            askJsonResult.Answer);
 
         Console.WriteLine();
         RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
@@ -654,6 +660,18 @@ internal static class RfsTuiSession
     private static void RenderTrace()
         => RfsTuiRenderer.WriteTrace(SessionState.LastTrace);
 
+    private static void RenderHermesDraft(RckWorkspaceStatus status)
+    {
+        var draftResult = RfsTuiHermesPromptBuilder.TryBuild(status, SessionState);
+        if (!draftResult.Success)
+        {
+            RfsTuiRenderer.WriteHermesHandoffUnavailable("No hay una respuesta previa para generar handoff a Hermes.");
+            return;
+        }
+
+        RfsTuiRenderer.WriteHermesHandoffDraft(draftResult.Draft!);
+    }
+
     private static async Task<bool> TryHandleTopLevelCommandAsync(string input, string repoRoot, RckWorkspaceStatus status)
     {
         if (input.StartsWith("/", StringComparison.Ordinal))
@@ -691,6 +709,9 @@ internal static class RfsTuiSession
                     return true;
                 case RfsTuiCommandKind.Trace:
                     RenderTrace();
+                    return true;
+                case RfsTuiCommandKind.Hermes:
+                    RenderHermesDraft(status);
                     return true;
                 case RfsTuiCommandKind.Anchor:
                     return HandleAnchorCommand(input, repoRoot);

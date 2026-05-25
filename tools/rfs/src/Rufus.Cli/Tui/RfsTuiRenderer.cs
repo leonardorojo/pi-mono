@@ -280,6 +280,46 @@ internal static class RfsTuiRenderer
         WriteOptionalList("omissions", trace.Omissions);
     }
 
+    internal static void WriteHermesHandoffUnavailable(string message)
+    {
+        WriteWarningLine(message);
+    }
+
+    internal static void WriteHermesHandoffDraft(RfsTuiHermesHandoffDraft draft)
+    {
+        WriteSectionTitle("Hermes handoff draft");
+        WriteKeyValue("repo", draft.RepoRoot);
+        WriteKeyValue("branch", draft.Branch);
+        WriteKeyValue("dirty", draft.DirtyState);
+        WriteKeyValue("mode", draft.Mode);
+        Console.WriteLine();
+        WriteKeyValue("ContextPack", string.IsNullOrWhiteSpace(draft.ContextSummary) ? "(not available)" : "available");
+        if (!string.IsNullOrWhiteSpace(draft.ContextSummary))
+        {
+            Console.WriteLine(draft.ContextSummary);
+        }
+        Console.WriteLine();
+        WriteSectionTitle("Objetivo sugerido para Hermes:");
+        Console.WriteLine(draft.SuggestedObjective);
+        Console.WriteLine();
+        WriteSectionTitle("Restricciones:");
+        foreach (var restriction in draft.Restrictions)
+        {
+            Console.WriteLine($"- {restriction}");
+        }
+        Console.WriteLine();
+        WriteSectionTitle("Entrega esperada:");
+        for (var index = 0; index < draft.Deliverables.Count; index++)
+        {
+            Console.WriteLine($"{index + 1}. {draft.Deliverables[index]}");
+        }
+        Console.WriteLine();
+        WriteSectionTitle("Prompt operativo para Hermes:");
+        Console.WriteLine("```");
+        Console.WriteLine(draft.PromptText);
+        Console.WriteLine("```");
+    }
+
     internal static void WriteHelp(IReadOnlyList<RfsTuiCommandInfo> commands)
     {
         WriteSectionTitle("Commands:");

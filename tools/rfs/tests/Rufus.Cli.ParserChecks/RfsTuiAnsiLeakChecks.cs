@@ -1,22 +1,92 @@
 using System.Diagnostics;
+using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
+using Rufus.RCK.Workspace;
 
 internal static class RfsTuiAnsiLeakChecks
 {
     internal static async Task Run(List<string> failures)
     {
-        RunPlainRendererCase(failures);
+        RunPlainTerminalOverrideCase(failures);
+        RunNoColorCase(failures);
         await RunCapturedTuiCase(failures);
     }
 
-    private static void RunPlainRendererCase(List<string> failures)
+    private static void RunPlainTerminalOverrideCase(List<string> failures)
+    {
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
+        var originalPlain = Environment.GetEnvironmentVariable("RFS_TUI_PLAIN");
+        var originalNoColor = Environment.GetEnvironmentVariable("NO_COLOR");
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        try
+        {
+            Environment.SetEnvironmentVariable("RFS_TUI_PLAIN", "1");
+            Environment.SetEnvironmentVariable("NO_COLOR", null);
+            Console.SetOut(stdout);
+            Console.SetError(stderr);
+
+            if (RfsTuiTerminal.IsInteractive)
+            {
+                failures.Add("[tui ansi] expected RFS_TUI_PLAIN=1 to disable interactive mode.");
+            }
+
+            if (RfsTuiTerminal.UseColor || RfsTuiTerminal.UseCursorControl || RfsTuiTerminal.UseLivePalette || RfsTuiTerminal.UseAnsiSgr || RfsTuiTerminal.UseAnsiStyle)
+            {
+                failures.Add("[tui ansi] expected RFS_TUI_PLAIN=1 to disable all ANSI/cursor capabilities.");
+            }
+
+            RfsTuiRenderer.WritePrompt();
+            RfsTuiRenderer.WriteResponse("# Título\n\n- item\n\nTexto con \\rho y a^2");
+            RfsTuiRenderer.WriteHelp(new[]
+            {
+                new RfsTuiCommandInfo(RfsTuiCommandKind.Help, "/help", "/help", "Show this help"),
+            });
+
+            var status = new RckWorkspaceStatus(
+                "/repo",
+                WorkspaceExists: true,
+                ConfigExists: true,
+                RckExists: true,
+                HeadExists: true,
+                Head: "abc12345",
+                StateCount: 1,
+                DeltaCount: 2,
+                AnchorCount: 3,
+                GitContext: new GitWorkspaceContext("main", "abc12345", false, Array.Empty<GitWorkspaceArtifactChange>()));
+            RfsTuiRenderer.WriteStatus(status, new RckWorkspaceModelConfigReadResult(true, null, "/repo", "/repo/.rfs/config.json", true, "gpt-5.4-mini"), new RfsTuiSessionState());
+
+            var models = new[]
+            {
+                new PiRpcAvailableModel("gpt-5.4-mini", "openai", "GPT-5.4 Mini"),
+            };
+            var selectionState = new RfsTuiModelSelectionState(models, "gpt-5.4-mini");
+            RfsTuiRenderer.WriteModelPickerScreen(models, selectionState, "gpt-5.4-mini");
+
+            var output = stdout.ToString() + stderr.ToString();
+            AssertPlainOutput(failures, output, "plain override");
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            Console.SetError(originalError);
+            Environment.SetEnvironmentVariable("RFS_TUI_PLAIN", originalPlain);
+            Environment.SetEnvironmentVariable("NO_COLOR", originalNoColor);
+        }
+    }
+
+    private static void RunNoColorCase(List<string> failures)
     {
         var originalOut = Console.Out;
         var originalNoColor = Environment.GetEnvironmentVariable("NO_COLOR");
+        var originalPlain = Environment.GetEnvironmentVariable("RFS_TUI_PLAIN");
         using var stdout = new StringWriter();
 
         try
         {
+            Environment.SetEnvironmentVariable("RFS_TUI_PLAIN", null);
             Environment.SetEnvironmentVariable("NO_COLOR", "1");
             Console.SetOut(stdout);
             RfsTuiRenderer.WriteResponse("# Título\n\n- item\n\nTexto con \\rho y a^2");
@@ -25,6 +95,7 @@ internal static class RfsTuiAnsiLeakChecks
         {
             Console.SetOut(originalOut);
             Environment.SetEnvironmentVariable("NO_COLOR", originalNoColor);
+            Environment.SetEnvironmentVariable("RFS_TUI_PLAIN", originalPlain);
         }
 
         var output = stdout.ToString();
@@ -90,6 +161,19 @@ internal static class RfsTuiAnsiLeakChecks
             catch
             {
             }
+        }
+    }
+
+    private static void AssertPlainOutput(List<string> failures, string output, string scenario)
+    {
+        if (output.Contains("\u001b", StringComparison.Ordinal))
+        {
+            failures.Add($"[tui ansi] {scenario}: expected no ANSI escape sequences.");
+        }
+
+        if (output.Contains("[1m", StringComparison.Ordinal) || output.Contains("[0m", StringComparison.Ordinal) || output.Contains("[90m", StringComparison.Ordinal) || output.Contains("[92m", StringComparison.Ordinal) || output.Contains("[97m", StringComparison.Ordinal))
+        {
+            failures.Add($"[tui ansi] {scenario}: expected no raw SGR codes.");
         }
     }
 

@@ -524,7 +524,7 @@ internal static class RfsTuiRenderer
 
 internal static class RfsTuiAnsi
 {
-    internal static bool Enabled => RfsTuiTerminal.UseColor;
+    internal static bool Enabled => RfsTuiTerminal.UseAnsiStyle;
 }
 
 internal static class RfsTuiText

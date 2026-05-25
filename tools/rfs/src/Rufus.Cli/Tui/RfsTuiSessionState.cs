@@ -2,6 +2,10 @@ namespace Rufus.Cli.Tui;
 
 internal sealed class RfsTuiSessionState
 {
+    internal const string DefaultSessionModel = "gpt-5.4-mini";
+
+    public string CurrentSessionModel { get; private set; } = DefaultSessionModel;
+
     public string LastMode { get; private set; } = "none";
 
     public string LastContextKind { get; private set; } = "none";
@@ -11,6 +15,23 @@ internal sealed class RfsTuiSessionState
     public RfsTuiCompleteContextSummary? LastCompleteContext { get; private set; }
 
     public RfsTuiTraceSummary? LastTrace { get; private set; }
+
+    public void ResetSessionModel()
+    {
+        CurrentSessionModel = DefaultSessionModel;
+    }
+
+    public void SetSessionModel(string model)
+    {
+        var trimmedModel = string.IsNullOrWhiteSpace(model)
+            ? throw new ArgumentException("model cannot be empty.", nameof(model))
+            : model.Trim();
+
+        CurrentSessionModel = trimmedModel;
+    }
+
+    public string ResolveMainModel()
+        => CurrentSessionModel;
 
     public void RecordDirect()
     {

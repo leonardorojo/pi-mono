@@ -52,8 +52,17 @@ internal static class RfsTuiSession
         }
 
         RfsTuiTerminal.ClearIfInteractive();
-        RenderHeader(status, RckWorkspaceModelConfigStore.TryReadDefaultModel(status.RepoRoot));
-        await RunPromptLoopAsync(status.RepoRoot);
+        RenderHeader(status, SessionState.CurrentSessionModel);
+
+        try
+        {
+            await RunPromptLoopAsync(status.RepoRoot, status);
+        }
+        finally
+        {
+            SessionState.ResetSessionModel();
+        }
+
         return 0;
     }
 
@@ -63,7 +72,7 @@ internal static class RfsTuiSession
     private static void RenderHeader(RckWorkspaceStatus status, string? workspaceModel)
         => RfsTuiRenderer.WriteHeader(status, Path.GetFileName(Path.TrimEndingDirectorySeparator(status.RepoRoot)), workspaceModel, leadingBlankLine: true);
 
-    private static async Task RunPromptLoopAsync(string repoRoot)
+    private static async Task RunPromptLoopAsync(string repoRoot, RckWorkspaceStatus status)
     {
         Console.CancelKeyPress += HandleCancelKeyPress;
         try
@@ -89,7 +98,7 @@ internal static class RfsTuiSession
 
                 if (input.StartsWith("/", StringComparison.Ordinal))
                 {
-                    TryHandleTopLevelCommand(input, repoRoot);
+                    await TryHandleTopLevelCommandAsync(input, repoRoot, status);
                     continue;
                 }
 
@@ -183,7 +192,7 @@ internal static class RfsTuiSession
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(
             repoRoot,
             simpleContextBuildResult.PromptToSend,
-            RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot));
+            SessionState.ResolveMainModel());
 
         if (!askJsonResult.Success)
         {
@@ -265,7 +274,7 @@ internal static class RfsTuiSession
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(
             repoRoot,
             prompt,
-            RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot));
+            SessionState.ResolveMainModel());
 
         if (!askJsonResult.Success)
         {
@@ -327,8 +336,7 @@ internal static class RfsTuiSession
             return false;
         }
 
-        var workspaceModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot);
-        var principalAnswerExecutionModel = new AgentExecutionModel("pi", workspaceModel ?? "workspace-default");
+        var principalAnswerExecutionModel = CreatePrincipalAnswerExecutionModel(SessionState.ResolveMainModel());
         var principalAnswerAgent = new PiPrincipalAnswerAgent(repoRoot, principalAnswerExecutionModel);
 
         RfsTuiRenderer.WriteCompleteStage("[5/5] Asking main LLM...");
@@ -485,7 +493,7 @@ internal static class RfsTuiSession
         var askJsonResult = await PiJsonEventRunner.RunAskAsync(
             repoRoot,
             planPromptToSend,
-            RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot));
+            SessionState.ResolveMainModel());
 
         if (!askJsonResult.Success)
         {
@@ -646,7 +654,7 @@ internal static class RfsTuiSession
     private static void RenderTrace()
         => RfsTuiRenderer.WriteTrace(SessionState.LastTrace);
 
-    private static bool TryHandleTopLevelCommand(string input, string repoRoot)
+    private static async Task<bool> TryHandleTopLevelCommandAsync(string input, string repoRoot, RckWorkspaceStatus status)
     {
         if (input.StartsWith("/", StringComparison.Ordinal))
         {
@@ -675,10 +683,9 @@ internal static class RfsTuiSession
                     RenderLog(repoRoot);
                     return true;
                 case RfsTuiCommandKind.ModelShow:
-                    RenderModel(repoRoot);
-                    return true;
+                    return await HandleModelCommandAsync(repoRoot, status);
                 case RfsTuiCommandKind.ModelSet:
-                    return HandleModelSetCommand(input, repoRoot);
+                    return await HandleModelSetCommandAsync(input, repoRoot, status);
                 case RfsTuiCommandKind.Context:
                     RenderContext();
                     return true;
@@ -691,19 +698,19 @@ internal static class RfsTuiSession
                     RenderHelp();
                     return true;
                 case RfsTuiCommandKind.Exit:
+                    SessionState.ResetSessionModel();
                     return true;
             }
         }
 
         if (string.Equals(input, "/model", StringComparison.Ordinal))
         {
-            RenderModel(repoRoot);
-            return true;
+            return await HandleModelCommandAsync(repoRoot, status);
         }
 
         if (input.StartsWith("/model ", StringComparison.Ordinal))
         {
-            return HandleModelSetCommand(input, repoRoot);
+            return await HandleModelSetCommandAsync(input, repoRoot, status);
         }
 
         if (string.Equals(input, "/log", StringComparison.Ordinal))
@@ -803,13 +810,44 @@ internal static class RfsTuiSession
     private static void RenderHelp()
         => RfsTuiRenderer.WriteHelp(RfsTuiCommandCatalog.GetHelpCommands());
 
-    private static bool HandleModelSetCommand(string input, string repoRoot)
+    private static async Task<bool> HandleModelCommandAsync(string repoRoot, RckWorkspaceStatus status)
+    {
+        if (!RfsTuiTerminal.IsInteractive)
+        {
+            RenderModel(repoRoot);
+            return true;
+        }
+
+        var pickerResult = await RfsTuiModelPicker.SelectInteractiveAsync(repoRoot, SessionState.ResolveMainModel());
+        if (!pickerResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(pickerResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(pickerResult.ErrorMessage);
+            }
+
+            return true;
+        }
+
+        if (pickerResult.Cancelled || string.IsNullOrWhiteSpace(pickerResult.SelectedModel))
+        {
+            Console.WriteLine("Model selection cancelled.");
+            return true;
+        }
+
+        SessionState.SetSessionModel(pickerResult.SelectedModel);
+        Console.WriteLine($"Session model updated: {SessionState.CurrentSessionModel}");
+        Console.WriteLine();
+        RenderHeader(status, SessionState.CurrentSessionModel);
+        return true;
+    }
+
+    private static async Task<bool> HandleModelSetCommandAsync(string input, string repoRoot, RckWorkspaceStatus status)
     {
         var model = input["/model".Length..].Trim();
         if (model.Length == 0)
         {
-            RenderModel(repoRoot);
-            return true;
+            return await HandleModelCommandAsync(repoRoot, status);
         }
 
         if (model.StartsWith('"') && model.EndsWith('"'))
@@ -824,15 +862,21 @@ internal static class RfsTuiSession
             return true;
         }
 
-        var setResult = RckWorkspaceModelConfigStore.SetDefaultModel(model, repoRoot);
-        if (!setResult.Success)
+        var validationResult = await RfsTuiModelPicker.ResolveRequestedModelAsync(repoRoot, model);
+        if (!validationResult.Success)
         {
-            Console.Error.WriteLine(setResult.ErrorMessage);
+            if (!string.IsNullOrWhiteSpace(validationResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(validationResult.ErrorMessage);
+            }
+
             return true;
         }
 
-        Console.WriteLine("Model updated:");
-        Console.WriteLine($"  {setResult.DefaultModel ?? model}");
+        SessionState.SetSessionModel(validationResult.SelectedModel!);
+        Console.WriteLine($"Session model updated: {SessionState.CurrentSessionModel}");
+        Console.WriteLine();
+        RenderHeader(status, SessionState.CurrentSessionModel);
         return true;
     }
 
@@ -851,6 +895,9 @@ internal static class RfsTuiSession
         Console.WriteLine("Source:");
         Console.WriteLine($"  {GetModelSourceLabel(readResult)}");
     }
+
+    internal static AgentExecutionModel CreatePrincipalAnswerExecutionModel(string sessionModel)
+        => new("pi", string.IsNullOrWhiteSpace(sessionModel) ? RfsTuiSessionState.DefaultSessionModel : sessionModel.Trim());
 
     private static string GetCurrentModelLabel(RckWorkspaceModelConfigReadResult readResult)
     {

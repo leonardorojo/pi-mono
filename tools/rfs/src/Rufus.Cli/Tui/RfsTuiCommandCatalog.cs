@@ -120,8 +120,8 @@ internal static class RfsTuiCommandCatalog
     [
         new(RfsTuiCommandKind.Status, "/status", "/status", "Show session status"),
         new(RfsTuiCommandKind.Log, "/log", "/log", "Show recent RCK interactions"),
-        new(RfsTuiCommandKind.ModelShow, "/model", "/model", "Show current model"),
-        new(RfsTuiCommandKind.ModelSet, "/model", "/model <model>", "Set workspace model", RfsTuiCommandMatchMode.ArgumentsOnly),
+        new(RfsTuiCommandKind.ModelShow, "/model", "/model", "Open session model picker"),
+        new(RfsTuiCommandKind.ModelSet, "/model", "/model <model>", "Set session model (temporary)", RfsTuiCommandMatchMode.ArgumentsOnly),
         new(RfsTuiCommandKind.Context, "/context", "/context", "Show last context summary"),
         new(RfsTuiCommandKind.Trace, "/trace", "/trace", "Show last TraceSlice summary"),
         new(RfsTuiCommandKind.Anchor, "/anchor", "/anchor \"name\"", "Create milestone anchor", RfsTuiCommandMatchMode.ExactOrArguments),

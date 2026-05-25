@@ -234,6 +234,7 @@ await RunContextPackTraceSliceValidatedCliCaseAsync(
 
 RunRfsTuiModeSelectionParserCases(failures);
 RunRfsTuiCommandSuggestionCases(failures);
+RfsTuiModelPickerChecks.Run(failures);
 await RunRfsTuiCommandSuggestionSessionCaseAsync("tui slash suggestions are filtered and unknown commands are rejected", failures);
 
 await RunRckTuiDirectRecordingCaseAsync(
@@ -3197,8 +3198,8 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
             Input = "/mo",
             Expected = new[]
             {
-                (Usage: "/model", Description: "Show current model"),
-                (Usage: "/model <model>", Description: "Set workspace model"),
+                (Usage: "/model", Description: "Open session model picker"),
+                (Usage: "/model <model>", Description: "Set session model (temporary)"),
             },
         },
         new
@@ -3667,7 +3668,7 @@ static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, L
             "Recent interactions:",
             "No context has been built yet.",
             "No TraceSlice has been built in this session yet.",
-            "Model updated:",
+            "Session model updated:",
             "Current model:",
             "Commands:",
         };
@@ -3714,9 +3715,9 @@ static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, L
         }
 
         var configAfter = RckWorkspaceModelConfigStore.Read(tempRoot);
-        if (!configAfter.Success || !configAfter.HasConfiguredDefaultModel || !string.Equals(configAfter.DefaultModel, "gpt-5.4-mini", StringComparison.Ordinal))
+        if (!configAfter.Success || configAfter.HasConfiguredDefaultModel)
         {
-            failures.Add($"[{name}] expected /model gpt-5.4-mini to persist the workspace default model.");
+            failures.Add($"[{name}] expected /model gpt-5.4-mini to leave the workspace default model unmodified.");
         }
 
         if (configBefore.HasConfiguredDefaultModel)

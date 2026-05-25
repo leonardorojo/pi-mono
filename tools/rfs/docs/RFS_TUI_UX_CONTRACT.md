@@ -85,7 +85,7 @@ Header intent:
 The TUI uses a Pi-inspired visual style for hierarchy and spacing, but it is still RFS and not Pi. Color is decorative; `NO_COLOR` should suppress ANSI output when supported. On interactive entry, the screen is cleared once before the header is rendered; redirected runs must not clear.
 
 - show the repo/workspace identity
-- show the active model
+- show the active model as the current TUI session model
 - show RCK scale and progress
 - show git branch and dirty state
 - keep the prompt immediately available
@@ -363,7 +363,8 @@ Suggested internal commands:
 Rules:
 
 - `/status`, `/log`, `/model`, `/context`, `/trace`, `/help`, and `/exit` do not write RCK
-- `/model <model>` writes `.rfs/config.json` but does not write RCK
+- `/model` opens a temporary session model picker when the terminal is interactive; it falls back to the read-only model display when input/output are redirected
+- `/model <model>` updates the current session model only; it does not write `.rfs/config.json` and does not write RCK
 - `/context` shows the last Simple or Complete context summary built in the session
 - `/trace` shows the last TraceSlice / validation summary
 - `/anchor` creates an Anchor

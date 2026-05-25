@@ -14,8 +14,8 @@ Short version:
 
 - `rfs` with no arguments enters the RFS TUI session, including the live Direct, Simple, Complete, and Plan mode paths.
 - The TUI also shows a live slash-command palette while you type `/`; execution still happens on Enter, slash commands dispatch directly without opening the 1/2/3/4 prompt-mode menu, and redirected input falls back to plain line reading.
+- Inside the TUI, `/model` opens a temporary session-scoped model picker backed by the same available-model source as `rfs model list`; `/model <model>` updates the session model only, and the selection resets to `gpt-5.4-mini` when the TUI exits.
 - Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`, `rfs intent --llm`.
-- Deterministic baseline pipeline: `rfs trace-slice "<prompt>"` -> `rfs context-pack --trace-slice "<prompt>"`.
 
 - LLM experimental proposal pipeline: `rfs trace-slice-proposal-llm "<prompt>"` -> `rfs trace-slice-validate-llm "<prompt>"`.
 - Experimental / diagnostic commands: `rfs ask-json`, `rfs agent-json`, `rfs trace-slice-proposal`, `rfs trace-slice-validate`, `rfs trace-slice-proposal-llm`, `rfs trace-slice-validate-llm`, `rfs context-pack --trace-slice-validated`.
@@ -246,6 +246,7 @@ Detailed reference: [`docs/RUFUS_AGENTING.md`](docs/RUFUS_AGENTING.md).
 
 `.rfs/config.json` can persist the workspace default model under `llm.defaultModel`.
 
+The TUI session model is separate: `/model` inside the TUI uses an ephemeral session picker and does not persist to `.rfs/config.json`.
 Example:
 
 ```json

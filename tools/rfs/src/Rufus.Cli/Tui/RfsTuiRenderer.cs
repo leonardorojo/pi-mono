@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Linq;
+using Rufus.Cli.PiIntegration;
 using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.Tui;
@@ -24,7 +25,12 @@ internal static class RfsTuiRenderer
 
     internal static void WriteHeader(RckWorkspaceStatus status, string repoName, string? workspaceModel, bool leadingBlankLine = false)
     {
-        var modelLabel = string.IsNullOrWhiteSpace(workspaceModel) ? "(inherited)" : workspaceModel.Trim();
+        var resolvedModel = string.IsNullOrWhiteSpace(workspaceModel)
+            ? RfsTuiSessionState.DefaultSessionModel
+            : workspaceModel.Trim();
+        var modelLabel = string.Equals(resolvedModel, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal)
+            ? resolvedModel
+            : $"{resolvedModel} · session";
         var branchLabel = string.IsNullOrWhiteSpace(status.GitContext.Branch) ? "(detached)" : status.GitContext.Branch;
         var dirtyLabel = status.GitContext.Dirty.ToString().ToLowerInvariant();
 
@@ -296,6 +302,65 @@ internal static class RfsTuiRenderer
     {
         WriteWarningLine($"Unknown command: {input}");
         WriteMutedLine("Type /help to show available commands.");
+    }
+
+    internal static int WriteModelPickerScreen(
+        IReadOnlyList<PiRpcAvailableModel> models,
+        RfsTuiModelSelectionState selectionState,
+        string currentSessionModel)
+    {
+        var lineCount = 0;
+
+        WriteSectionTitle("Select main model");
+        lineCount++;
+        WriteMutedLine("↑/↓ move · Enter select · Esc cancel · q cancel");
+        lineCount++;
+        Console.WriteLine();
+        lineCount++;
+
+        if (models.Count == 0)
+        {
+            WriteWarningLine("No models returned by Pi RPC.");
+            lineCount++;
+            WriteKeyValue("Current", currentSessionModel);
+            lineCount++;
+            WriteKeyValue("Selected", "(none)");
+            lineCount++;
+            return lineCount;
+        }
+
+        var idWidth = Math.Max("model".Length, models.Max(model => model.Id.Length));
+        var displayWidth = Math.Max(
+            "display name".Length,
+            models.Max(model => string.IsNullOrWhiteSpace(model.DisplayName) ? 0 : model.DisplayName.Length));
+        var providerWidth = Math.Max("provider".Length, models.Max(model => model.Provider.Length));
+
+        for (var index = 0; index < models.Count; index++)
+        {
+            var model = models[index];
+            var selected = index == selectionState.SelectedIndex;
+            var marker = selected ? ">" : " ";
+            var idLabel = model.Id.PadRight(idWidth);
+            var displayLabel = (model.DisplayName ?? string.Empty).PadRight(displayWidth);
+            var providerLabel = model.Provider.PadRight(providerWidth);
+            var markerStyle = selected ? ConsoleColor.Cyan : ConsoleColor.DarkGray;
+            var idStyle = selected ? ConsoleColor.White : ConsoleColor.DarkGray;
+            var displayStyle = selected ? ConsoleColor.White : ConsoleColor.DarkGray;
+            var providerStyle = selected ? ConsoleColor.DarkGray : ConsoleColor.DarkGray;
+
+            Console.WriteLine(
+                $"{Style(marker, markerStyle, bold: selected)} {Style(idLabel, idStyle, bold: selected)}  {Style(displayLabel, displayStyle, bold: selected)}  {Style(providerLabel, providerStyle)}");
+            lineCount++;
+        }
+
+        Console.WriteLine();
+        lineCount++;
+        WriteKeyValue("Current", currentSessionModel);
+        lineCount++;
+        WriteKeyValue("Selected", selectionState.SelectedModelId ?? "(none)");
+        lineCount++;
+
+        return lineCount;
     }
 
     private static void WriteModeOption(string number, string mode, string description)

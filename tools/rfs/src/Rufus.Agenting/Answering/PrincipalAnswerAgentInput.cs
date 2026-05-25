@@ -10,6 +10,8 @@ public sealed record PrincipalAnswerAgentInput
 {
     public string UserPrompt { get; }
 
+    public string PromptToSend { get; }
+
     public string ValidatedContextPackJson { get; }
 
     public string ContextSummary { get; }
@@ -31,6 +33,7 @@ public sealed record PrincipalAnswerAgentInput
     [JsonConstructor]
     public PrincipalAnswerAgentInput(
         string UserPrompt,
+        string PromptToSend,
         string ValidatedContextPackJson,
         string ContextSummary,
         string ContextPackScope,
@@ -42,6 +45,7 @@ public sealed record PrincipalAnswerAgentInput
         string? PipelineSummary = null)
     {
         this.UserPrompt = Normalize(UserPrompt, nameof(UserPrompt));
+        this.PromptToSend = Normalize(PromptToSend, nameof(PromptToSend));
         this.ValidatedContextPackJson = Normalize(ValidatedContextPackJson, nameof(ValidatedContextPackJson));
         this.ContextSummary = Normalize(ContextSummary, nameof(ContextSummary));
         this.ContextPackScope = Normalize(ContextPackScope, nameof(ContextPackScope));

@@ -240,6 +240,7 @@ Simple, Complete, and Plan modes now surface a small context-usage report when t
 Context window usage and process-argument transport risk are different problems.
 The model may have a large window and still fail if the OS argument length limit is exceeded.
 Complete mode now avoids that transport limit by keeping short prompts on argv and switching long prompts to stdin above 32000 chars.
+[5/5] now delegates the final answer step to `PiPrincipalAnswerAgent`; recording still happens in RFS/TUI after the answer is produced.
 
 Current PT9.5 / PT13 behavior:
 

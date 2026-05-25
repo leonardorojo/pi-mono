@@ -25,6 +25,7 @@ public static class PrincipalAnswerAgentContractChecks
     {
         var input = new PrincipalAnswerAgentInput(
             "Implement reset board action",
+            "You are assisting inside an RFS repository session.\n[USER PROMPT]\nImplement reset board action",
             "{\"type\":\"rufus.context-pack\",\"schemaVersion\":1}",
             "Validated context pack with deterministic scope.",
             "complete::validated-context-pack",
@@ -40,6 +41,7 @@ public static class PrincipalAnswerAgentContractChecks
         var root = document.RootElement;
 
         Expect(root.TryGetProperty("userPrompt", out var userPrompt) && userPrompt.GetString() == "Implement reset board action", "principal answer input must serialize userPrompt", failures);
+        Expect(root.TryGetProperty("promptToSend", out var promptToSend) && promptToSend.GetString() == "You are assisting inside an RFS repository session.\n[USER PROMPT]\nImplement reset board action", "principal answer input must serialize promptToSend", failures);
         Expect(root.TryGetProperty("validatedContextPackJson", out var contextPackJson) && contextPackJson.GetString() == "{\"type\":\"rufus.context-pack\",\"schemaVersion\":1}", "principal answer input must serialize validatedContextPackJson", failures);
         Expect(root.TryGetProperty("contextSummary", out var contextSummary) && contextSummary.GetString() == "Validated context pack with deterministic scope.", "principal answer input must serialize contextSummary", failures);
         Expect(root.TryGetProperty("contextPackScope", out var contextPackScope) && contextPackScope.GetString() == "complete::validated-context-pack", "principal answer input must serialize contextPackScope", failures);
@@ -58,6 +60,7 @@ public static class PrincipalAnswerAgentContractChecks
         if (roundTrip is not null)
         {
             Expect(roundTrip.UserPrompt == input.UserPrompt, "principal answer input round-trip must preserve UserPrompt", failures);
+            Expect(roundTrip.PromptToSend == input.PromptToSend, "principal answer input round-trip must preserve PromptToSend", failures);
             Expect(roundTrip.ValidatedContextPackJson == input.ValidatedContextPackJson, "principal answer input round-trip must preserve ValidatedContextPackJson", failures);
             Expect(roundTrip.ContextSummary == input.ContextSummary, "principal answer input round-trip must preserve ContextSummary", failures);
             Expect(roundTrip.ContextPackScope == input.ContextPackScope, "principal answer input round-trip must preserve ContextPackScope", failures);
@@ -116,6 +119,7 @@ public static class PrincipalAnswerAgentContractChecks
     {
         var input = new PrincipalAnswerAgentInput(
             "Say hello",
+            "You are assisting inside an RFS repository session.\n[USER PROMPT]\nSay hello",
             "{}",
             "Empty context pack for contract shape validation.",
             "complete::empty",

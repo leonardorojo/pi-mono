@@ -120,6 +120,7 @@ await RunPiJsonRunnerWorkspaceModelCaseAsync(
     failures: failures);
 
 PrincipalAnswerAgentContractChecks.Run(failures);
+await PiPrincipalAnswerAgentChecks.RunAsync(failures);
 
 await RunPiIntentInferenceAgentFailureCaseAsync(
     name: "pi intent agent rejects invalid llm json",
@@ -280,6 +281,8 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
         "  transport:",
         "  transport risk:",
         "[5/5] Asking main LLM...",
+        "  agent:",
+        "  model:",
         "Respuesta:",
         "Recorded State + Delta:",
     },

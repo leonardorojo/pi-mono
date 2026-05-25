@@ -1,5 +1,9 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
+using Rufus.Agenting;
+using Rufus.Agenting.Answering;
+using Rufus.Cli.Answering;
 using Rufus.Cli.PiIntegration;
 using Rufus.RCK.Workspace;
 
@@ -7,6 +11,7 @@ namespace Rufus.Cli.Tui;
 
 internal static class RfsTuiSession
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly RfsTuiSessionState SessionState = new();
 
     public static int Run(string? startingDirectory = null)
@@ -316,20 +321,62 @@ internal static class RfsTuiSession
             return false;
         }
 
-        RfsTuiRenderer.WriteCompleteStage("[5/5] Asking main LLM...");
-
-        var askJsonResult = await PiJsonEventRunner.RunAskAsync(
-            repoRoot,
-            completeResult.PromptToSend,
-            RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot));
-
-        if (!askJsonResult.Success)
+        if (string.IsNullOrWhiteSpace(completeResult.ValidatedContextPackJson) || string.IsNullOrWhiteSpace(completeResult.ContextSummary))
         {
-            RfsTuiRenderer.WriteCompleteFailure(askJsonResult.ErrorMessage ?? "The main LLM request failed.");
+            RfsTuiRenderer.WriteCompleteFailure("Complete mode failed while asking main LLM. The complete pipeline did not produce a validated ContextPack payload.");
             return false;
         }
 
-        RfsTuiRenderer.WriteResponse(askJsonResult.Answer);
+        var workspaceModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(repoRoot);
+        var principalAnswerExecutionModel = new AgentExecutionModel("pi", workspaceModel ?? "workspace-default");
+        var principalAnswerAgent = new PiPrincipalAnswerAgent(repoRoot, principalAnswerExecutionModel);
+
+        RfsTuiRenderer.WriteCompleteStage("[5/5] Asking main LLM...");
+        RfsTuiRenderer.WriteCompleteStageDetail("agent", principalAnswerAgent.Id);
+        RfsTuiRenderer.WriteCompleteStageDetail("model", principalAnswerExecutionModel.Model);
+
+        var principalAnswerInput = new PrincipalAnswerAgentInput(
+            prompt,
+            completeResult.PromptToSend,
+            completeResult.ValidatedContextPackJson ?? string.Empty,
+            completeResult.ContextSummary ?? string.Empty,
+            completeResult.ContextPackScope ?? string.Empty,
+            completeResult.SelectedStateIds,
+            completeResult.SelectedDeltaIds,
+            completeResult.SelectedAnchorIds,
+            completeResult.EstimatedTokens,
+            completeResult.Warnings,
+            BuildCompletePipelineSummaryText(completeResult, completeContextUsageReport));
+
+        var principalAnswerTask = new AgentTask(
+            id: $"tui-complete-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}",
+            kind: PrincipalAnswerAgentConstants.TaskKind,
+            goal: "Produce the final answer from the validated ContextPack and user prompt.",
+            input: JsonSerializer.Serialize(principalAnswerInput, JsonOptions));
+
+        var principalAnswerResult = await principalAnswerAgent.ExecuteAsync(principalAnswerTask);
+        if (principalAnswerResult.Status != AgentTaskStatus.Succeeded || string.IsNullOrWhiteSpace(principalAnswerResult.Output))
+        {
+            var agentFailureReason = principalAnswerResult.Errors.Count > 0
+                ? string.Join(Environment.NewLine, principalAnswerResult.Errors)
+                : principalAnswerResult.Summary ?? "The main LLM request failed.";
+            RfsTuiRenderer.WriteCompleteFailure($"Complete mode failed while asking main LLM. {agentFailureReason}");
+            return false;
+        }
+
+        PrincipalAnswerAgentOutput principalAnswerOutput;
+        try
+        {
+            principalAnswerOutput = JsonSerializer.Deserialize<PrincipalAnswerAgentOutput>(principalAnswerResult.Output, JsonOptions)
+                ?? throw new JsonException("PrincipalAnswerAgentOutput deserialized to null.");
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException)
+        {
+            RfsTuiRenderer.WriteCompleteFailure($"Complete mode failed while asking main LLM. Invalid principal answer output: {ex.Message}");
+            return false;
+        }
+
+        RfsTuiRenderer.WriteResponse(principalAnswerOutput.FinalAnswer);
 
         var pipelineSummary = new RckInteractionPipelineSummary(
             "complete",
@@ -362,9 +409,9 @@ internal static class RfsTuiSession
         var recordResult = RckInteractionRecorder.RecordTui(
             new RckTuiInteractionRecordInput(
                 prompt,
-                askJsonResult.Answer,
-                askJsonResult.Provider,
-                askJsonResult.Model,
+                principalAnswerOutput.FinalAnswer,
+                principalAnswerOutput.Provider ?? principalAnswerResult.ExecutionModel.Provider,
+                principalAnswerOutput.Model ?? principalAnswerResult.ExecutionModel.Model,
                 mode: "tui-complete",
                 pipelineSummary: pipelineSummary),
             repoRoot);
@@ -850,6 +897,18 @@ internal static class RfsTuiSession
         }
 
         return singleLine[..Math.Max(0, maxLength - 1)] + "…";
+    }
+
+    private static string BuildCompletePipelineSummaryText(
+        RfsCompleteModeBuildResult completeResult,
+        RckContextUsageReport completeContextUsageReport)
+    {
+        var validation = completeResult.ValidationStatus ?? "(unknown)";
+        var selection = completeResult.TraceSliceSelectionStrategy ?? "(unknown)";
+        var scope = completeResult.ContextPackScope ?? "(unknown)";
+        var intent = completeResult.IntentSource ?? "(unknown)";
+        var selectedCounts = $"{completeResult.SelectedStateIds.Count}/{completeResult.SelectedDeltaIds.Count}/{completeResult.SelectedAnchorIds.Count}";
+        return $"mode=complete; validation={validation}; selection={selection}; scope={scope}; intent={intent}; selected={selectedCounts}; estimatedTokens={completeContextUsageReport.EstimatedTokens}; transportRisk={completeContextUsageReport.TransportRisk}; truncated={completeContextUsageReport.Truncated.ToString().ToLowerInvariant()}";
     }
 
     private static void HandleCancelKeyPress(object? sender, ConsoleCancelEventArgs e)

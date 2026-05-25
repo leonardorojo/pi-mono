@@ -169,7 +169,7 @@ internal static class RfsTuiRenderer
         var isIntentFailure = reason.Contains("inferring intent", StringComparison.OrdinalIgnoreCase);
         WriteErrorLine(isIntentFailure
             ? "Complete mode failed while inferring intent."
-            : "Complete mode failed before the main LLM answered.");
+            : "Complete mode failed while asking main LLM.");
         WriteWarningLine("No State/Delta was recorded.");
         Console.Error.WriteLine();
         WriteErrorHeading("Reason:");

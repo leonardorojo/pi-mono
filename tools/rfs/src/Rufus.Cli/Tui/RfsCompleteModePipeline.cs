@@ -290,6 +290,8 @@ public static class RfsCompleteModePipeline
 
         return RfsCompleteModeBuildResult.SuccessResult(
             promptToSend: promptToSend,
+            validatedContextPackJson: contextPackJson,
+            contextSummary: contextSummary,
             intentKind: proposalResult.IntentKind,
             intentSummary: proposalResult.IntentSummary,
             proposalSummary: proposalResult.ProposalSummary,
@@ -587,6 +589,8 @@ public sealed record RfsCompleteModeBuildResult
     public bool Success { get; }
     public string? ErrorMessage { get; }
     public string? PromptToSend { get; }
+    public string? ValidatedContextPackJson { get; }
+    public string? ContextSummary { get; }
     public string? IntentKind { get; }
     public string? IntentSummary { get; }
     public string? ProposalSummary { get; }
@@ -610,6 +614,8 @@ public sealed record RfsCompleteModeBuildResult
         bool success,
         string? errorMessage,
         string? promptToSend,
+        string? validatedContextPackJson,
+        string? contextSummary,
         string? intentKind,
         string? intentSummary,
         string? proposalSummary,
@@ -632,6 +638,8 @@ public sealed record RfsCompleteModeBuildResult
         Success = success;
         ErrorMessage = errorMessage;
         PromptToSend = promptToSend;
+        ValidatedContextPackJson = validatedContextPackJson;
+        ContextSummary = contextSummary;
         IntentKind = intentKind;
         IntentSummary = intentSummary;
         ProposalSummary = proposalSummary;
@@ -657,6 +665,8 @@ public sealed record RfsCompleteModeBuildResult
             success: false,
             errorMessage: errorMessage,
             promptToSend: null,
+            validatedContextPackJson: null,
+            contextSummary: null,
             intentKind: null,
             intentSummary: null,
             proposalSummary: null,
@@ -678,6 +688,8 @@ public sealed record RfsCompleteModeBuildResult
 
     public static RfsCompleteModeBuildResult SuccessResult(
         string promptToSend,
+        string? validatedContextPackJson,
+        string? contextSummary,
         string? intentKind,
         string? intentSummary,
         string? proposalSummary,
@@ -700,6 +712,8 @@ public sealed record RfsCompleteModeBuildResult
             success: true,
             errorMessage: null,
             promptToSend: promptToSend,
+            validatedContextPackJson: validatedContextPackJson,
+            contextSummary: contextSummary,
             intentKind: intentKind,
             intentSummary: intentSummary,
             proposalSummary: proposalSummary,

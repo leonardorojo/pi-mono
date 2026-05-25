@@ -37,7 +37,7 @@ internal static class RfsTuiInputReader
         => buffer.Length > 0 && buffer[0] == '/';
 
     private static bool CanUseLivePalette()
-        => RfsTuiTerminal.IsInteractive;
+        => RfsTuiTerminal.UseLivePalette;
 
     private static string? ReadInteractiveLine()
     {
@@ -106,6 +106,11 @@ internal static class RfsTuiInputReader
 
     private static int Render(StringBuilder buffer, int previousRenderedLineCount = 0)
     {
+        if (!RfsTuiTerminal.UseCursorControl)
+        {
+            return 1;
+        }
+
         if (previousRenderedLineCount > 0)
         {
             ClearRenderedBlock(previousRenderedLineCount);
@@ -128,6 +133,11 @@ internal static class RfsTuiInputReader
 
     private static void ClearRenderedBlock(int lineCount)
     {
+        if (!RfsTuiTerminal.UseCursorControl)
+        {
+            return;
+        }
+
         for (var i = 0; i < lineCount; i++)
         {
             Console.Write(MoveCursorUpOneLine);

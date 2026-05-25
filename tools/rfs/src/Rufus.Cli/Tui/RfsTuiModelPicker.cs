@@ -123,7 +123,7 @@ internal static class RfsTuiModelPicker
             return new RfsTuiModelSelectionResult(false, false, null, "Pi RPC did not return any available models.", models);
         }
 
-        if (!RfsTuiTerminal.IsInteractive)
+        if (!RfsTuiTerminal.UseLivePalette)
         {
             return new RfsTuiModelSelectionResult(false, false, null, "Model picker requires an interactive terminal.", models);
         }
@@ -228,6 +228,11 @@ internal static class RfsTuiModelPicker
 
     private static void ClearRenderedBlock(int lineCount)
     {
+        if (!RfsTuiTerminal.UseCursorControl)
+        {
+            return;
+        }
+
         const string MoveCursorUpOneLine = "\u001b[1F";
         const string ClearLine = "\u001b[2K";
 

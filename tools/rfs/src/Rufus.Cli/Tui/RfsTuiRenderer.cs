@@ -524,7 +524,7 @@ internal static class RfsTuiRenderer
 
 internal static class RfsTuiAnsi
 {
-    internal static bool Enabled => !Console.IsOutputRedirected && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NO_COLOR"));
+    internal static bool Enabled => RfsTuiTerminal.UseColor;
 }
 
 internal static class RfsTuiText

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -212,10 +213,203 @@ internal static class RfsTuiMarkdownLiteRenderer
             .Replace(@"\]", string.Empty, StringComparison.Ordinal)
             .Replace(@"\(", string.Empty, StringComparison.Ordinal)
             .Replace(@"\)", string.Empty, StringComparison.Ordinal)
-            .Replace("$", string.Empty, StringComparison.Ordinal)
-            .Trim();
+            .Replace("$", string.Empty, StringComparison.Ordinal);
 
-        return SimpleExponentRegex.Replace(cleaned, match => match.Groups[1].Value.Length == 0 ? string.Empty : ConvertDigitsToSuperscript(match.Groups[1].Value));
+        cleaned = NormalizeLatexCommands(cleaned);
+        cleaned = NormalizeLatexSubscripts(cleaned);
+        cleaned = SimpleExponentRegex.Replace(cleaned, match => match.Groups[1].Value.Length == 0 ? string.Empty : ConvertDigitsToSuperscript(match.Groups[1].Value));
+
+        return cleaned.Trim();
+    }
+
+    private static string NormalizeLatexCommands(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        var index = 0;
+
+        while (index < text.Length)
+        {
+            if (text[index] != '\\')
+            {
+                builder.Append(text[index]);
+                index++;
+                continue;
+            }
+
+            var commandStart = index + 1;
+            var commandLength = 0;
+            while (commandStart + commandLength < text.Length && char.IsLetter(text[commandStart + commandLength]))
+            {
+                commandLength++;
+            }
+
+            if (commandLength == 0)
+            {
+                builder.Append(text[index]);
+                index++;
+                continue;
+            }
+
+            var command = text.Substring(commandStart, commandLength);
+            var afterCommand = commandStart + commandLength;
+
+            if (TryNormalizeGreekCommand(command, out var replacement))
+            {
+                builder.Append(replacement);
+                index = afterCommand;
+                continue;
+            }
+
+            if ((string.Equals(command, "text", StringComparison.Ordinal) || string.Equals(command, "boxed", StringComparison.Ordinal))
+                && afterCommand < text.Length
+                && text[afterCommand] == '{'
+                && TryReadBalancedGroup(text, afterCommand, out var groupContent, out var nextIndex))
+            {
+                var renderedGroup = NormalizeLatexCommands(groupContent).Trim();
+                builder.Append(renderedGroup);
+                index = nextIndex;
+                continue;
+            }
+
+            builder.Append('\\').Append(command);
+            index = afterCommand;
+        }
+
+        return builder.ToString();
+    }
+
+    private static string NormalizeLatexSubscripts(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        var index = 0;
+
+        while (index < text.Length)
+        {
+            if (text[index] != '_')
+            {
+                builder.Append(text[index]);
+                index++;
+                continue;
+            }
+
+            if (index + 1 >= text.Length)
+            {
+                builder.Append('_');
+                break;
+            }
+
+            if (text[index + 1] == '{' && TryReadBalancedGroup(text, index + 1, out var groupContent, out var nextIndex))
+            {
+                var trimmed = groupContent.Trim();
+                if (trimmed.Length > 0 && trimmed.All(char.IsDigit))
+                {
+                    builder.Append(ConvertDigitsToSubscript(trimmed));
+                }
+                else
+                {
+                    builder.Append('_').Append(trimmed);
+                }
+
+                index = nextIndex;
+                continue;
+            }
+
+            if (char.IsDigit(text[index + 1]))
+            {
+                var digitStart = index + 1;
+                var digitLength = 0;
+                while (digitStart + digitLength < text.Length && char.IsDigit(text[digitStart + digitLength]))
+                {
+                    digitLength++;
+                }
+
+                builder.Append(ConvertDigitsToSubscript(text.Substring(digitStart, digitLength)));
+                index = digitStart + digitLength;
+                continue;
+            }
+
+            builder.Append('_');
+            index++;
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool TryReadBalancedGroup(string text, int openBraceIndex, out string content, out int nextIndex)
+    {
+        content = string.Empty;
+        nextIndex = openBraceIndex;
+
+        if (openBraceIndex < 0 || openBraceIndex >= text.Length || text[openBraceIndex] != '{')
+        {
+            return false;
+        }
+
+        var depth = 0;
+        for (var index = openBraceIndex; index < text.Length; index++)
+        {
+            if (text[index] == '{')
+            {
+                depth++;
+                continue;
+            }
+
+            if (text[index] != '}')
+            {
+                continue;
+            }
+
+            depth--;
+            if (depth == 0)
+            {
+                content = text.Substring(openBraceIndex + 1, index - openBraceIndex - 1);
+                nextIndex = index + 1;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryNormalizeGreekCommand(string command, out string replacement)
+    {
+        replacement = command switch
+        {
+            "alpha" => "α",
+            "beta" => "β",
+            "gamma" => "γ",
+            "delta" => "δ",
+            "epsilon" => "ε",
+            "theta" => "θ",
+            "lambda" => "λ",
+            "mu" => "μ",
+            "nu" => "ν",
+            "pi" => "π",
+            "rho" => "ρ",
+            "sigma" => "σ",
+            "tau" => "τ",
+            "phi" => "φ",
+            "omega" => "ω",
+            "Delta" => "Δ",
+            "Omega" => "Ω",
+            "Sigma" => "Σ",
+            "Phi" => "Φ",
+            "Theta" => "Θ",
+            "Pi" => "Π",
+            _ => string.Empty,
+        };
+
+        return replacement.Length > 0;
     }
 
     private static string ConvertDigitsToSuperscript(string digits)
@@ -235,6 +429,30 @@ internal static class RfsTuiMarkdownLiteRenderer
                 '7' => '⁷',
                 '8' => '⁸',
                 '9' => '⁹',
+                _ => digit,
+            });
+        }
+
+        return builder.ToString();
+    }
+
+    private static string ConvertDigitsToSubscript(string digits)
+    {
+        var builder = new StringBuilder(digits.Length);
+        foreach (var digit in digits)
+        {
+            builder.Append(digit switch
+            {
+                '0' => '₀',
+                '1' => '₁',
+                '2' => '₂',
+                '3' => '₃',
+                '4' => '₄',
+                '5' => '₅',
+                '6' => '₆',
+                '7' => '₇',
+                '8' => '₈',
+                '9' => '₉',
                 _ => digit,
             });
         }

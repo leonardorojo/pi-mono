@@ -10,8 +10,8 @@ internal static class RfsTuiMarkdownLiteChecks
 
     private static void RunMarkdownLiteRenderCases(List<string> failures)
     {
-        const string plainInput = "# Teorema\n\n## Demostración\n\n- item uno\n* item dos\n1. paso uno\n2. paso dos\n\n`inline code` y **texto** con a^2 + b^2 = c^2\n\nTexto normal";
-        const string fenceInput = "```csharp\nif (x < y)\n{\n    return \"## no heading, **not bold**, a^2\";\n}\n```";
+        const string plainInput = "# Teorema\n\n## Demostración\n\n- item uno\n* item dos\n1. paso uno\n2. paso dos\n\n`inline code` y **texto** con a^2 + b^2 = c^2\n\np = p_0 + \\rho g h\np_2 = p_0 + \\rho g h_2\nP_{\\text{fluido}} = \\rho V g\n\\boxed{E = P_{\\text{fluido desalojado}}}\n\\text{fluido}\n\nTexto normal";
+        const string fenceInput = "```csharp\nif (x < y)\n{\n    return \"## no heading, **not bold**, a^2, \\rho, p_0, \\text{fluido}, \\boxed{E}\";\n}\n```";
 
         var rendered = RfsTuiMarkdownLiteRenderer.Render(plainInput, useAnsi: false);
         var fencedRendered = RfsTuiMarkdownLiteRenderer.Render(fenceInput, useAnsi: false);
@@ -46,7 +46,32 @@ internal static class RfsTuiMarkdownLiteChecks
             failures.Add("[tui markdown-lite] expected simple exponent notation to normalize to Unicode superscripts.");
         }
 
-        if (!fencedRendered.Contains("```csharp", StringComparison.Ordinal) || !fencedRendered.Contains("## no heading, **not bold**, a^2", StringComparison.Ordinal))
+        if (!rendered.Contains("p = p₀ + ρ g h", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected rho and simple subscript digits to normalize to Unicode.");
+        }
+
+        if (!rendered.Contains("p₂ = p₀ + ρ g h₂", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected multiple subscript digits to normalize to Unicode.");
+        }
+
+        if (!rendered.Contains("P_fluido = ρ V g", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected \text{} content inside subscripts to become plain text.");
+        }
+
+        if (!rendered.Contains("E = P_fluido desalojado", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected boxed LaTeX to collapse to readable text.");
+        }
+
+        if (!rendered.Contains("fluido", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected \text{} to render as plain text.");
+        }
+
+        if (!fencedRendered.Contains("```csharp", StringComparison.Ordinal) || !fencedRendered.Contains("## no heading, **not bold**, a^2, \\rho, p_0, \\text{fluido}, \\boxed{E}", StringComparison.Ordinal))
         {
             failures.Add("[tui markdown-lite] expected code fences to be preserved verbatim.");
         }

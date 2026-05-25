@@ -12,9 +12,11 @@ internal static class RfsTuiMarkdownLiteChecks
     {
         const string plainInput = "# Teorema\n\n## Demostración\n\n- item uno\n* item dos\n1. paso uno\n2. paso dos\n\n`inline code` y **texto** con a^2 + b^2 = c^2\n\np = p_0 + \\rho g h\np_2 = p_0 + \\rho g h_2\nP_{\\text{fluido}} = \\rho V g\n\\boxed{E = P_{\\text{fluido desalojado}}}\n\\text{fluido}\n\\frac{ab}{2}\n4\\cdot \\frac{ab}{2}=2ab\n\nTexto normal";
         const string fenceInput = "```text\n\\frac{ab}{2}\n```";
+        const string diagramInput = "┌─────────────┐\n│ User Prompt │\n└──────┬──────┘\n\n       │\n\n       ▼\n\n┌─────────────┐\n│ Intent A^2   │\n└─────────────┘";
 
         var rendered = RfsTuiMarkdownLiteRenderer.Render(plainInput, useAnsi: false);
         var fencedRendered = RfsTuiMarkdownLiteRenderer.Render(fenceInput, useAnsi: false);
+        var diagramRendered = RfsTuiMarkdownLiteRenderer.Render(diagramInput, useAnsi: false);
 
         if (rendered.Contains("# ", StringComparison.Ordinal) || rendered.Contains("## ", StringComparison.Ordinal))
         {
@@ -74,6 +76,25 @@ internal static class RfsTuiMarkdownLiteChecks
         if (!fencedRendered.Contains("```text", StringComparison.Ordinal) || !fencedRendered.Contains("\\frac{ab}{2}", StringComparison.Ordinal))
         {
             failures.Add("[tui markdown-lite] expected code fences to be preserved verbatim.");
+        }
+
+        if (!diagramRendered.Contains("┌─────────────┐", StringComparison.Ordinal)
+            || !diagramRendered.Contains("│ User Prompt │", StringComparison.Ordinal)
+            || !diagramRendered.Contains("└──────┬──────┘", StringComparison.Ordinal)
+            || !diagramRendered.Contains("│ Intent A^2   │", StringComparison.Ordinal)
+            || !diagramRendered.Contains("└─────────────┘", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected box-drawing diagrams to remain intact.");
+        }
+
+        if (!diagramRendered.Contains("└──────┬──────┘\n\n       │\n\n       ▼\n\n┌─────────────┐", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected blank lines inside the text diagram block to remain intact.");
+        }
+
+        if (diagramRendered.Contains("A²", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected LaTeX-lite to stay out of detected diagram lines.");
         }
 
         if (!rendered.Contains("ab/2", StringComparison.Ordinal))

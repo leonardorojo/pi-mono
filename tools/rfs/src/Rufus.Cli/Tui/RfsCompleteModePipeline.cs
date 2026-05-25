@@ -373,6 +373,17 @@ public static class RfsCompleteModePipeline
         builder.AppendLine("Do not assume file contents unless provided.");
         builder.AppendLine("Respect omissions and materialization policy.");
         builder.AppendLine();
+        builder.AppendLine("Output formatting:");
+        builder.AppendLine("- You may use Markdown.");
+        builder.AppendLine("- The terminal supports Markdown-lite rendering.");
+        builder.AppendLine("- For process, architecture, dependency, pipeline, or state-flow explanations, you may include one compact text diagram using Unicode box-drawing characters.");
+        builder.AppendLine("- Use text diagrams only when they materially improve clarity.");
+        builder.AppendLine("- Do not include diagrams for simple factual answers.");
+        builder.AppendLine("- Prefer small vertical flows over large complex diagrams.");
+        builder.AppendLine("- At most one diagram unless explicitly requested.");
+        builder.AppendLine("- Keep diagrams readable in a terminal.");
+        builder.AppendLine("- Do not use Mermaid unless the user explicitly asks for Mermaid.");
+        builder.AppendLine();
         builder.AppendLine("[VALIDATED CONTEXTPACK SUMMARY]");
         builder.AppendLine(contextSummary);
         builder.AppendLine();

@@ -2749,6 +2749,28 @@ static async Task RunCompleteModePipelineWithIntentLlmCaseAsync(
         {
             failures.Add($"[{name}] expected PromptToSend to be populated.");
         }
+        else
+        {
+            var promptToSend = result.PromptToSend;
+            var expectedPromptFragments = new[]
+            {
+                "Output formatting:",
+                "Markdown-lite rendering",
+                "compact text diagram",
+                "Use text diagrams only when they materially improve clarity.",
+                "Do not include diagrams for simple factual answers.",
+                "At most one diagram unless explicitly requested.",
+                "Do not use Mermaid unless the user explicitly asks for Mermaid.",
+            };
+
+            foreach (var fragment in expectedPromptFragments)
+            {
+                if (!promptToSend.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected PromptToSend to contain '{fragment}' but it was missing.");
+                }
+            }
+        }
 
         if (transport.CallCount != 1)
         {

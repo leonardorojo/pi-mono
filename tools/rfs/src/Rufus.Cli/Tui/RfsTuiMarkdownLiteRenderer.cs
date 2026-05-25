@@ -19,9 +19,12 @@ internal static class RfsTuiMarkdownLiteRenderer
         var lines = normalized.Split('\n', StringSplitOptions.None);
         var output = new StringBuilder(normalized.Length + 32);
         var inCodeFence = false;
+        var inTextDiagram = false;
 
-        foreach (var rawLine in lines)
+        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
+            var rawLine = lines[lineIndex];
+
             if (IsFenceLine(rawLine))
             {
                 inCodeFence = !inCodeFence;
@@ -38,6 +41,24 @@ internal static class RfsTuiMarkdownLiteRenderer
             if (string.IsNullOrWhiteSpace(rawLine))
             {
                 AppendLine(output, string.Empty);
+                continue;
+            }
+
+            if (inTextDiagram && !IsTextDiagramLine(rawLine))
+            {
+                inTextDiagram = false;
+            }
+
+            if (!inTextDiagram && IsTextDiagramLine(rawLine))
+            {
+                inTextDiagram = true;
+                AppendLine(output, rawLine);
+                continue;
+            }
+
+            if (inTextDiagram)
+            {
+                AppendLine(output, rawLine);
                 continue;
             }
 
@@ -157,6 +178,87 @@ internal static class RfsTuiMarkdownLiteRenderer
         var content = RenderInline(trimmed[(dotIndex + 2)..], useAnsi).TrimEnd();
         rendered = new string(' ', Math.Min(indentLength, 2)) + number.ToString(System.Globalization.CultureInfo.InvariantCulture) + ". " + content;
         return true;
+    }
+
+    private static bool IsTextDiagramLine(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return false;
+        }
+
+        if (line.Any(IsBoxDrawingCharacter))
+        {
+            return true;
+        }
+
+        var wordCount = CountWords(line);
+
+        if (ContainsAsciiDiagramMarkers(line, wordCount))
+        {
+            return true;
+        }
+
+        if (!line.Any(IsDiagramArrowCharacter))
+        {
+            return false;
+        }
+
+        return wordCount <= 4;
+    }
+
+    private static bool ContainsAsciiDiagramMarkers(string line, int wordCount)
+    {
+        if (wordCount > 4)
+        {
+            return false;
+        }
+
+        if (line.Contains("->", StringComparison.Ordinal) || line.Contains("<-", StringComparison.Ordinal) || line.Contains("=>", StringComparison.Ordinal) || line.Contains("<=", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var pipeCount = line.Count(character => character == '|');
+        var plusCount = line.Count(character => character == '+');
+        var dashCount = line.Count(character => character == '-');
+
+        if ((plusCount >= 2 && dashCount >= 2) || (pipeCount >= 2 && dashCount >= 2) || pipeCount >= 2)
+        {
+            return true;
+        }
+
+        return pipeCount > 0 && (plusCount > 0 || dashCount >= 2);
+    }
+
+    private static bool IsBoxDrawingCharacter(char character)
+        => (character >= '\u2500' && character <= '\u257F') || character is '\u25B2' or '\u25BC';
+
+    private static bool IsDiagramArrowCharacter(char character)
+        => (character >= '\u2190' && character <= '\u21FF') || character is '\u25B2' or '\u25BC';
+
+    private static int CountWords(string text)
+    {
+        var wordCount = 0;
+        var inWord = false;
+
+        foreach (var character in text)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                if (!inWord)
+                {
+                    wordCount++;
+                    inWord = true;
+                }
+            }
+            else
+            {
+                inWord = false;
+            }
+        }
+
+        return wordCount;
     }
 
     private static string RenderInline(string text, bool useAnsi)

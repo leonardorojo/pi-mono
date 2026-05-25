@@ -15,7 +15,7 @@ Short version:
 - `rfs` with no arguments enters the RFS TUI session, including the live Direct, Simple, Complete, and Plan mode paths.
 - The TUI also shows a live slash-command palette while you type `/`; execution still happens on Enter, slash commands dispatch directly without opening the 1/2/3/4 prompt-mode menu, and redirected input falls back to plain line reading.
 - Inside the TUI, `/model` opens a temporary session-scoped model picker backed by the same available-model source as `rfs model list`; `/model <model>` updates the session model only, and the selection resets to `gpt-5.4-mini` when the TUI exits.
-- Final assistant responses in the TUI use a lightweight Markdown-lite renderer: headings, bullets, simple bold/inline code cleanup, simple `a^2 -> a²` normalization, and a small LaTeX-lite pass for common Greek letters, subscripts, `\text{...}`, and `\boxed{...}` cleanup are supported, but this is not full Markdown or LaTeX rendering.
+- Final assistant responses in the TUI use a lightweight Markdown-lite renderer: headings, bullets, simple bold/inline code cleanup, simple `a^2 -> a²` normalization, a small LaTeX-lite pass for common Greek letters, subscripts, `\text{...}`, and `\boxed{...}` cleanup, and compact text diagrams are preserved verbatim when they help the explanation; this is not full Markdown or LaTeX rendering, and Mermaid is not rendered in this phase.
 - Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`, `rfs intent --llm`.
 
 - LLM experimental proposal pipeline: `rfs trace-slice-proposal-llm "<prompt>"` -> `rfs trace-slice-validate-llm "<prompt>"`.

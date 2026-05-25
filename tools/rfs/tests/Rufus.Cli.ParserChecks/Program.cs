@@ -121,6 +121,7 @@ await RunPiJsonRunnerWorkspaceModelCaseAsync(
 
 PrincipalAnswerAgentContractChecks.Run(failures);
 await PiPrincipalAnswerAgentChecks.RunAsync(failures);
+await PiTraceSliceProposalAgentChecks.RunAsync(failures);
 
 await RunPiIntentInferenceAgentFailureCaseAsync(
     name: "pi intent agent rejects invalid llm json",
@@ -191,7 +192,7 @@ await RunTraceSliceProposalLlmCliCaseAsync(
     failures: failures,
     fixtureMode: "invalid-shape",
     expectSuccess: false,
-    expectedErrorContains: "missing materialization policy field");
+    expectedErrorContains: "invalid JSON from LLM");
 
 await RunTraceSliceProposalLlmCliCaseAsync(
     name: "trace slice proposal llm cli rejects contaminated llm output",
@@ -199,7 +200,7 @@ await RunTraceSliceProposalLlmCliCaseAsync(
     failures: failures,
     fixtureMode: "contaminated",
     expectSuccess: false,
-    expectedErrorContains: "forbidden content");
+    expectedErrorContains: "rationale entries must be objects");
 
 await RunTraceSliceValidateCliCaseAsync(
     name: "trace slice validate cli renders validated trace slice json",
@@ -218,7 +219,7 @@ await RunTraceSliceValidateLlmCliCaseAsync(
     failures: failures,
     fixtureMode: "unsafe-policy",
     expectSuccess: false,
-    expectedErrorContains: "expected restricted materialization policy flags to be false");
+    expectedErrorContains: "restricted materialization policy flags must be false");
 
 await RunRckTraceSliceProposalValidatorCriticalCasesAsync(failures);
 
@@ -273,7 +274,7 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
         "  summary:",
         "  source: pi-intent-inference",
         "[2/5] Building TraceSlice proposal...",
-        "  proposal: deterministic",
+        "  proposal: pi-trace-slice-proposal",
         "  requested selection: 5 states · 5 deltas · 0 anchors",
         "[3/5] Validating proposal...",
         "  validation: accepted",
@@ -2729,9 +2730,9 @@ static async Task RunCompleteModePipelineWithIntentLlmCaseAsync(
             failures.Add($"[{name}] expected IntentSummary to be populated.");
         }
 
-        if (!string.Equals(result.ProposalSource, "trace-slice-planner", StringComparison.Ordinal))
+        if (!string.Equals(result.ProposalSource, "pi-trace-slice-proposal", StringComparison.Ordinal))
         {
-            failures.Add($"[{name}] expected ProposalSource 'trace-slice-planner' but got '{result.ProposalSource}'.");
+            failures.Add($"[{name}] expected ProposalSource 'pi-trace-slice-proposal' but got '{result.ProposalSource}'.");
         }
 
         if (string.IsNullOrWhiteSpace(result.ValidationStatus))

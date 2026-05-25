@@ -64,6 +64,7 @@ The LLM must return only JSON with the proposal shape:
 
 The proposal command is proposal-only.
 RFS remains the authority that validates a proposal into a final TraceSlice.
+The Complete-mode pipeline reuses the same LLM-backed proposal stage at [2/5] with `PiTraceSliceProposalAgent` on `claude-sonnet-4.5`, but validation still remains mandatory and authoritative.
 If `rfs trace-slice-validate-llm` is enabled in the CLI, it must still pass the LLM proposal through `RckTraceSliceProposalValidator` before emitting any final TraceSlice JSON.
 
 ## Non-goals

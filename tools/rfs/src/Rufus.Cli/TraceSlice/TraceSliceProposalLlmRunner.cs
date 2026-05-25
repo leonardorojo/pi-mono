@@ -3,6 +3,7 @@ using System.Text.Json;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.Cli.PiIntegration;
+using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.TraceSlice;
@@ -33,13 +34,6 @@ public static class TraceSliceProposalLlmRunner
                 quickIndexResult.ErrorMessage ?? "rfs trace-slice-proposal-llm: failed to read TraceSliceProposal input.");
         }
 
-        var contextPackResult = RckWorkspaceContextPackReader.Read(currentDirectory);
-        if (!contextPackResult.Success)
-        {
-            return TraceSliceProposalLlmPipelineResult.Failure(
-                contextPackResult.ErrorMessage ?? "rfs trace-slice-proposal-llm: failed to read workspace context.");
-        }
-
         var intentAgent = new IntentInferenceAgent();
         var intentTask = new AgentTask(
             id: $"intent-{Guid.NewGuid():N}",
@@ -60,71 +54,39 @@ public static class TraceSliceProposalLlmRunner
             return TraceSliceProposalLlmPipelineResult.Failure(intentErrorMessage ?? "rfs trace-slice-proposal-llm: failed to project intent result.");
         }
 
-        var requestJson = JsonSerializer.Serialize(new
-        {
-            prompt = new
+        var proposalInput = new TraceSliceProposalAgentInput(
+            normalizedPrompt,
+            proposalIntent,
+            quickIndexResult.DagQuickIndex,
+            new TraceSliceProposalAgentLimits(MaxStates: 5, MaxDeltas: 5),
+            new[]
             {
-                text = normalizedPrompt,
-                isExcerpt = false,
-            },
-            intent = proposalIntent,
-            dagQuickIndex = quickIndexResult.DagQuickIndex,
-            artifactMetadata = contextPackResult.ChangedArtifacts.Select(artifact => new
-            {
-                artifact.Kind,
-                artifact.Path,
-                artifact.ChangeType,
-                artifact.GitStatus,
-                artifact.Source,
-            }),
-            allowedPolicy = new
-            {
-                includeStatePayloads = true,
-                includeDeltaDecodedOps = true,
-                includeArtifactContents = false,
-                includeGitDiffs = false,
-                includeStdoutStderr = false,
-                includeJsonl = false,
-            },
-            rules = new[]
-            {
-                "Return only JSON.",
-                "Return type rufus.trace-slice-proposal.",
-                "Do not invent IDs.",
-                "Do not request artifact contents.",
-                "Do not request git diffs.",
-                "RFS will validate all IDs and policies.",
-            },
-        }, JsonOptions);
+                "Select only ids available in dagQuickIndex.",
+                "Respect maxStates/maxDeltas.",
+                "includeArtifactContents=false.",
+                "includeGitDiffs=false.",
+                "includeStdoutStderr=false.",
+                "includeJsonl=false.",
+                "Return JSON only.",
+                "No markdown fences or extra prose.",
+            });
 
-        var workspaceModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(currentDirectory);
-        var askResult = await PiJsonEventRunner.RunAskAsync(
-            currentDirectory,
-            BuildLlmPrompt(requestJson),
-            workspaceModel,
-            cancellationToken);
+        var proposalAgent = new PiTraceSliceProposalAgent(currentDirectory);
+        var proposalTask = new AgentTask(
+            id: $"trace-slice-proposal-{Guid.NewGuid():N}",
+            kind: "propose-trace-slice",
+            goal: "build an LLM-backed trace slice proposal",
+            input: JsonSerializer.Serialize(proposalInput, JsonOptions),
+            expectedOutput: "TraceSliceProposal JSON");
 
-        if (!askResult.Success || string.IsNullOrWhiteSpace(askResult.Answer))
+        var proposalResult = await proposalAgent.ExecuteAsync(proposalTask, cancellationToken).ConfigureAwait(false);
+        if (proposalResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(proposalResult.Output))
         {
-            return TraceSliceProposalLlmPipelineResult.Failure(
-                askResult.ErrorMessage ?? "rfs trace-slice-proposal-llm: Pi JSON request failed.");
+            var firstError = proposalResult.Errors.FirstOrDefault();
+            return TraceSliceProposalLlmPipelineResult.Failure(firstError ?? "rfs trace-slice-proposal-llm: trace slice proposal agent failed.");
         }
 
-        if (!TryValidateTraceSliceProposalJson(askResult.Answer, out var normalizedProposalJson, out var validationError))
-        {
-            var preview = askResult.Answer.Trim();
-            if (preview.Length > 240)
-            {
-                preview = preview[..240] + "...";
-            }
-
-            return TraceSliceProposalLlmPipelineResult.Failure(
-                string.IsNullOrWhiteSpace(validationError)
-                    ? $"rfs trace-slice-proposal-llm: invalid TraceSliceProposal JSON from LLM. Preview: {preview}"
-                    : $"{validationError} Preview: {preview}");
-        }
-
-        return TraceSliceProposalLlmPipelineResult.SuccessResult(normalizedProposalJson);
+        return TraceSliceProposalLlmPipelineResult.SuccessResult(proposalResult.Output);
     }
 
     public static async Task<RckTraceSliceProposalValidationResult> BuildValidatedAsync(
@@ -176,21 +138,19 @@ public static class TraceSliceProposalLlmRunner
         return builder.ToString();
     }
 
-    private static bool TryBuildTraceSliceProposalIntent(string intentOutputJson, out object intentProjection, out string? errorMessage)
+    private static bool TryBuildTraceSliceProposalIntent(string intentOutputJson, out RckTraceSliceProposalIntentProjection intentProjection, out string? errorMessage)
     {
-        intentProjection = null!;
+        intentProjection = default!;
         errorMessage = null;
 
         try
         {
             using var document = JsonDocument.Parse(intentOutputJson);
             var root = document.RootElement;
-            intentProjection = new
-            {
-                kind = GetRequiredString(root, "Intent"),
-                summary = GetRequiredString(root, "Summary"),
-                source = "intent-inference-agent",
-            };
+            intentProjection = new RckTraceSliceProposalIntentProjection(
+                Kind: GetRequiredString(root, "Intent"),
+                Summary: GetRequiredString(root, "Summary"),
+                Source: "intent-inference-agent");
             return true;
         }
         catch (Exception ex)

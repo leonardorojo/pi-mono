@@ -199,8 +199,9 @@ Characteristics:
 - proposal output is not authoritative
 - validation is authoritative
 - the resulting context is materialized only after validation
-- Complete uses two real LLM calls: LLM-backed intent inference and the final answer
-- TraceSliceProposal, validation, and ContextPack remain deterministic
+- Complete uses three real LLM calls: LLM-backed intent inference, LLM-backed trace-slice proposal, and the final answer
+- Intent runs on `claude-haiku-4.5`; trace-slice proposal runs on `claude-sonnet-4.5`
+- TraceSliceProposal validation and ContextPack remain deterministic
 
 ### 5.4 Mode 4 — Plan
 

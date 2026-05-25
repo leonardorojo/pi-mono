@@ -5,6 +5,7 @@ using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.Agenting.TraceSlice;
 using Rufus.Cli.Intent;
+using Rufus.Cli.TraceSlice;
 using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.Tui;
@@ -28,14 +29,16 @@ public static class RfsCompleteModePipeline
             currentDirectory,
             maxRecentInteractions,
             intentAgent: null,
-            cancellationToken,
-            stageWriter).ConfigureAwait(false);
+            proposalAgent: null,
+            cancellationToken: cancellationToken,
+            stageWriter: stageWriter).ConfigureAwait(false);
 
     public static async Task<RckTraceSliceProposalBuildResult> BuildProposalAsync(
         string prompt,
         string? currentDirectory,
         int maxRecentInteractions,
         IAgent? intentAgent,
+        IAgent? proposalAgent,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
     {
@@ -53,6 +56,7 @@ public static class RfsCompleteModePipeline
         }
 
         intentAgent ??= ResolveIntentAgent(currentDirectory);
+        proposalAgent ??= ResolveProposalAgent(currentDirectory);
 
         stageWriter?.Invoke("[1/5] Inferring intent...");
 
@@ -84,44 +88,55 @@ public static class RfsCompleteModePipeline
         }
 
         stageWriter?.Invoke("[2/5] Building TraceSlice proposal...");
-        if (stageWriter is not null)
-        {
-            RfsTuiRenderer.WriteCompleteStageDetail("proposal", "deterministic");
-            RfsTuiRenderer.WriteCompleteStageDetail("requested selection", "5 states · 5 deltas · 0 anchors");
-        }
 
-        var plannerInputJson = JsonSerializer.Serialize(new
-        {
-            prompt = normalizedPrompt,
-            intent = proposalIntent,
-            dagQuickIndex = quickIndexResult.DagQuickIndex,
-        }, JsonOptions);
+        var proposalInputJson = JsonSerializer.Serialize(new TraceSliceProposalAgentInput(
+            normalizedPrompt,
+            proposalIntent,
+            quickIndexResult.DagQuickIndex,
+            new TraceSliceProposalAgentLimits(MaxStates: maxRecentInteractions, MaxDeltas: maxRecentInteractions),
+            new[]
+            {
+                "Select only ids available in dagQuickIndex.",
+                $"Respect maxStates/maxDeltas = {maxRecentInteractions}.",
+                "includeArtifactContents=false.",
+                "includeGitDiffs=false.",
+                "includeStdoutStderr=false.",
+                "includeJsonl=false.",
+                "Return JSON only.",
+                "No markdown fences or extra prose.",
+            }), JsonOptions);
 
-        var plannerAgent = new TraceSlicePlannerAgent();
-        var plannerTask = new AgentTask(
+        var proposalTask = new AgentTask(
             id: $"trace-slice-proposal-{Guid.NewGuid():N}",
             kind: "propose-trace-slice",
-            goal: "build a deterministic anchor-aware trace slice proposal",
-            input: plannerInputJson,
+            goal: "build an LLM-backed trace slice proposal",
+            input: proposalInputJson,
             expectedOutput: "TraceSliceProposal JSON");
 
-        var plannerResult = await plannerAgent.ExecuteAsync(plannerTask, cancellationToken).ConfigureAwait(false);
-        if (plannerResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(plannerResult.Output))
+        var proposalResult = await proposalAgent.ExecuteAsync(proposalTask, cancellationToken).ConfigureAwait(false);
+        if (proposalResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(proposalResult.Output))
         {
-            var firstError = plannerResult.Errors.FirstOrDefault();
-            return RckTraceSliceProposalBuildResult.Failure(firstError ?? "rfs trace-slice-proposal: trace slice planner failed.");
+            var firstError = proposalResult.Errors.FirstOrDefault();
+            return RckTraceSliceProposalBuildResult.Failure(BuildProposalFailureMessage(firstError));
         }
 
-        var proposalSummary = plannerResult.Summary ?? "TraceSlice proposal generated.";
-        var warnings = MergeDistinct(intentResult.Warnings, plannerResult.Warnings);
+        if (stageWriter is not null)
+        {
+            RfsTuiRenderer.WriteCompleteStageDetail("proposal", proposalAgent.Id);
+            RfsTuiRenderer.WriteCompleteStageDetail("model", proposalResult.ExecutionModel.Model);
+            RfsTuiRenderer.WriteCompleteStageDetail("requested selection", $"{maxRecentInteractions} states · {maxRecentInteractions} deltas · 0 anchors");
+        }
+
+        var proposalSummary = proposalResult.Summary ?? "TraceSlice proposal generated.";
+        var warnings = MergeDistinct(intentResult.Warnings, proposalResult.Warnings);
 
         return RckTraceSliceProposalBuildResult.SuccessResult(
-            proposalJson: plannerResult.Output,
+            proposalJson: proposalResult.Output,
             intentKind: proposalIntent.Kind,
             intentSummary: proposalIntent.Summary,
             intentSource: intentAgent.Id,
             proposalSummary: proposalSummary,
-            proposalSource: plannerAgent.Id,
+            proposalSource: proposalAgent.Id,
             warnings: warnings);
     }
 
@@ -131,7 +146,13 @@ public static class RfsCompleteModePipeline
         int maxRecentInteractions = 5,
         CancellationToken cancellationToken = default)
     {
-        var proposalResult = await BuildProposalAsync(prompt, currentDirectory, maxRecentInteractions, cancellationToken).ConfigureAwait(false);
+        var proposalResult = await BuildProposalAsync(
+            prompt,
+            currentDirectory,
+            maxRecentInteractions,
+            intentAgent: null,
+            proposalAgent: null,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
         {
             return RckTraceSliceProposalValidationResult.Failure(
@@ -147,13 +168,30 @@ public static class RfsCompleteModePipeline
         int maxRecentInteractions = 5,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
-        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, cancellationToken, stageWriter).ConfigureAwait(false);
+        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, proposalAgent: null, cancellationToken: cancellationToken, stageWriter: stageWriter).ConfigureAwait(false);
+
+    public static Task<RfsCompleteModeBuildResult> BuildAsync(
+        string prompt,
+        string? currentDirectory = null,
+        int maxRecentInteractions = 5,
+        IAgent? intentAgent = null,
+        CancellationToken cancellationToken = default,
+        Action<string>? stageWriter = null)
+        => BuildAsync(
+            prompt,
+            currentDirectory,
+            maxRecentInteractions,
+            intentAgent,
+            proposalAgent: null,
+            cancellationToken,
+            stageWriter);
 
     public static async Task<RfsCompleteModeBuildResult> BuildAsync(
         string prompt,
         string? currentDirectory,
         int maxRecentInteractions,
         IAgent? intentAgent,
+        IAgent? proposalAgent,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
     {
@@ -162,7 +200,7 @@ public static class RfsCompleteModePipeline
             return RfsCompleteModeBuildResult.Failure("rfs complete mode requires a prompt.");
         }
 
-        var proposalResult = await BuildProposalAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent, cancellationToken, stageWriter).ConfigureAwait(false);
+        var proposalResult = await BuildProposalAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent, proposalAgent, cancellationToken: cancellationToken, stageWriter: stageWriter).ConfigureAwait(false);
         if (!proposalResult.Success || string.IsNullOrWhiteSpace(proposalResult.ProposalJson))
         {
             return RfsCompleteModeBuildResult.Failure(
@@ -226,6 +264,20 @@ public static class RfsCompleteModePipeline
 
         return new PiIntentInferenceAgent(workingDirectory);
     }
+
+    private static IAgent ResolveProposalAgent(string? currentDirectory)
+    {
+        var workingDirectory = string.IsNullOrWhiteSpace(currentDirectory)
+            ? Directory.GetCurrentDirectory()
+            : currentDirectory;
+
+        return new PiTraceSliceProposalAgent(workingDirectory);
+    }
+
+    private static string BuildProposalFailureMessage(string? detail)
+        => string.IsNullOrWhiteSpace(detail)
+            ? "Complete mode failed while building TraceSlice proposal."
+            : $"Complete mode failed while building TraceSlice proposal. {detail.Trim()}";
 
     private static bool TryBuildTraceSliceProposalIntent(
         string intentOutputJson,

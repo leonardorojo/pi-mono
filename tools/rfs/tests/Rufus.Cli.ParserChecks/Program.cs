@@ -119,6 +119,8 @@ await RunPiJsonRunnerWorkspaceModelCaseAsync(
     expectedModel: "gpt-5.4-mini",
     failures: failures);
 
+PrincipalAnswerAgentContractChecks.Run(failures);
+
 await RunPiIntentInferenceAgentFailureCaseAsync(
     name: "pi intent agent rejects invalid llm json",
     task: new AgentTask(

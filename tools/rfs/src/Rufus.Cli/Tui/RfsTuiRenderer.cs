@@ -157,7 +157,13 @@ internal static class RfsTuiRenderer
             return;
         }
 
-        foreach (var answerLine in answer.Split('\n', StringSplitOptions.None))
+        var rendered = RfsTuiMarkdownLiteRenderer.Render(answer, RfsTuiAnsi.Enabled);
+        if (string.IsNullOrEmpty(rendered))
+        {
+            return;
+        }
+
+        foreach (var answerLine in rendered.Split('\n', StringSplitOptions.None))
         {
             Console.WriteLine(answerLine);
         }

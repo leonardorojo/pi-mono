@@ -235,6 +235,7 @@ await RunContextPackTraceSliceValidatedCliCaseAsync(
 RunRfsTuiModeSelectionParserCases(failures);
 RunRfsTuiCommandSuggestionCases(failures);
 RfsTuiModelPickerChecks.Run(failures);
+RfsTuiMarkdownLiteChecks.Run(failures);
 await RunRfsTuiCommandSuggestionSessionCaseAsync("tui slash suggestions are filtered and unknown commands are rejected", failures);
 
 await RunRckTuiDirectRecordingCaseAsync(

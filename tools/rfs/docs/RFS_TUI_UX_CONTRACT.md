@@ -82,7 +82,7 @@ Model:
 
 Header intent:
 
-The TUI uses a Pi-inspired visual style for hierarchy and spacing, but it is still RFS and not Pi. Color is decorative; `NO_COLOR` should suppress ANSI output when supported. On interactive entry, the screen is cleared once before the header is rendered; redirected runs must not clear.
+The TUI uses a Pi-inspired visual style for hierarchy and spacing, but it is still RFS and not Pi. Color is decorative; `NO_COLOR` should suppress ANSI output when supported. On interactive entry, the screen is cleared once before the header is rendered; redirected runs must not clear. Final assistant responses use a Markdown-lite renderer for readability: headings, bullets, simple bold/inline code cleanup, and basic `a^2 -> a²` normalization are supported, but full Markdown and LaTeX are not.
 
 - show the repo/workspace identity
 - show the active model as the current TUI session model

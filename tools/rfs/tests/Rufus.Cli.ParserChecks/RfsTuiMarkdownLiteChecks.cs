@@ -10,8 +10,8 @@ internal static class RfsTuiMarkdownLiteChecks
 
     private static void RunMarkdownLiteRenderCases(List<string> failures)
     {
-        const string plainInput = "# Teorema\n\n## Demostración\n\n- item uno\n* item dos\n1. paso uno\n2. paso dos\n\n`inline code` y **texto** con a^2 + b^2 = c^2\n\np = p_0 + \\rho g h\np_2 = p_0 + \\rho g h_2\nP_{\\text{fluido}} = \\rho V g\n\\boxed{E = P_{\\text{fluido desalojado}}}\n\\text{fluido}\n\nTexto normal";
-        const string fenceInput = "```csharp\nif (x < y)\n{\n    return \"## no heading, **not bold**, a^2, \\rho, p_0, \\text{fluido}, \\boxed{E}\";\n}\n```";
+        const string plainInput = "# Teorema\n\n## Demostración\n\n- item uno\n* item dos\n1. paso uno\n2. paso dos\n\n`inline code` y **texto** con a^2 + b^2 = c^2\n\np = p_0 + \\rho g h\np_2 = p_0 + \\rho g h_2\nP_{\\text{fluido}} = \\rho V g\n\\boxed{E = P_{\\text{fluido desalojado}}}\n\\text{fluido}\n\\frac{ab}{2}\n4\\cdot \\frac{ab}{2}=2ab\n\nTexto normal";
+        const string fenceInput = "```text\n\\frac{ab}{2}\n```";
 
         var rendered = RfsTuiMarkdownLiteRenderer.Render(plainInput, useAnsi: false);
         var fencedRendered = RfsTuiMarkdownLiteRenderer.Render(fenceInput, useAnsi: false);
@@ -71,9 +71,19 @@ internal static class RfsTuiMarkdownLiteChecks
             failures.Add("[tui markdown-lite] expected \text{} to render as plain text.");
         }
 
-        if (!fencedRendered.Contains("```csharp", StringComparison.Ordinal) || !fencedRendered.Contains("## no heading, **not bold**, a^2, \\rho, p_0, \\text{fluido}, \\boxed{E}", StringComparison.Ordinal))
+        if (!fencedRendered.Contains("```text", StringComparison.Ordinal) || !fencedRendered.Contains("\\frac{ab}{2}", StringComparison.Ordinal))
         {
             failures.Add("[tui markdown-lite] expected code fences to be preserved verbatim.");
+        }
+
+        if (!rendered.Contains("ab/2", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected simple fraction \\frac{ab}{2} to normalize to ab/2.");
+        }
+
+        if (!rendered.Contains("4 · ab/2 = 2ab", StringComparison.Ordinal))
+        {
+            failures.Add("[tui markdown-lite] expected \\cdot and spacing normalization for simple expressions.");
         }
 
         if (!rendered.Contains("Texto normal", StringComparison.Ordinal))

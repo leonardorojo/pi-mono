@@ -218,6 +218,7 @@ internal static class RfsTuiMarkdownLiteRenderer
         cleaned = NormalizeLatexCommands(cleaned);
         cleaned = NormalizeLatexSubscripts(cleaned);
         cleaned = SimpleExponentRegex.Replace(cleaned, match => match.Groups[1].Value.Length == 0 ? string.Empty : ConvertDigitsToSuperscript(match.Groups[1].Value));
+        cleaned = NormalizeSimpleOperatorSpacing(cleaned);
 
         return cleaned.Trim();
     }
@@ -265,14 +266,38 @@ internal static class RfsTuiMarkdownLiteRenderer
                 continue;
             }
 
+            if (string.Equals(command, "cdot", StringComparison.Ordinal))
+            {
+                builder.Append('·');
+                index = afterCommand;
+                continue;
+            }
+
+            if (string.Equals(command, "frac", StringComparison.Ordinal)
+                && afterCommand < text.Length
+                && text[afterCommand] == '{'
+                && TryReadBalancedGroup(text, afterCommand, out var numerator, out var afterNumerator)
+                && afterNumerator < text.Length
+                && text[afterNumerator] == '{'
+                && TryReadBalancedGroup(text, afterNumerator, out var denominator, out var nextIndex))
+            {
+                var renderedNumerator = NormalizeLatexSimple(numerator).Trim();
+                var renderedDenominator = NormalizeLatexSimple(denominator).Trim();
+                builder.Append(renderedNumerator.Length == 0 ? numerator.Trim() : renderedNumerator);
+                builder.Append('/');
+                builder.Append(renderedDenominator.Length == 0 ? denominator.Trim() : renderedDenominator);
+                index = nextIndex;
+                continue;
+            }
+
             if ((string.Equals(command, "text", StringComparison.Ordinal) || string.Equals(command, "boxed", StringComparison.Ordinal))
                 && afterCommand < text.Length
                 && text[afterCommand] == '{'
-                && TryReadBalancedGroup(text, afterCommand, out var groupContent, out var nextIndex))
+                && TryReadBalancedGroup(text, afterCommand, out var groupContent, out var groupNextIndex))
             {
-                var renderedGroup = NormalizeLatexCommands(groupContent).Trim();
+                var renderedGroup = NormalizeLatexSimple(groupContent).Trim();
                 builder.Append(renderedGroup);
-                index = nextIndex;
+                index = groupNextIndex;
                 continue;
             }
 
@@ -343,6 +368,19 @@ internal static class RfsTuiMarkdownLiteRenderer
         }
 
         return builder.ToString();
+    }
+
+    private static string NormalizeSimpleOperatorSpacing(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        return Regex.Replace(
+            text,
+            @"(?<=[\p{L}\p{N}₀-₉⁰-⁹\)])\s*([=+·-])\s*(?=[\p{L}\p{N}₀-₉⁰-⁹\(])",
+            " $1 ");
     }
 
     private static bool TryReadBalancedGroup(string text, int openBraceIndex, out string content, out int nextIndex)

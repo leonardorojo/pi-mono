@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 
 namespace Rufus.Cli.Tui;
@@ -7,12 +8,15 @@ internal static class RfsTuiInputReader
     private const string MoveCursorUpOneLine = "\u001b[1F";
     private const string ClearLine = "\u001b[2K";
     private const char ControlD = '\u0004';
+    private const int RedirectedBurstWindowMs = 24;
+    private const int RedirectedPollSliceMs = 4;
+    private const int LongInputThresholdChars = 1200;
 
     internal static string? ReadLine()
     {
         if (!CanUseLivePalette())
         {
-            return Console.ReadLine();
+            return ReadRedirectedLine();
         }
 
         try
@@ -21,15 +25,15 @@ internal static class RfsTuiInputReader
         }
         catch (InvalidOperationException)
         {
-            return Console.ReadLine();
+            return ReadRedirectedLine();
         }
         catch (IOException)
         {
-            return Console.ReadLine();
+            return ReadRedirectedLine();
         }
         catch (ArgumentOutOfRangeException)
         {
-            return Console.ReadLine();
+            return ReadRedirectedLine();
         }
     }
 
@@ -38,6 +42,61 @@ internal static class RfsTuiInputReader
 
     private static bool CanUseLivePalette()
         => RfsTuiTerminal.UseLivePalette;
+
+    private static string? ReadRedirectedLine()
+    {
+        var firstLine = Console.ReadLine();
+        if (firstLine is null)
+        {
+            return null;
+        }
+
+        if (firstLine.Length >= LongInputThresholdChars)
+        {
+            return firstLine;
+        }
+
+        if (!Console.IsInputRedirected)
+        {
+            return firstLine;
+        }
+
+        if (TryReadRedirectedBurst(firstLine, out var burst))
+        {
+            return burst;
+        }
+
+        return firstLine;
+    }
+
+    private static bool TryReadRedirectedBurst(string firstLine, out string burst)
+    {
+        var lines = new List<string> { firstLine };
+        var sawAdditionalLine = false;
+        var idleWindow = Stopwatch.StartNew();
+
+        while (idleWindow.ElapsedMilliseconds < RedirectedBurstWindowMs)
+        {
+            if (Console.In.Peek() < 0)
+            {
+                Thread.Sleep(RedirectedPollSliceMs);
+                continue;
+            }
+
+            var nextLine = Console.ReadLine();
+            if (nextLine is null)
+            {
+                break;
+            }
+
+            lines.Add(nextLine);
+            sawAdditionalLine = true;
+            idleWindow.Restart();
+        }
+
+        burst = sawAdditionalLine ? string.Join('\n', lines) : firstLine;
+        return sawAdditionalLine;
+    }
 
     private static string? ReadInteractiveLine()
     {

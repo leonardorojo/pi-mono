@@ -816,6 +816,32 @@ internal static class RfsTuiSession
                             }
                         }
                     }
+                case RfsTuiCommandKind.PiRun:
+                    using (var runCancellationSource = new CancellationTokenSource())
+                    using (var runCancellationMonitorSource = new CancellationTokenSource())
+                    {
+                        ActiveCommandCancellationSource = runCancellationSource;
+                        var runCancellationMonitorTask = RfsTuiHermesRunCancellationMonitor.WatchAsync(
+                            runCancellationSource,
+                            cancellationToken: runCancellationMonitorSource.Token);
+
+                        try
+                        {
+                            return await RfsTuiPiRunCommand.ExecuteAsync(status, SessionState, runCancellationSource.Token);
+                        }
+                        finally
+                        {
+                            ActiveCommandCancellationSource = null;
+                            runCancellationMonitorSource.Cancel();
+                            try
+                            {
+                                await runCancellationMonitorTask.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                            }
+                        }
+                    }
                 case RfsTuiCommandKind.Anchor:
                     return HandleAnchorCommand(input, repoRoot);
                 case RfsTuiCommandKind.Help:

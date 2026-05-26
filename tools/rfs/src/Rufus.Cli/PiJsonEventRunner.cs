@@ -13,6 +13,34 @@ public sealed record PiJsonAskResult(
     string? Provider,
     string? Model);
 
+public sealed record PiJsonStreamEvent(
+    string Type,
+    string? Id = null,
+    string? Name = null,
+    string? Text = null,
+    string? Summary = null,
+    string? Details = null,
+    string? Message = null);
+
+public sealed record PiJsonAgentDetailedResult(
+    bool Success,
+    string Task,
+    string Answer,
+    string? ErrorMessage,
+    string? Provider,
+    string? Model,
+    IReadOnlyList<PiJsonEventRunner.PiJsonToolEvent> ToolEvents,
+    string StdErr,
+    int? ExitCode,
+    DateTimeOffset StartedAt,
+    DateTimeOffset FinishedAt,
+    long DurationMs,
+    bool TimedOut,
+    bool Cancelled,
+    bool FailedToStart,
+    string WorkingDirectory,
+    int PromptBytes);
+
 public static class PiJsonEventRunner
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(120);
@@ -182,12 +210,50 @@ public static class PiJsonEventRunner
         string? workspaceModel,
         CancellationToken cancellationToken = default)
     {
+        var detailed = await RunAgentDetailedAsync(workingDirectory, task, workspaceModel, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return new PiJsonAgentResult(
+            detailed.Success,
+            detailed.Task,
+            detailed.Answer,
+            detailed.ErrorMessage,
+            detailed.Provider,
+            detailed.Model,
+            detailed.ToolEvents);
+    }
+
+    public static async Task<PiJsonAgentDetailedResult> RunAgentDetailedAsync(
+        string workingDirectory,
+        string task,
+        string? workspaceModel,
+        Action<PiJsonStreamEvent>? eventReporter = null,
+        CancellationToken cancellationToken = default)
+    {
         var trimmedTask = task.Trim();
+        var startedAt = DateTimeOffset.UtcNow;
         if (string.IsNullOrWhiteSpace(trimmedTask))
         {
-            return new PiJsonAgentResult(false, task, string.Empty, "Missing task.", null, null, Array.Empty<PiJsonToolEvent>());
+            var finishedAt = DateTimeOffset.UtcNow;
+            return new PiJsonAgentDetailedResult(
+                false,
+                task,
+                string.Empty,
+                "Missing task.",
+                null,
+                null,
+                Array.Empty<PiJsonToolEvent>(),
+                string.Empty,
+                null,
+                startedAt,
+                finishedAt,
+                (long)(finishedAt - startedAt).TotalMilliseconds,
+                false,
+                false,
+                false,
+                workingDirectory,
+                0);
         }
 
+        var promptBytes = Encoding.UTF8.GetByteCount(trimmedTask);
         var useStdinPrompt = trimmedTask.Length > StdinPromptThresholdChars;
 
         var startInfo = new ProcessStartInfo
@@ -226,18 +292,54 @@ public static class PiJsonEventRunner
         {
             if (!process.Start())
             {
-                return new PiJsonAgentResult(false, trimmedTask, string.Empty, "Failed to start pi JSON process.", null, null, Array.Empty<PiJsonToolEvent>());
+                var finishedAt = DateTimeOffset.UtcNow;
+                return new PiJsonAgentDetailedResult(
+                    false,
+                    trimmedTask,
+                    string.Empty,
+                    "Failed to start pi JSON process.",
+                    null,
+                    null,
+                    Array.Empty<PiJsonToolEvent>(),
+                    string.Empty,
+                    null,
+                    startedAt,
+                    finishedAt,
+                    (long)(finishedAt - startedAt).TotalMilliseconds,
+                    false,
+                    false,
+                    true,
+                    workingDirectory,
+                    promptBytes);
             }
         }
         catch (Exception ex)
         {
-            return new PiJsonAgentResult(false, trimmedTask, string.Empty, $"Failed to start pi JSON process: {ex.Message}", null, null, Array.Empty<PiJsonToolEvent>());
+            var finishedAt = DateTimeOffset.UtcNow;
+            return new PiJsonAgentDetailedResult(
+                false,
+                trimmedTask,
+                string.Empty,
+                $"Failed to start pi JSON process: {ex.Message}",
+                null,
+                null,
+                Array.Empty<PiJsonToolEvent>(),
+                string.Empty,
+                null,
+                startedAt,
+                finishedAt,
+                (long)(finishedAt - startedAt).TotalMilliseconds,
+                false,
+                false,
+                true,
+                workingDirectory,
+                promptBytes);
         }
 
         if (useStdinPrompt)
         {
-            await process.StandardInput.WriteAsync(trimmedTask);
-            await process.StandardInput.FlushAsync();
+            await process.StandardInput.WriteAsync(trimmedTask).ConfigureAwait(false);
+            await process.StandardInput.FlushAsync().ConfigureAwait(false);
             process.StandardInput.Close();
         }
 
@@ -248,44 +350,170 @@ public static class PiJsonEventRunner
 
         try
         {
-            var parsed = await ReadAgentEventsAsync(process.StandardOutput, timeoutCts.Token);
-            await process.WaitForExitAsync(timeoutCts.Token);
-            var stderrText = await stderrTask;
+            var parsed = await ReadAgentEventsAsync(process.StandardOutput, eventReporter, timeoutCts.Token).ConfigureAwait(false);
+            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            var stderrText = await stderrTask.ConfigureAwait(false);
+            var finishedAt = DateTimeOffset.UtcNow;
 
             if (!parsed.Success)
             {
-                return new PiJsonAgentResult(false, trimmedTask, string.Empty, CombineError(parsed.ErrorMessage, stderrText), parsed.Provider, parsed.Model, parsed.ToolEvents);
+                return new PiJsonAgentDetailedResult(
+                    false,
+                    trimmedTask,
+                    string.Empty,
+                    CombineError(parsed.ErrorMessage, stderrText),
+                    parsed.Provider,
+                    parsed.Model,
+                    parsed.ToolEvents,
+                    stderrText,
+                    process.HasExited ? process.ExitCode : null,
+                    startedAt,
+                    finishedAt,
+                    (long)(finishedAt - startedAt).TotalMilliseconds,
+                    false,
+                    false,
+                    false,
+                    workingDirectory,
+                    promptBytes);
             }
 
             if (process.ExitCode != 0)
             {
-                return new PiJsonAgentResult(false, trimmedTask, string.Empty, CombineError($"pi JSON process exited with code {process.ExitCode}.", stderrText), parsed.Provider, parsed.Model, parsed.ToolEvents);
+                return new PiJsonAgentDetailedResult(
+                    false,
+                    trimmedTask,
+                    string.Empty,
+                    CombineError($"pi JSON process exited with code {process.ExitCode}.", stderrText),
+                    parsed.Provider,
+                    parsed.Model,
+                    parsed.ToolEvents,
+                    stderrText,
+                    process.ExitCode,
+                    startedAt,
+                    finishedAt,
+                    (long)(finishedAt - startedAt).TotalMilliseconds,
+                    false,
+                    false,
+                    false,
+                    workingDirectory,
+                    promptBytes);
             }
 
             if (string.IsNullOrWhiteSpace(parsed.Answer))
             {
-                return new PiJsonAgentResult(false, trimmedTask, string.Empty, CombineError("Pi JSON mode completed without a final assistant answer.", stderrText), parsed.Provider, parsed.Model, parsed.ToolEvents);
+                return new PiJsonAgentDetailedResult(
+                    false,
+                    trimmedTask,
+                    string.Empty,
+                    CombineError("Pi JSON mode completed without a final assistant answer.", stderrText),
+                    parsed.Provider,
+                    parsed.Model,
+                    parsed.ToolEvents,
+                    stderrText,
+                    process.ExitCode,
+                    startedAt,
+                    finishedAt,
+                    (long)(finishedAt - startedAt).TotalMilliseconds,
+                    false,
+                    false,
+                    false,
+                    workingDirectory,
+                    promptBytes);
             }
 
-            return new PiJsonAgentResult(true, trimmedTask, parsed.Answer, null, parsed.Provider, parsed.Model, parsed.ToolEvents);
+            return new PiJsonAgentDetailedResult(
+                true,
+                trimmedTask,
+                parsed.Answer,
+                null,
+                parsed.Provider,
+                parsed.Model,
+                parsed.ToolEvents,
+                stderrText,
+                process.ExitCode,
+                startedAt,
+                finishedAt,
+                (long)(finishedAt - startedAt).TotalMilliseconds,
+                false,
+                false,
+                false,
+                workingDirectory,
+                promptBytes);
         }
         catch (OperationCanceledException)
         {
             TryKill(process);
-            var stderrText = await AwaitStderrAfterKillAsync(stderrTask);
-            return new PiJsonAgentResult(false, trimmedTask, string.Empty, CombineError($"Timed out waiting for Pi JSON response after {DefaultTimeout.TotalSeconds:0} seconds.", stderrText), null, null, Array.Empty<PiJsonToolEvent>());
+            var stderrText = await AwaitStderrAfterKillAsync(stderrTask).ConfigureAwait(false);
+            var finishedAt = DateTimeOffset.UtcNow;
+            var cancelled = cancellationToken.IsCancellationRequested;
+            return new PiJsonAgentDetailedResult(
+                false,
+                trimmedTask,
+                string.Empty,
+                cancelled
+                    ? CombineError("Pi JSON execution was cancelled.", stderrText)
+                    : CombineError($"Timed out waiting for Pi JSON response after {DefaultTimeout.TotalSeconds:0} seconds.", stderrText),
+                null,
+                null,
+                Array.Empty<PiJsonToolEvent>(),
+                stderrText,
+                process.HasExited ? process.ExitCode : null,
+                startedAt,
+                finishedAt,
+                (long)(finishedAt - startedAt).TotalMilliseconds,
+                !cancelled,
+                cancelled,
+                false,
+                workingDirectory,
+                promptBytes);
         }
         catch (JsonException ex)
         {
             TryKill(process);
-            var stderrText = await AwaitStderrAfterKillAsync(stderrTask);
-            return new PiJsonAgentResult(false, trimmedTask, string.Empty, CombineError($"Pi JSON mode returned invalid JSONL: {ex.Message}", stderrText), null, null, Array.Empty<PiJsonToolEvent>());
+            var stderrText = await AwaitStderrAfterKillAsync(stderrTask).ConfigureAwait(false);
+            var finishedAt = DateTimeOffset.UtcNow;
+            return new PiJsonAgentDetailedResult(
+                false,
+                trimmedTask,
+                string.Empty,
+                CombineError($"Pi JSON mode returned invalid JSONL: {ex.Message}", stderrText),
+                null,
+                null,
+                Array.Empty<PiJsonToolEvent>(),
+                stderrText,
+                process.HasExited ? process.ExitCode : null,
+                startedAt,
+                finishedAt,
+                (long)(finishedAt - startedAt).TotalMilliseconds,
+                false,
+                false,
+                false,
+                workingDirectory,
+                promptBytes);
         }
         catch (Exception ex)
         {
             TryKill(process);
-            var stderrText = await AwaitStderrAfterKillAsync(stderrTask);
-            return new PiJsonAgentResult(false, trimmedTask, string.Empty, CombineError($"Pi JSON mode failed: {ex.Message}", stderrText), null, null, Array.Empty<PiJsonToolEvent>());
+            var stderrText = await AwaitStderrAfterKillAsync(stderrTask).ConfigureAwait(false);
+            var finishedAt = DateTimeOffset.UtcNow;
+            return new PiJsonAgentDetailedResult(
+                false,
+                trimmedTask,
+                string.Empty,
+                CombineError($"Pi JSON mode failed: {ex.Message}", stderrText),
+                null,
+                null,
+                Array.Empty<PiJsonToolEvent>(),
+                stderrText,
+                process.HasExited ? process.ExitCode : null,
+                startedAt,
+                finishedAt,
+                (long)(finishedAt - startedAt).TotalMilliseconds,
+                false,
+                false,
+                false,
+                workingDirectory,
+                promptBytes);
         }
     }
 
@@ -383,6 +611,7 @@ public static class PiJsonEventRunner
                             }
                         }
                         break;
+                        break;
 
                     case "turn_end":
                         completionObserved = true;
@@ -396,6 +625,7 @@ public static class PiJsonEventRunner
                             }
                         }
                         break;
+                        break;
 
                     case "agent_end":
                         completionObserved = true;
@@ -403,6 +633,7 @@ public static class PiJsonEventRunner
                         {
                             structuredAnswer = agentEndAnswer;
                         }
+                        break;
                         break;
 
                     case "compaction_end":
@@ -472,24 +703,27 @@ public static class PiJsonEventRunner
         }
     }
 
-    private static void AppendTextDelta(JsonElement eventElement, StringBuilder deltaBuilder)
+    private static string AppendTextDelta(JsonElement eventElement, StringBuilder deltaBuilder)
     {
         if (!eventElement.TryGetProperty("assistantMessageEvent", out var assistantMessageEvent)
             || assistantMessageEvent.ValueKind != JsonValueKind.Object)
         {
-            return;
+            return string.Empty;
         }
 
         if (!string.Equals(GetString(assistantMessageEvent, "type"), "text_delta", StringComparison.Ordinal))
         {
-            return;
+            return string.Empty;
         }
 
         var delta = GetString(assistantMessageEvent, "delta");
         if (!string.IsNullOrEmpty(delta))
         {
             deltaBuilder.Append(delta);
+            return delta;
         }
+
+        return string.Empty;
     }
 
     private static bool TryGetAssistantMessage(JsonElement parent, string propertyName, out JsonElement assistantMessage)
@@ -642,7 +876,7 @@ public static class PiJsonEventRunner
         string? Model,
         IReadOnlyList<PiJsonToolEvent> ToolEvents);
 
-    private static async Task<ParsedPiJsonAgentResult> ReadAgentEventsAsync(StreamReader stdout, CancellationToken cancellationToken)
+    private static async Task<ParsedPiJsonAgentResult> ReadAgentEventsAsync(StreamReader stdout, Action<PiJsonStreamEvent>? eventReporter, CancellationToken cancellationToken)
     {
         var deltaBuilder = new StringBuilder();
         string? structuredAnswer = null;
@@ -736,6 +970,7 @@ public static class PiJsonEventRunner
                             }
                         }
                         break;
+                        break;
 
                     case "turn_end":
                         completionObserved = true;
@@ -749,6 +984,7 @@ public static class PiJsonEventRunner
                             }
                         }
                         break;
+                        break;
 
                     case "agent_end":
                         completionObserved = true;
@@ -756,6 +992,7 @@ public static class PiJsonEventRunner
                         {
                             structuredAnswer = agentEndAnswer;
                         }
+                        break;
                         break;
 
                     case "compaction_end":

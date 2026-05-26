@@ -3565,6 +3565,14 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
         },
         new
         {
+            Input = "/pi",
+            Expected = new[]
+            {
+                (Usage: "/pi run", Description: "Execute Pi using JSON Event Stream"),
+            },
+        },
+        new
+        {
             Input = "/mo",
             Expected = new[]
             {

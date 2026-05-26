@@ -100,6 +100,7 @@ var modelShow = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCom
 var modelSet = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelSet);
 var hermesDraft = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes draft", StringComparison.Ordinal));
 var hermesRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes run", StringComparison.Ordinal));
+var piRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/pi run", StringComparison.Ordinal));
 
 if (modelShow is null || !string.Equals(modelShow.Description, "Open session model picker", StringComparison.Ordinal))
 {
@@ -121,6 +122,11 @@ if (hermesRun is null || !string.Equals(hermesRun.Description, "Execute Hermes o
 failures.Add("[tui model picker] expected /hermes run help text to describe the guarded execution path.");
 }
 
+if (piRun is null || !string.Equals(piRun.Description, "Execute Pi using JSON Event Stream", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /pi run help text to describe the Pi runtime path.");
+}
+
 var exactModel = RfsTuiCommandCatalog.FindExactMatch("/model");
 if (exactModel is null || exactModel.Kind != RfsTuiCommandKind.ModelShow)
 {
@@ -137,6 +143,12 @@ var exactHermesRun = RfsTuiCommandCatalog.FindExactMatch("/hermes run");
 if (exactHermesRun is null || !string.Equals(exactHermesRun.Usage, "/hermes run", StringComparison.Ordinal))
 {
 failures.Add("[tui model picker] expected /hermes run to resolve to the guarded Hermes command.");
+}
+
+var exactPiRun = RfsTuiCommandCatalog.FindExactMatch("/pi run");
+if (exactPiRun is null || !string.Equals(exactPiRun.Usage, "/pi run", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /pi run to resolve to the Pi runtime command.");
 }
 
 var modelSuggestions = RfsTuiCommandCatalog.GetSuggestions("/model");

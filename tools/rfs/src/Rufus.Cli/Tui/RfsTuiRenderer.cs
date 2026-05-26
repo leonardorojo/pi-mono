@@ -109,6 +109,178 @@ internal static class RfsTuiRenderer
         }
     }
 
+    internal static void WritePiRunUnavailable(string message)
+    {
+        WriteWarningLine(message);
+    }
+
+    internal static void WritePiRunPromptSummary(RfsTuiPiPromptDraft draft, string workspaceModel)
+    {
+        WriteSectionTitle("Prompt operativo para Pi:");
+        WriteKeyValue("model", string.IsNullOrWhiteSpace(workspaceModel) ? RfsTuiSessionState.DefaultSessionModel : workspaceModel.Trim());
+        WriteKeyValue("repo root", draft.RepoRoot);
+        WriteKeyValue("branch", draft.Branch);
+        WriteKeyValue("dirty", draft.DirtyState);
+        WriteKeyValue("mode", draft.Mode);
+        WriteKeyValue("prompt", RfsTuiText.TruncateInline(draft.OriginalPrompt));
+        WriteKeyValue("previous answer", RfsTuiText.TruncateInline(draft.PreviousAnswer));
+        if (!string.IsNullOrWhiteSpace(draft.ContextSummary))
+        {
+            WriteKeyValue("context pack", "available");
+            foreach (var line in draft.ContextSummary.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                WriteMutedLine($"  {line}");
+            }
+        }
+        else
+        {
+            WriteKeyValue("context pack", "none");
+        }
+        Console.WriteLine();
+    }
+
+    internal static void WritePiRunStatusLine(string status)
+    {
+        WriteMutedLine($"[Pi run] {status}");
+    }
+
+    internal static void WritePiRunRuntimeEvent(PiJsonStreamEvent runtimeEvent)
+    {
+        if (runtimeEvent is null)
+        {
+            return;
+        }
+
+        var type = runtimeEvent.Type.Trim();
+        if (string.Equals(type, "message_update", StringComparison.Ordinal))
+        {
+            var text = RfsTuiText.TruncateInline(runtimeEvent.Text, 96);
+            if (string.Equals(text, "(none)", StringComparison.Ordinal))
+            {
+                WriteMutedLine("[Pi] text_delta");
+                return;
+            }
+
+            WriteMutedLine($"[Pi] text_delta: {text}");
+            return;
+        }
+
+        if (string.Equals(type, "tool_execution_start", StringComparison.Ordinal))
+        {
+            var toolName = RfsTuiText.TruncateInline(runtimeEvent.Name, 48);
+            var details = RfsTuiText.TruncateInline(runtimeEvent.Details, 80);
+            WriteMutedLine($"[Pi] tool_execution_start: {toolName}{(string.Equals(details, "(none)", StringComparison.Ordinal) ? string.Empty : $" · {details}")}");
+            return;
+        }
+
+        if (string.Equals(type, "tool_execution_end", StringComparison.Ordinal))
+        {
+            var toolName = RfsTuiText.TruncateInline(runtimeEvent.Name, 48);
+            var summary = RfsTuiText.TruncateInline(runtimeEvent.Summary, 80);
+            WriteMutedLine($"[Pi] tool_execution_end: {toolName}{(string.Equals(summary, "(none)", StringComparison.Ordinal) ? string.Empty : $" · {summary}")}");
+            return;
+        }
+
+        if (string.Equals(type, "message_end", StringComparison.Ordinal) ||
+            string.Equals(type, "turn_end", StringComparison.Ordinal) ||
+            string.Equals(type, "agent_end", StringComparison.Ordinal))
+        {
+            WriteMutedLine($"[Pi] {type}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(runtimeEvent.Message))
+        {
+            WriteMutedLine($"[Pi] {type}: {RfsTuiText.TruncateInline(runtimeEvent.Message, 96)}");
+            return;
+        }
+
+        WriteMutedLine($"[Pi] {type}");
+    }
+
+    internal static void WritePiRunResult(RfsTuiPiRunResult result)
+    {
+        WriteSectionTitle("[Pi run]");
+        WriteKeyValue("health", FormatPiRunHealth(result.Health));
+        WriteKeyValue("cwd", result.WorkingDirectory);
+        WriteKeyValue("duration", $"{result.DurationMs.ToString(CultureInfo.InvariantCulture)} ms");
+        WriteKeyValue("exit code", result.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "(n/a)");
+        WriteKeyValue("timed out", result.TimedOut ? "yes" : "no");
+        WriteKeyValue("cancelled", result.Cancelled ? "yes" : "no");
+        WriteKeyValue("failed to start", result.FailedToStart ? "yes" : "no");
+        WriteKeyValue("prompt bytes", result.PromptBytes.ToString("N0", CultureInfo.InvariantCulture));
+        if (!string.IsNullOrWhiteSpace(result.Provider))
+        {
+            WriteKeyValue("provider", result.Provider);
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Model))
+        {
+            WriteKeyValue("model", result.Model);
+        }
+
+        WritePiRunOutcomeMessage(result.Health);
+
+        Console.WriteLine();
+        WriteSectionTitle("Pi response:");
+        WriteDivider("────────────────");
+        if (string.IsNullOrWhiteSpace(result.Stdout))
+        {
+            WriteMutedLine("(no stdout)");
+        }
+        else
+        {
+            Console.WriteLine(result.Stdout.TrimEnd());
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Stderr))
+        {
+            Console.WriteLine();
+            WriteSectionTitle("Pi stderr:");
+            WriteDivider("────────────");
+            Console.WriteLine(result.Stderr.TrimEnd());
+        }
+    }
+
+    private static string FormatPiRunHealth(RfsTuiPiRunHealth health)
+        => health switch
+        {
+            RfsTuiPiRunHealth.Starting => "starting",
+            RfsTuiPiRunHealth.Running => "running",
+            RfsTuiPiRunHealth.LongRunning => "long-running",
+            RfsTuiPiRunHealth.TimedOut => "timed out",
+            RfsTuiPiRunHealth.Cancelled => "cancelled",
+            RfsTuiPiRunHealth.FailedToStart => "failed to start",
+            RfsTuiPiRunHealth.ExitedWithError => "exited with error",
+            RfsTuiPiRunHealth.Completed => "completed",
+            _ => health.ToString().ToLowerInvariant(),
+        };
+
+    private static void WritePiRunOutcomeMessage(RfsTuiPiRunHealth health)
+    {
+        switch (health)
+        {
+            case RfsTuiPiRunHealth.Completed:
+                WriteSuccessLine("Pi run completed.");
+                break;
+            case RfsTuiPiRunHealth.Cancelled:
+                WriteWarningLine("Pi run was cancelled by user.");
+                break;
+            case RfsTuiPiRunHealth.TimedOut:
+                WriteWarningLine("Pi run timed out before a final response arrived.");
+                break;
+            case RfsTuiPiRunHealth.FailedToStart:
+                WriteWarningLine("Pi run failed to start.");
+                break;
+            case RfsTuiPiRunHealth.ExitedWithError:
+                WriteWarningLine("Pi run exited with error.");
+                break;
+        }
+    }
+
+    internal static void WriteHermesRunHeartbeat(RfsTuiHermesRunProgress progress)
+        => WriteMutedLine(FormatHermesRunHeartbeat(progress, RfsTuiTerminal.IsInteractive));
+
     internal static void WriteSimpleContextSummary(RfsTuiSimpleContextSummary summary)
     {
         WriteSectionTitle("Context:");
@@ -418,9 +590,6 @@ internal static class RfsTuiRenderer
             Console.WriteLine(FormatGitStatus(result.GitStatusAfter));
         }
     }
-
-    internal static void WriteHermesRunHeartbeat(RfsTuiHermesRunProgress progress)
-        => WriteMutedLine(FormatHermesRunHeartbeat(progress, RfsTuiTerminal.IsInteractive));
 
     internal static string FormatHermesRunHeartbeat(RfsTuiHermesRunProgress progress, bool showCancelHint)
     {

@@ -14,6 +14,7 @@ internal enum RfsTuiCommandKind
     Hermes,
     HermesDraft,
     HermesRun,
+    PiRun,
     Anchor,
     Help,
     Exit,
@@ -131,6 +132,7 @@ internal static class RfsTuiCommandCatalog
         new(RfsTuiCommandKind.Help, "/help", "/help", "Show this help"),
         new(RfsTuiCommandKind.HermesDraft, "/hermes draft", "/hermes draft", "Build Hermes handoff draft", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.HermesRun, "/hermes run", "/hermes run", "Execute Hermes once with guardrails", RfsTuiCommandMatchMode.ExactOrArguments),
+        new(RfsTuiCommandKind.PiRun, "/pi run", "/pi run", "Execute Pi using JSON Event Stream", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.Exit, "/exit", "/exit", "Exit RFS", RfsTuiCommandMatchMode.Exact, ["exit"]),
     ];
 

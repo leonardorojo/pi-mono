@@ -4887,17 +4887,24 @@ static async Task RunRfsTuiPasteCaptureSessionCaseAsync(
         var pasteDirectory = Path.Combine(tempRoot, ".rfs", "tmp", "pastes");
         if (expectTempPasteFile)
         {
-            var pasteFile = Directory.GetFiles(pasteDirectory, "*_paste.md", SearchOption.TopDirectoryOnly);
-            if (pasteFile.Length != 1)
+            if (!Directory.Exists(pasteDirectory))
             {
-                failures.Add($"[{name}] expected exactly one temp paste file but found {pasteFile.Length}.");
+                failures.Add($"[{name}] expected temp paste directory '{pasteDirectory}' to exist.");
             }
             else
             {
-                var pasteContent = File.ReadAllText(pasteFile[0]);
-                if (!pasteContent.Contains("paste line 1", StringComparison.Ordinal) || !pasteContent.Contains("paste line 2", StringComparison.Ordinal))
+                var pasteFile = Directory.GetFiles(pasteDirectory, "*_paste.md", SearchOption.TopDirectoryOnly);
+                if (pasteFile.Length != 1)
                 {
-                    failures.Add($"[{name}] expected paste file to contain captured lines.");
+                    failures.Add($"[{name}] expected exactly one temp paste file but found {pasteFile.Length}.");
+                }
+                else
+                {
+                    var pasteContent = File.ReadAllText(pasteFile[0]);
+                    if (!pasteContent.Contains("paste line 1", StringComparison.Ordinal) || !pasteContent.Contains("paste line 2", StringComparison.Ordinal))
+                    {
+                        failures.Add($"[{name}] expected paste file to contain captured lines.");
+                    }
                 }
             }
         }

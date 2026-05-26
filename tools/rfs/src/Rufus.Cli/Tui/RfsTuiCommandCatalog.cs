@@ -129,9 +129,8 @@ internal static class RfsTuiCommandCatalog
         new(RfsTuiCommandKind.Trace, "/trace", "/trace", "Show last TraceSlice summary"),
         new(RfsTuiCommandKind.Anchor, "/anchor", "/anchor \"name\"", "Create milestone anchor", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.Help, "/help", "/help", "Show this help"),
-        new(RfsTuiCommandKind.Hermes, "/hermes", "/hermes", "Show Hermes usage"),
         new(RfsTuiCommandKind.HermesDraft, "/hermes draft", "/hermes draft", "Build Hermes handoff draft", RfsTuiCommandMatchMode.ExactOrArguments),
-        new(RfsTuiCommandKind.HermesRun, "/hermes run", "/hermes run", "Build Hermes handoff draft and run Hermes", RfsTuiCommandMatchMode.ExactOrArguments),
+        new(RfsTuiCommandKind.HermesRun, "/hermes run", "/hermes run", "Execute Hermes once with guardrails", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.Exit, "/exit", "/exit", "Exit RFS", RfsTuiCommandMatchMode.Exact, ["exit"]),
     ];
 

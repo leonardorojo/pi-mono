@@ -3559,9 +3559,8 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
             Expected = new[]
             {
                 (Usage: "/help", Description: "Show this help"),
-                (Usage: "/hermes", Description: "Show Hermes usage"),
                 (Usage: "/hermes draft", Description: "Build Hermes handoff draft"),
-                (Usage: "/hermes run", Description: "Build Hermes handoff draft and run Hermes"),
+                (Usage: "/hermes run", Description: "Execute Hermes once with guardrails"),
             },
         },
         new
@@ -3737,7 +3736,6 @@ static async Task RunRfsTuiCommandSuggestionSessionCaseAsync(string name, List<s
             "/model <model>",
             "/context",
             "/trace",
-            "/hermes",
             "/hermes draft",
             "/hermes run",
             "Unknown command: /xyz",

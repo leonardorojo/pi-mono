@@ -310,13 +310,6 @@ internal static class RfsTuiRenderer
         WriteWarningLine(message);
     }
 
-    internal static void WriteHermesUsage()
-    {
-        WriteSectionTitle("Usage:");
-        WriteCommandLine("/hermes draft", "Generate a Hermes handoff draft");
-        WriteCommandLine("/hermes run", "Execute Hermes once with guardrails");
-    }
-
     internal static void WriteHermesHandoffDraft(RfsTuiHermesHandoffDraft draft)
     {
         WriteSectionTitle("Hermes handoff draft");

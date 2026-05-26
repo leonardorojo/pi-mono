@@ -740,13 +740,17 @@ internal static class RfsTuiSession
         RfsTuiRenderer.WriteHermesHandoffDraft(draftResult.Draft!);
     }
 
-    private static void RenderHermesUsage()
-        => RfsTuiRenderer.WriteHermesUsage();
-
     private static async Task<bool> TryHandleTopLevelCommandAsync(string input, string repoRoot, RckWorkspaceStatus status)
     {
         if (input.StartsWith("/", StringComparison.Ordinal))
         {
+            if (string.Equals(input, "/hermes", StringComparison.Ordinal))
+            {
+                RfsTuiRenderer.WriteUnknownCommand(input);
+                Console.WriteLine("Did you mean /hermes draft or /hermes run?");
+                return true;
+            }
+
             var exactCommand = RfsTuiCommandCatalog.FindExactMatch(input);
             if (exactCommand is null)
             {
@@ -780,9 +784,6 @@ internal static class RfsTuiSession
                     return true;
                 case RfsTuiCommandKind.Trace:
                     RenderTrace();
-                    return true;
-                case RfsTuiCommandKind.Hermes:
-                    RenderHermesUsage();
                     return true;
                 case RfsTuiCommandKind.HermesDraft:
                     RenderHermesDraft(status);

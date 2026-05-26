@@ -96,7 +96,6 @@ private static void RunCommandCatalogCases(List<string> failures)
 var helpCommands = RfsTuiCommandCatalog.GetHelpCommands();
 var modelShow = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelShow);
 var modelSet = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelSet);
-var hermes = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes", StringComparison.Ordinal));
 var hermesDraft = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes draft", StringComparison.Ordinal));
 var hermesRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes run", StringComparison.Ordinal));
 
@@ -110,17 +109,12 @@ if (modelSet is null || !string.Equals(modelSet.Description, "Set session model 
 failures.Add("[tui model picker] expected /model <model> help text to describe temporary session updates.");
 }
 
-if (hermes is null || !string.Equals(hermes.Description, "Show Hermes usage", StringComparison.Ordinal))
-{
-failures.Add("[tui model picker] expected /hermes help text to describe the base usage screen.");
-}
-
 if (hermesDraft is null || !string.Equals(hermesDraft.Description, "Build Hermes handoff draft", StringComparison.Ordinal))
 {
 failures.Add("[tui model picker] expected /hermes draft help text to describe the draft path.");
 }
 
-if (hermesRun is null || !string.Equals(hermesRun.Description, "Build Hermes handoff draft and run Hermes", StringComparison.Ordinal))
+if (hermesRun is null || !string.Equals(hermesRun.Description, "Execute Hermes once with guardrails", StringComparison.Ordinal))
 {
 failures.Add("[tui model picker] expected /hermes run help text to describe the guarded execution path.");
 }
@@ -129,12 +123,6 @@ var exactModel = RfsTuiCommandCatalog.FindExactMatch("/model");
 if (exactModel is null || exactModel.Kind != RfsTuiCommandKind.ModelShow)
 {
 failures.Add("[tui model picker] expected /model to resolve to the picker command.");
-}
-
-var exactHermes = RfsTuiCommandCatalog.FindExactMatch("/hermes");
-if (exactHermes is null || !string.Equals(exactHermes.Usage, "/hermes", StringComparison.Ordinal))
-{
-failures.Add("[tui model picker] expected /hermes to resolve to the Hermes usage command.");
 }
 
 var exactHermesDraft = RfsTuiCommandCatalog.FindExactMatch("/hermes draft");

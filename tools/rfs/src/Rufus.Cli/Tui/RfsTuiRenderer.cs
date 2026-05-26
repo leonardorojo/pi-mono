@@ -348,6 +348,7 @@ internal static class RfsTuiRenderer
     internal static void WriteHermesRunResult(RfsTuiHermesRunResult result)
     {
         WriteSectionTitle("[Hermes run]");
+        WriteKeyValue("health", FormatHermesRunHealth(result.Health));
         WriteKeyValue("transport", "cli-oneshot");
         WriteKeyValue("cwd", result.WorkingDirectory);
         WriteKeyValue("duration", $"{result.DurationMs.ToString(CultureInfo.InvariantCulture)} ms");
@@ -356,19 +357,30 @@ internal static class RfsTuiRenderer
         WriteKeyValue("Git changed", result.DirtyStateChanged ? "yes" : "no");
         WriteKeyValue("prompt bytes", result.PromptBytes.ToString("N0", CultureInfo.InvariantCulture));
 
-        if (result.TimedOut)
-        {
-            Console.WriteLine();
-            WriteWarningLine("Hermes run timed out.");
-        }
+        WriteHermesRunOutcomeMessage(result.Health);
 
         Console.WriteLine();
-        WriteSectionTitle("Hermes response:");
+        if (result.Health is RfsTuiHermesRunHealth.Cancelled or RfsTuiHermesRunHealth.TimedOut)
+        {
+            WriteSectionTitle("Partial Hermes output:");
+        }
+        else
+        {
+            WriteSectionTitle("Hermes response:");
+        }
+
         WriteDivider("────────────────");
 
         if (string.IsNullOrWhiteSpace(result.Stdout))
         {
-            WriteMutedLine("(no stdout)");
+            if (result.Health is RfsTuiHermesRunHealth.Cancelled or RfsTuiHermesRunHealth.TimedOut)
+            {
+                WriteMutedLine("No partial Hermes output was available.");
+            }
+            else
+            {
+                WriteMutedLine("(no stdout)");
+            }
         }
         else
         {
@@ -378,7 +390,7 @@ internal static class RfsTuiRenderer
         if (!string.IsNullOrWhiteSpace(result.Stderr))
         {
             Console.WriteLine();
-            WriteSectionTitle("Hermes stderr:");
+            WriteSectionTitle(result.Health is RfsTuiHermesRunHealth.Cancelled or RfsTuiHermesRunHealth.TimedOut ? "Partial Hermes stderr:" : "Hermes stderr:");
             WriteDivider("──────────────");
             Console.WriteLine(result.Stderr.TrimEnd());
         }
@@ -403,9 +415,55 @@ internal static class RfsTuiRenderer
         var timeout = FormatSeconds(progress.Timeout);
         var remaining = FormatSeconds(progress.Remaining);
         var pidLabel = progress.ProcessId is null ? string.Empty : $" · pid: {progress.ProcessId}";
+        var statusLabel = progress.Elapsed >= TimeSpan.FromSeconds(240)
+            ? "close to timeout."
+            : progress.Elapsed >= TimeSpan.FromSeconds(120)
+                ? "still waiting for final response; cli-oneshot is final-only."
+                : progress.Elapsed >= TimeSpan.FromSeconds(60)
+                    ? "taking longer than usual."
+                    : "still running...";
+        var cancelHint = progress.Elapsed >= TimeSpan.FromSeconds(60)
+            ? " · press Ctrl+C to cancel."
+            : string.Empty;
 
-        return $"[Hermes run] still running... elapsed: {elapsed} / {timeout} · remaining: {remaining} · cwd: {progress.WorkingDirectory} · prompt bytes: {progress.PromptBytes.ToString("N0", CultureInfo.InvariantCulture)} · transport: {progress.Transport}{pidLabel} · waiting for final response...";
+        return $"[Hermes run] {statusLabel} elapsed: {elapsed} / {timeout} · remaining: {remaining} · cwd: {progress.WorkingDirectory} · prompt bytes: {progress.PromptBytes.ToString("N0", CultureInfo.InvariantCulture)} · transport: {progress.Transport}{pidLabel}{cancelHint}";
     }
+
+    private static void WriteHermesRunOutcomeMessage(RfsTuiHermesRunHealth health)
+    {
+        switch (health)
+        {
+            case RfsTuiHermesRunHealth.Cancelled:
+                Console.WriteLine();
+                WriteWarningLine("Hermes run cancelled.");
+                WriteMutedLine("The cli-oneshot transport is final-only, so a partial answer may not be available.");
+                break;
+            case RfsTuiHermesRunHealth.TimedOut:
+                Console.WriteLine();
+                WriteWarningLine("Hermes run timed out before a final response arrived.");
+                WriteMutedLine("The cli-oneshot transport is final-only, so a partial answer may not be available.");
+                break;
+            case RfsTuiHermesRunHealth.FailedToStart:
+                Console.WriteLine();
+                WriteWarningLine("Hermes run failed to start.");
+                break;
+            case RfsTuiHermesRunHealth.ExitedWithError:
+                Console.WriteLine();
+                WriteWarningLine("Hermes run exited with error.");
+                break;
+            case RfsTuiHermesRunHealth.Completed:
+                Console.WriteLine();
+                WriteSuccessLine("Hermes run completed.");
+                break;
+            default:
+                Console.WriteLine();
+                WriteMutedLine($"Hermes run health: {FormatHermesRunHealth(health)}.");
+                break;
+        }
+    }
+
+    private static string FormatHermesRunHealth(RfsTuiHermesRunHealth health)
+        => health.ToString().ToLowerInvariant();
 
     private static string FormatGitStatus(string? status)
         => string.IsNullOrWhiteSpace(status) ? "(clean)" : status.TrimEnd();

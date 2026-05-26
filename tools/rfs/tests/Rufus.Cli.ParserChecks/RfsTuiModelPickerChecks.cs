@@ -13,6 +13,7 @@ RunModelSelectionStateCases(failures);
 RunRendererAndPrincipalModelCases(failures);
 RunHermesDraftCases(failures);
 RunHermesRunCases(failures);
+RunHermesHealthCases(failures);
 RunCommandCatalogCases(failures);
 }
 
@@ -438,7 +439,6 @@ var requiredHeartbeatFragments = new[]
     "cwd: /tmp/rfs",
     $"prompt bytes: {Encoding.UTF8.GetByteCount(expectedPrompt).ToString("N0", CultureInfo.InvariantCulture)}",
     "transport: cli-oneshot",
-    "waiting for final response...",
 };
 
 foreach (var fragment in requiredHeartbeatFragments)
@@ -467,6 +467,8 @@ foreach (var fragment in forbiddenHeartbeatFragments)
 
 var runOutput = runCapture.ToString();
         if (!runOutput.Contains("[Hermes run]", StringComparison.Ordinal) ||
+            !runOutput.Contains("health: completed", StringComparison.Ordinal) ||
+            !runOutput.Contains("Hermes run completed.", StringComparison.Ordinal) ||
             !runOutput.Contains("transport: cli-oneshot", StringComparison.Ordinal) ||
             !runOutput.Contains("Git changed: no", StringComparison.Ordinal) ||
             !runOutput.Contains("Hermes response:", StringComparison.Ordinal) ||
@@ -476,67 +478,250 @@ failures.Add("[tui model picker] expected /hermes run to render guarded executio
 }
 }
 
+private static void RunHermesHealthCases(List<string> failures)
+{
+var runningProgress = new RfsTuiHermesRunProgress(
+WorkingDirectory: "/tmp/rfs",
+Elapsed: TimeSpan.FromSeconds(10),
+Remaining: TimeSpan.FromSeconds(290),
+Timeout: RfsTuiHermesRunOptions.DefaultTimeout,
+PromptBytes: 1234,
+Transport: "cli-oneshot",
+ProcessId: 4242);
+if (runningProgress.Health != RfsTuiHermesRunHealth.Running)
+{
+    failures.Add("[tui model picker] expected short Hermes runs to remain in Running health.");
+}
+
+var longRunningProgress = runningProgress with { Elapsed = TimeSpan.FromSeconds(70), Remaining = TimeSpan.FromSeconds(230), Health = RfsTuiHermesRunHealth.LongRunning };
+if (longRunningProgress.Health != RfsTuiHermesRunHealth.LongRunning)
+{
+    failures.Add("[tui model picker] expected 70s Hermes runs to switch to LongRunning health.");
+}
+
+var longRunningHeartbeat = RfsTuiRenderer.FormatHermesRunHeartbeat(longRunningProgress);
+foreach (var fragment in new[]
+{
+    "[Hermes run] taking longer than usual.",
+    "elapsed: 70s / 300s",
+    "remaining: 230s",
+    "transport: cli-oneshot",
+    "press Ctrl+C to cancel.",
+})
+{
+    if (!longRunningHeartbeat.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected long-running Hermes heartbeat to include '{fragment}'.");
+    }
+}
+
+var waitingHeartbeat = longRunningProgress with { Elapsed = TimeSpan.FromSeconds(130), Remaining = TimeSpan.FromSeconds(170) };
+var waitingHeartbeatText = RfsTuiRenderer.FormatHermesRunHeartbeat(waitingHeartbeat);
+foreach (var fragment in new[]
+{
+    "[Hermes run] still waiting for final response; cli-oneshot is final-only.",
+    "elapsed: 130s / 300s",
+    "press Ctrl+C to cancel.",
+})
+{
+    if (!waitingHeartbeatText.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected mid-run Hermes heartbeat to include '{fragment}'.");
+    }
+}
+
+var timeoutHeartbeat = longRunningProgress with { Elapsed = TimeSpan.FromSeconds(250), Remaining = TimeSpan.FromSeconds(50) };
+var timeoutHeartbeatText = RfsTuiRenderer.FormatHermesRunHeartbeat(timeoutHeartbeat);
+foreach (var fragment in new[]
+{
+    "[Hermes run] close to timeout.",
+    "elapsed: 250s / 300s",
+    "remaining: 50s",
+    "press Ctrl+C to cancel.",
+})
+{
+    if (!timeoutHeartbeatText.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected near-timeout Hermes heartbeat to include '{fragment}'.");
+    }
+}
+
+var originalOut = Console.Out;
+string CaptureOutput(Action action)
+{
+    using var output = new StringWriter();
+    try
+    {
+        Console.SetOut(output);
+        action();
+    }
+    finally
+    {
+        Console.SetOut(originalOut);
+    }
+
+    return output.ToString();
+}
+
+var cancelledOutput = CaptureOutput(() =>
+{
+    RfsTuiRenderer.WriteHermesRunResult(new RfsTuiHermesRunResult(
+        Stdout: "partial stdout",
+        Stderr: "partial stderr",
+        ExitCode: null,
+        StartedAt: DateTimeOffset.UtcNow,
+        FinishedAt: DateTimeOffset.UtcNow,
+        DurationMs: 456,
+        TimedOut: false,
+        WorkingDirectory: "/tmp/rfs",
+        GitStatusBefore: string.Empty,
+        GitStatusAfter: string.Empty,
+        DirtyStateChanged: false,
+        PromptBytes: 1234,
+        Health: RfsTuiHermesRunHealth.Cancelled));
+});
+
+foreach (var fragment in new[]
+{
+    "health: cancelled",
+    "Hermes run cancelled.",
+    "The cli-oneshot transport is final-only, so a partial answer may not be available.",
+    "Partial Hermes output:",
+    "partial stdout",
+    "Partial Hermes stderr:",
+    "partial stderr",
+})
+{
+    if (!cancelledOutput.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected cancelled Hermes output to include '{fragment}'.");
+    }
+}
+
+var timedOutOutput = CaptureOutput(() =>
+{
+    RfsTuiRenderer.WriteHermesRunResult(new RfsTuiHermesRunResult(
+        Stdout: string.Empty,
+        Stderr: string.Empty,
+        ExitCode: null,
+        StartedAt: DateTimeOffset.UtcNow,
+        FinishedAt: DateTimeOffset.UtcNow,
+        DurationMs: 456,
+        TimedOut: true,
+        WorkingDirectory: "/tmp/rfs",
+        GitStatusBefore: string.Empty,
+        GitStatusAfter: string.Empty,
+        DirtyStateChanged: false,
+        PromptBytes: 1234,
+        Health: RfsTuiHermesRunHealth.TimedOut));
+});
+
+foreach (var fragment in new[]
+{
+    "health: timedout",
+    "Hermes run timed out before a final response arrived.",
+    "No partial Hermes output was available.",
+})
+{
+    if (!timedOutOutput.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected timed-out Hermes output to include '{fragment}'.");
+    }
+}
+
+var failedStartOutput = CaptureOutput(() =>
+{
+    RfsTuiRenderer.WriteHermesRunResult(new RfsTuiHermesRunResult(
+        Stdout: string.Empty,
+        Stderr: "hermes: not found",
+        ExitCode: null,
+        StartedAt: DateTimeOffset.UtcNow,
+        FinishedAt: DateTimeOffset.UtcNow,
+        DurationMs: 1,
+        TimedOut: false,
+        WorkingDirectory: "/tmp/rfs",
+        GitStatusBefore: string.Empty,
+        GitStatusAfter: string.Empty,
+        DirtyStateChanged: false,
+        PromptBytes: 1234,
+        Health: RfsTuiHermesRunHealth.FailedToStart));
+});
+
+foreach (var fragment in new[]
+{
+    "health: failedtostart",
+    "Hermes run failed to start.",
+    "Hermes stderr:",
+    "hermes: not found",
+})
+{
+    if (!failedStartOutput.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected failed-start Hermes output to include '{fragment}'.");
+    }
+}
+}
+
 private sealed class FakeHermesRunner : IRfsTuiHermesRunner
 {
-public int CaptureGitStatusCalls { get; private set; }
+    public int CaptureGitStatusCalls { get; private set; }
 
-public int RunCalls { get; private set; }
+    public int RunCalls { get; private set; }
 
-public string GitStatusBefore { get; init; } = string.Empty;
+    public string GitStatusBefore { get; init; } = string.Empty;
 
-public string GitStatusAfter { get; init; } = string.Empty;
+    public string GitStatusAfter { get; init; } = string.Empty;
 
-public RfsTuiHermesRunResult RunResult { get; init; } = new(
-Stdout: string.Empty,
-Stderr: string.Empty,
-ExitCode: 0,
-StartedAt: DateTimeOffset.UtcNow,
-FinishedAt: DateTimeOffset.UtcNow,
-DurationMs: 0,
-TimedOut: false,
-WorkingDirectory: string.Empty,
-GitStatusBefore: string.Empty,
-GitStatusAfter: string.Empty,
-DirtyStateChanged: false,
-PromptBytes: 0);
+    public RfsTuiHermesRunResult RunResult { get; init; } = new(
+        Stdout: string.Empty,
+        Stderr: string.Empty,
+        ExitCode: 0,
+        StartedAt: DateTimeOffset.UtcNow,
+        FinishedAt: DateTimeOffset.UtcNow,
+        DurationMs: 0,
+        TimedOut: false,
+        WorkingDirectory: string.Empty,
+        GitStatusBefore: string.Empty,
+        GitStatusAfter: string.Empty,
+        DirtyStateChanged: false,
+        PromptBytes: 0);
 
-public string CapturedPrompt { get; private set; } = string.Empty;
+    public string CapturedPrompt { get; private set; } = string.Empty;
 
-public string CapturedWorkingDirectory { get; private set; } = string.Empty;
+    public string CapturedWorkingDirectory { get; private set; } = string.Empty;
 
-public string CapturedGitStatusBefore { get; private set; } = string.Empty;
+    public string CapturedGitStatusBefore { get; private set; } = string.Empty;
 
-public TimeSpan? CapturedTimeout { get; private set; }
+    public TimeSpan? CapturedTimeout { get; private set; }
 
-public Task<string> CaptureGitStatusAsync(string workingDirectory, CancellationToken cancellationToken = default)
-{
-CaptureGitStatusCalls++;
-CapturedWorkingDirectory = workingDirectory;
-return Task.FromResult(CaptureGitStatusCalls == 1 ? GitStatusBefore : GitStatusAfter);
-}
-
-public Task<RfsTuiHermesRunResult> RunAsync(
-string workingDirectory,
-string prompt,
-string? gitStatusBefore = null,
-RfsTuiHermesRunOptions? options = null,
-RfsTuiHermesRunProgressReporter? progressReporter = null,
-CancellationToken cancellationToken = default)
-{
-RunCalls++;
-CapturedWorkingDirectory = workingDirectory;
-CapturedPrompt = prompt;
-CapturedGitStatusBefore = gitStatusBefore ?? string.Empty;
-CapturedTimeout = options?.Timeout;
-    return Task.FromResult(RunResult with
+    public Task<string> CaptureGitStatusAsync(string workingDirectory, CancellationToken cancellationToken = default)
     {
-        WorkingDirectory = workingDirectory,
-        GitStatusBefore = gitStatusBefore ?? string.Empty,
-        GitStatusAfter = GitStatusAfter,
-        DirtyStateChanged = !string.Equals(gitStatusBefore ?? string.Empty, GitStatusAfter, StringComparison.Ordinal),
-        PromptBytes = Encoding.UTF8.GetByteCount(prompt),
-    });
-}
+        CaptureGitStatusCalls++;
+        CapturedWorkingDirectory = workingDirectory;
+        return Task.FromResult(CaptureGitStatusCalls == 1 ? GitStatusBefore : GitStatusAfter);
+    }
 
+    public Task<RfsTuiHermesRunResult> RunAsync(
+        string workingDirectory,
+        string prompt,
+        string? gitStatusBefore = null,
+        RfsTuiHermesRunOptions? options = null,
+        RfsTuiHermesRunProgressReporter? progressReporter = null,
+        CancellationToken cancellationToken = default)
+    {
+        RunCalls++;
+        CapturedWorkingDirectory = workingDirectory;
+        CapturedPrompt = prompt;
+        CapturedGitStatusBefore = gitStatusBefore ?? string.Empty;
+        CapturedTimeout = options?.Timeout;
+        return Task.FromResult(RunResult with
+        {
+            WorkingDirectory = workingDirectory,
+            GitStatusBefore = gitStatusBefore ?? string.Empty,
+            GitStatusAfter = GitStatusAfter,
+            DirtyStateChanged = !string.Equals(gitStatusBefore ?? string.Empty, GitStatusAfter, StringComparison.Ordinal),
+            PromptBytes = Encoding.UTF8.GetByteCount(prompt),
+        });
+    }
 }
 }

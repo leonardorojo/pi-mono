@@ -39,42 +39,50 @@ internal sealed class RealHermesRunner : IRfsTuiHermesRunner
         }
 
         options ??= new RfsTuiHermesRunOptions();
-        var resolvedGitStatusBefore = gitStatusBefore ?? await CaptureGitStatusAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        var resolvedGitStatusBefore = gitStatusBefore ?? await CaptureGitStatusAsync(workingDirectory, CancellationToken.None).ConfigureAwait(false);
         var promptBytes = Encoding.UTF8.GetByteCount(prompt);
         var startedAt = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
         var finishedAt = startedAt;
-        string stdout = string.Empty;
-        string stderr = string.Empty;
-        int? exitCode = null;
+        var stdout = string.Empty;
+        var stderr = string.Empty;
+        var exitCode = (int?)null;
         var timedOut = false;
+        var cancelled = false;
+        var failedToStart = false;
+        var processStarted = false;
         var workingDirectoryPath = Path.GetFullPath(workingDirectory);
         var gitStatusAfter = resolvedGitStatusBefore;
+        Task<string> stdoutTask = Task.FromResult(string.Empty);
+        Task<string> stderrTask = Task.FromResult(string.Empty);
+        Process? process = null;
 
         try
         {
-            using var process = new Process
+            process = new Process
             {
                 StartInfo = CreateHermesStartInfo(workingDirectoryPath, prompt),
             };
 
             if (!process.Start())
             {
+                failedToStart = true;
                 stderr = "Failed to start hermes process.";
             }
             else
             {
-                var stdoutTask = process.StandardOutput.ReadToEndAsync();
-                var stderrTask = process.StandardError.ReadToEndAsync();
-                var exitedTask = process.WaitForExitAsync(cancellationToken);
-                var timeoutTask = Task.Delay(options.Timeout, cancellationToken);
-                var heartbeatInterval = options.HeartbeatInterval;
+                processStarted = true;
                 var processId = process.Id;
+                stdoutTask = process.StandardOutput.ReadToEndAsync();
+                stderrTask = process.StandardError.ReadToEndAsync();
+                var exitedTask = process.WaitForExitAsync(CancellationToken.None);
+                var timeoutTask = Task.Delay(options.Timeout);
+                var cancellationTask = Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
 
                 while (true)
                 {
-                    var heartbeatTask = Task.Delay(heartbeatInterval, cancellationToken);
-                    var completedTask = await Task.WhenAny(exitedTask, timeoutTask, heartbeatTask).ConfigureAwait(false);
+                    var heartbeatTask = Task.Delay(options.HeartbeatInterval);
+                    var completedTask = await Task.WhenAny(exitedTask, timeoutTask, cancellationTask, heartbeatTask).ConfigureAwait(false);
 
                     if (completedTask == exitedTask)
                     {
@@ -82,11 +90,12 @@ internal sealed class RealHermesRunner : IRfsTuiHermesRunner
                         break;
                     }
 
-                    if (cancellationToken.IsCancellationRequested)
+                    if (completedTask == cancellationTask)
                     {
+                        cancelled = true;
                         TryKill(process);
                         await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-                        cancellationToken.ThrowIfCancellationRequested();
+                        break;
                     }
 
                     if (completedTask == timeoutTask)
@@ -104,19 +113,42 @@ internal sealed class RealHermesRunner : IRfsTuiHermesRunner
                         Timeout: options.Timeout,
                         PromptBytes: promptBytes,
                         Transport: "cli-oneshot",
-                        ProcessId: processId));
+                        ProcessId: processId,
+                        Health: GetHeartbeatHealth(stopwatch.Elapsed)));
                 }
 
                 stdout = await stdoutTask.ConfigureAwait(false);
                 stderr = await stderrTask.ConfigureAwait(false);
-                exitCode = process.HasExited ? process.ExitCode : null;
+
+                if (!cancelled && !timedOut)
+                {
+                    exitCode = process.HasExited ? process.ExitCode : null;
+                }
             }
         }
         catch (Exception ex)
         {
-            stderr = string.IsNullOrWhiteSpace(stderr)
-                ? $"Failed to run hermes process: {ex.Message}"
-                : $"{stderr.TrimEnd()}\n{ex.Message}";
+            if (cancellationToken.IsCancellationRequested)
+            {
+                cancelled = true;
+                if (process is not null)
+                {
+                    TryKill(process);
+                }
+            }
+            else if (!processStarted)
+            {
+                failedToStart = true;
+                stderr = string.IsNullOrWhiteSpace(stderr)
+                    ? $"Failed to run hermes process: {ex.Message}"
+                    : $"{stderr.TrimEnd()}\n{ex.Message}";
+            }
+            else
+            {
+                stderr = string.IsNullOrWhiteSpace(stderr)
+                    ? $"Failed to run hermes process: {ex.Message}"
+                    : $"{stderr.TrimEnd()}\n{ex.Message}";
+            }
         }
         finally
         {
@@ -126,12 +158,12 @@ internal sealed class RealHermesRunner : IRfsTuiHermesRunner
 
         try
         {
-            gitStatusAfter = await CaptureGitStatusAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            gitStatusAfter = await CaptureGitStatusAsync(workingDirectory, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             stderr = string.IsNullOrWhiteSpace(stderr)
-                ? $"{stderr}{ex.Message}".Trim()
+                ? ex.Message
                 : $"{stderr.TrimEnd()}\n{ex.Message}";
         }
 
@@ -147,7 +179,8 @@ internal sealed class RealHermesRunner : IRfsTuiHermesRunner
             GitStatusBefore: resolvedGitStatusBefore,
             GitStatusAfter: gitStatusAfter,
             DirtyStateChanged: !string.Equals(NormalizeStatus(resolvedGitStatusBefore), NormalizeStatus(gitStatusAfter), StringComparison.Ordinal),
-            PromptBytes: promptBytes);
+            PromptBytes: promptBytes,
+            Health: DetermineFinalHealth(failedToStart, cancelled, timedOut, exitCode));
     }
 
     private static ProcessStartInfo CreateHermesStartInfo(string workingDirectory, string prompt)
@@ -194,6 +227,31 @@ internal sealed class RealHermesRunner : IRfsTuiHermesRunner
         var stderrTask = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         return (await stdoutTask.ConfigureAwait(false), await stderrTask.ConfigureAwait(false), process.ExitCode);
+    }
+
+    private static RfsTuiHermesRunHealth GetHeartbeatHealth(TimeSpan elapsed)
+        => elapsed >= TimeSpan.FromSeconds(60)
+            ? RfsTuiHermesRunHealth.LongRunning
+            : RfsTuiHermesRunHealth.Running;
+
+    private static RfsTuiHermesRunHealth DetermineFinalHealth(bool failedToStart, bool cancelled, bool timedOut, int? exitCode)
+    {
+        if (failedToStart)
+        {
+            return RfsTuiHermesRunHealth.FailedToStart;
+        }
+
+        if (cancelled)
+        {
+            return RfsTuiHermesRunHealth.Cancelled;
+        }
+
+        if (timedOut)
+        {
+            return RfsTuiHermesRunHealth.TimedOut;
+        }
+
+        return exitCode is 0 ? RfsTuiHermesRunHealth.Completed : RfsTuiHermesRunHealth.ExitedWithError;
     }
 
     private static string NormalizeStatus(string? status)

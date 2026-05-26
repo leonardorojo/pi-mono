@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Rufus.RCK.Workspace;
 
@@ -10,9 +11,15 @@ internal static class RfsTuiHermesRunCommand
     private static readonly IRfsTuiHermesRunner Runner = new RealHermesRunner();
 
     internal static Task<bool> ExecuteAsync(RckWorkspaceStatus status, RfsTuiSessionState sessionState)
-        => ExecuteAsync(status, sessionState, Runner);
+        => ExecuteAsync(status, sessionState, Runner, CancellationToken.None);
 
-    internal static async Task<bool> ExecuteAsync(RckWorkspaceStatus status, RfsTuiSessionState sessionState, IRfsTuiHermesRunner runner)
+    internal static Task<bool> ExecuteAsync(RckWorkspaceStatus status, RfsTuiSessionState sessionState, CancellationToken cancellationToken)
+        => ExecuteAsync(status, sessionState, Runner, cancellationToken);
+
+    internal static Task<bool> ExecuteAsync(RckWorkspaceStatus status, RfsTuiSessionState sessionState, IRfsTuiHermesRunner runner)
+        => ExecuteAsync(status, sessionState, runner, CancellationToken.None);
+
+    internal static async Task<bool> ExecuteAsync(RckWorkspaceStatus status, RfsTuiSessionState sessionState, IRfsTuiHermesRunner runner, CancellationToken cancellationToken)
     {
         var draftResult = RfsTuiHermesPromptBuilder.TryBuild(status, sessionState);
         if (!draftResult.Success || draftResult.Draft is null)
@@ -32,7 +39,7 @@ internal static class RfsTuiHermesRunCommand
         string gitStatusBefore;
         try
         {
-            gitStatusBefore = await runner.CaptureGitStatusAsync(status.RepoRoot).ConfigureAwait(false);
+            gitStatusBefore = await runner.CaptureGitStatusAsync(status.RepoRoot, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -55,7 +62,8 @@ internal static class RfsTuiHermesRunCommand
                 MaxPromptBytes = RfsTuiHermesRunOptions.DefaultMaxPromptBytes,
                 Timeout = RfsTuiHermesRunOptions.DefaultTimeout,
             },
-            RfsTuiRenderer.WriteHermesRunHeartbeat).ConfigureAwait(false);
+            RfsTuiRenderer.WriteHermesRunHeartbeat,
+            cancellationToken).ConfigureAwait(false);
 
         RfsTuiRenderer.WriteHermesRunResult(result);
         return true;

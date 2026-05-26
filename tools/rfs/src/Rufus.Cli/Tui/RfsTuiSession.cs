@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using Rufus.Agenting;
 using Rufus.Agenting.Answering;
 using Rufus.Cli.Answering;
@@ -13,6 +14,7 @@ internal static class RfsTuiSession
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly RfsTuiSessionState SessionState = new();
+    private static CancellationTokenSource? ActiveCommandCancellationSource;
 
     public static int Run(string? startingDirectory = null)
         => RunAsync(startingDirectory ?? Directory.GetCurrentDirectory()).GetAwaiter().GetResult();
@@ -789,7 +791,18 @@ internal static class RfsTuiSession
                     RenderHermesDraft(status);
                     return true;
                 case RfsTuiCommandKind.HermesRun:
-                    return await RfsTuiHermesRunCommand.ExecuteAsync(status, SessionState);
+                    using (var runCancellationSource = new CancellationTokenSource())
+                    {
+                        ActiveCommandCancellationSource = runCancellationSource;
+                        try
+                        {
+                            return await RfsTuiHermesRunCommand.ExecuteAsync(status, SessionState, runCancellationSource.Token);
+                        }
+                        finally
+                        {
+                            ActiveCommandCancellationSource = null;
+                        }
+                    }
                 case RfsTuiCommandKind.Anchor:
                     return HandleAnchorCommand(input, repoRoot);
                 case RfsTuiCommandKind.Help:
@@ -1059,6 +1072,12 @@ internal static class RfsTuiSession
     private static void HandleCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
     {
         e.Cancel = true;
+        if (ActiveCommandCancellationSource is not null)
+        {
+            ActiveCommandCancellationSource.Cancel();
+            return;
+        }
+
         Console.WriteLine();
         Environment.Exit(0);
     }

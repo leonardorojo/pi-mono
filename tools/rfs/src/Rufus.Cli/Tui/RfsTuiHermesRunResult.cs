@@ -4,6 +4,18 @@ using System.Threading.Tasks;
 
 namespace Rufus.Cli.Tui;
 
+internal enum RfsTuiHermesRunHealth
+{
+    Starting,
+    Running,
+    LongRunning,
+    TimedOut,
+    Cancelled,
+    FailedToStart,
+    ExitedWithError,
+    Completed,
+}
+
 internal sealed record RfsTuiHermesRunOptions
 {
     internal const int DefaultMaxPromptBytes = 24_000;
@@ -24,7 +36,8 @@ internal sealed record RfsTuiHermesRunProgress(
     TimeSpan Timeout,
     int PromptBytes,
     string Transport,
-    int? ProcessId);
+    int? ProcessId,
+    RfsTuiHermesRunHealth Health = RfsTuiHermesRunHealth.Running);
 
 internal delegate void RfsTuiHermesRunProgressReporter(RfsTuiHermesRunProgress progress);
 
@@ -40,7 +53,8 @@ internal sealed record RfsTuiHermesRunResult(
     string GitStatusBefore,
     string GitStatusAfter,
     bool DirtyStateChanged,
-    int PromptBytes);
+    int PromptBytes,
+    RfsTuiHermesRunHealth Health = RfsTuiHermesRunHealth.Completed);
 
 internal interface IRfsTuiHermesRunner
 {

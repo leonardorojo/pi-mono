@@ -64,6 +64,31 @@ internal static class RfsTuiRenderer
         WriteMutedLine("Elegí 1-4, o /cancel:");
     }
 
+    internal static void WritePasteCaptureIntro()
+    {
+        WriteMutedLine("Paste multiline prompt. Finish with /end. Use /cancel to discard.");
+    }
+
+    internal static void WritePasteCapturePrompt()
+        => Console.Write(Style("paste> ", ConsoleColor.DarkGray, bold: true));
+
+    internal static void WritePasteSelectionWarning()
+    {
+        WriteWarningLine("Multiline input detected while choosing processing mode.");
+        WriteMutedLine("Use /cancel and then /paste for long text.");
+    }
+
+    internal static void WriteCapturedPasteReference(RfsTuiPromptDraft draft)
+    {
+        WriteSuccessLine("Captured long paste:");
+        WriteKeyValue("ref", draft.ReferenceLabel());
+        WriteKeyValue("lines", draft.LineCount.ToString(CultureInfo.InvariantCulture));
+        WriteKeyValue("chars", draft.CharCount.ToString("N0", CultureInfo.InvariantCulture));
+        WriteKeyValue("estimated tokens", $"~{draft.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture)}");
+        Console.WriteLine($"  [paste: {draft.ReferenceLabel()} · {draft.LineCount} lines · {draft.CharCount:N0} chars]");
+        Console.WriteLine();
+    }
+
     internal static void WriteModeSelectionHelp()
     {
         WriteSectionTitle("Mode selection:");

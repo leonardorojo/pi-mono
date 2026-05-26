@@ -96,13 +96,20 @@ internal static class RfsTuiSession
                     break;
                 }
 
+                if (string.Equals(input, "/paste", StringComparison.Ordinal))
+                {
+                    await HandlePasteCommandAsync(repoRoot);
+                    continue;
+                }
+
                 if (input.StartsWith("/", StringComparison.Ordinal))
                 {
                     await TryHandleTopLevelCommandAsync(input, repoRoot, status);
                     continue;
                 }
 
-                if (await RunPromptModeSelectionAsync(input, repoRoot))
+                var promptDraft = RfsTuiPromptDraft.CreateTyped(input);
+                if (await RunPromptModeSelectionAsync(promptDraft, repoRoot))
                 {
                     break;
                 }
@@ -114,9 +121,11 @@ internal static class RfsTuiSession
         }
     }
 
-    private static async Task<bool> RunPromptModeSelectionAsync(string prompt, string repoRoot)
+    private static async Task<bool> RunPromptModeSelectionAsync(RfsTuiPromptDraft promptDraft, string repoRoot)
     {
         RenderModeSelectionMenu();
+        var pasteRecoveryMode = false;
+        var pasteRecoveryWarningShown = false;
 
         while (true)
         {
@@ -139,28 +148,87 @@ internal static class RfsTuiSession
                 continue;
             }
 
+            if (string.Equals(selectionInput, "/paste", StringComparison.Ordinal))
+            {
+                var capturedDraft = await CapturePasteDraftAsync(repoRoot);
+                if (capturedDraft is null)
+                {
+                    RenderModeSelectionMenu();
+                    continue;
+                }
+
+                promptDraft = capturedDraft;
+                RenderCapturedPasteReference(promptDraft);
+                RenderModeSelectionMenu();
+                pasteRecoveryMode = false;
+                pasteRecoveryWarningShown = false;
+                continue;
+            }
+
             var selection = RfsTuiModeSelectionParser.ParseModeSelection(selectionInput);
             switch (selection)
             {
                 case RfsTuiModeSelection.Direct:
-                    return await RunDirectModeAsync(repoRoot, prompt);
+                    return await RunDirectModeAsync(repoRoot, promptDraft.ResolveText());
                 case RfsTuiModeSelection.Simple:
-                    return await RunSimpleModeAsync(repoRoot, prompt);
+                    return await RunSimpleModeAsync(repoRoot, promptDraft.ResolveText());
                 case RfsTuiModeSelection.Complete:
-                    return await RunCompleteModeAsync(repoRoot, prompt);
+                    return await RunCompleteModeAsync(repoRoot, promptDraft.ResolveText());
                 case RfsTuiModeSelection.Plan:
-                    return await RunPlanModeAsync(repoRoot, prompt);
+                    return await RunPlanModeAsync(repoRoot, promptDraft.ResolveText());
                 case RfsTuiModeSelection.Cancel:
                     Console.WriteLine("Prompt cancelled.");
                     return false;
                 case RfsTuiModeSelection.Exit:
                     return true;
                 default:
-                    RfsTuiRenderer.WriteWarningLine("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.");
-                    break;
+                    if (!pasteRecoveryMode)
+                    {
+                        if (LooksLikePaste(selectionInput))
+                        {
+                            RfsTuiRenderer.WritePasteSelectionWarning();
+                            pasteRecoveryWarningShown = true;
+                        }
+                        else
+                        {
+                            RfsTuiRenderer.WriteWarningLine("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.");
+                        }
+
+                        pasteRecoveryMode = true;
+                        continue;
+                    }
+
+                    if (!pasteRecoveryWarningShown && LooksLikePaste(selectionInput))
+                    {
+                        RfsTuiRenderer.WritePasteSelectionWarning();
+                        pasteRecoveryWarningShown = true;
+                    }
+
+                    continue;
             }
         }
     }
+
+    private static bool LooksLikePaste(string input)
+        => input.Length >= 24 || input.Contains(' ') || input.Contains('\t');
+
+    private static async Task HandlePasteCommandAsync(string repoRoot)
+    {
+        var capturedDraft = await CapturePasteDraftAsync(repoRoot);
+        if (capturedDraft is null)
+        {
+            return;
+        }
+
+        RenderCapturedPasteReference(capturedDraft);
+        await RunPromptModeSelectionAsync(capturedDraft, repoRoot);
+    }
+
+    private static async Task<RfsTuiPromptDraft?> CapturePasteDraftAsync(string repoRoot)
+        => await Task.Run(() => RfsTuiPasteCapture.CaptureInteractive(repoRoot));
+
+    private static void RenderCapturedPasteReference(RfsTuiPromptDraft draft)
+        => RfsTuiRenderer.WriteCapturedPasteReference(draft);
 
     private static async Task<bool> RunSimpleModeAsync(string repoRoot, string prompt)
     {

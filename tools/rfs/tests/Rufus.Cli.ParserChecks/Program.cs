@@ -310,13 +310,63 @@ await RunRfsTuiPlanModeRecordingSessionCaseAsync(
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     name: "bare rfs prompt rejects invalid mode then cancels",
     prompt: "Implement reset board action",
-    input: "Implement reset board action\nx\n/cancel\n/exit\n",
+    input: "Implement reset board action\nabc\n/cancel\n/exit\n",
     expectedFragments: new[]
     {
         "Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.",
         "Prompt cancelled.",
     },
     expectPromptEcho: false,
+    failures: failures);
+
+await RunRfsTuiPasteCaptureSessionCaseAsync(
+    name: "bare rfs /paste captures multiline prompt and stores temp paste file",
+    input: "/paste\npaste line 1\npaste line 2\n/end\n1\n/exit\n",
+    expectTempPasteFile: true,
+    expectedFragments: new[]
+    {
+        "Paste multiline prompt. Finish with /end. Use /cancel to discard.",
+        "Captured long paste:",
+        "[paste:",
+        "lines:",
+        "chars:",
+        "estimated tokens:",
+        "¿Cómo querés procesarlo?",
+    },
+    forbiddenFragments: new[]
+    {
+        "Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.",
+    },
+    failures: failures);
+
+await RunRfsTuiPasteCaptureCancelSessionCaseAsync(
+    name: "bare rfs /paste cancel returns to prompt",
+    input: "/paste\npaste line 1\n/cancel\n/exit\n",
+    expectedFragments: new[]
+    {
+        "Paste multiline prompt. Finish with /end. Use /cancel to discard.",
+        "Paste discarded.",
+    },
+    forbiddenFragments: new[]
+    {
+        "Captured long paste:",
+    },
+    failures: failures);
+
+await RunRfsTuiPromptModeSelectionBurstSessionCaseAsync(
+    name: "bare rfs paste burst during mode selection shows one warning and recovers",
+    prompt: "Implement reset board action",
+    input: "Implement reset board action\nfirst paste line\nsecond paste line\n/cancel\n/exit\n",
+    expectedFragments: new[]
+    {
+        "Multiline input detected while choosing processing mode.",
+        "Use /cancel and then /paste for long text.",
+        "Prompt cancelled.",
+    },
+    forbiddenFragments: new[]
+    {
+        "Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.",
+    },
     failures: failures);
 
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
@@ -4775,6 +4825,125 @@ static void AssertBooleanEqual(string name, List<string> failures, string field,
     {
         failures.Add($"[{name}] expected {field} to equal '{expected}' but found '{actual}'.");
     }
+}
+
+static async Task RunRfsTuiPasteCaptureSessionCaseAsync(
+    string name,
+    string input,
+    bool expectTempPasteFile,
+    string[] expectedFragments,
+    string[] forbiddenFragments,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-paste-capture-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, input, "dotnet", "run", "--project", cliProjectPath, "--");
+        if (tuiResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+        }
+
+        foreach (var fragment in expectedFragments)
+        {
+            if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+            }
+        }
+
+        foreach (var fragment in forbiddenFragments)
+        {
+            if (tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected stdout to not contain '{fragment}' but it was present.");
+            }
+        }
+
+        var pasteDirectory = Path.Combine(tempRoot, ".rfs", "tmp", "pastes");
+        if (expectTempPasteFile)
+        {
+            var pasteFile = Directory.GetFiles(pasteDirectory, "*_paste.md", SearchOption.TopDirectoryOnly);
+            if (pasteFile.Length != 1)
+            {
+                failures.Add($"[{name}] expected exactly one temp paste file but found {pasteFile.Length}.");
+            }
+            else
+            {
+                var pasteContent = File.ReadAllText(pasteFile[0]);
+                if (!pasteContent.Contains("paste line 1", StringComparison.Ordinal) || !pasteContent.Contains("paste line 2", StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected paste file to contain captured lines.");
+                }
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunRfsTuiPasteCaptureCancelSessionCaseAsync(
+    string name,
+    string input,
+    string[] expectedFragments,
+    string[] forbiddenFragments,
+    List<string> failures)
+{
+    await RunRfsTuiPasteCaptureSessionCaseAsync(name, input, false, expectedFragments, forbiddenFragments, failures);
+}
+
+static async Task RunRfsTuiPromptModeSelectionBurstSessionCaseAsync(
+    string name,
+    string prompt,
+    string input,
+    string[] expectedFragments,
+    string[] forbiddenFragments,
+    List<string> failures)
+{
+    await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+        name,
+        prompt,
+        input,
+        expectedFragments,
+        expectPromptEcho: false,
+        forbiddenFragments: forbiddenFragments,
+        failures: failures);
 }
 
 sealed class FakeIntentLlmTransport : IIntentLlmTransport

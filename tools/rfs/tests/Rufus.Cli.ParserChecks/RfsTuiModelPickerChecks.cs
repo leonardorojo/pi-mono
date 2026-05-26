@@ -97,6 +97,7 @@ var helpCommands = RfsTuiCommandCatalog.GetHelpCommands();
 var modelShow = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelShow);
 var modelSet = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelSet);
 var hermes = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes", StringComparison.Ordinal));
+var hermesDraft = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes draft", StringComparison.Ordinal));
 var hermesRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes run", StringComparison.Ordinal));
 
 if (modelShow is null || !string.Equals(modelShow.Description, "Open session model picker", StringComparison.Ordinal))
@@ -109,9 +110,14 @@ if (modelSet is null || !string.Equals(modelSet.Description, "Set session model 
 failures.Add("[tui model picker] expected /model <model> help text to describe temporary session updates.");
 }
 
-if (hermes is null || !string.Equals(hermes.Description, "Build Hermes handoff draft (draft-only)", StringComparison.Ordinal))
+if (hermes is null || !string.Equals(hermes.Description, "Show Hermes usage", StringComparison.Ordinal))
 {
-failures.Add("[tui model picker] expected /hermes help text to describe the draft-only handoff.");
+failures.Add("[tui model picker] expected /hermes help text to describe the base usage screen.");
+}
+
+if (hermesDraft is null || !string.Equals(hermesDraft.Description, "Build Hermes handoff draft", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes draft help text to describe the draft path.");
 }
 
 if (hermesRun is null || !string.Equals(hermesRun.Description, "Build Hermes handoff draft and run Hermes", StringComparison.Ordinal))
@@ -128,7 +134,13 @@ failures.Add("[tui model picker] expected /model to resolve to the picker comman
 var exactHermes = RfsTuiCommandCatalog.FindExactMatch("/hermes");
 if (exactHermes is null || !string.Equals(exactHermes.Usage, "/hermes", StringComparison.Ordinal))
 {
-failures.Add("[tui model picker] expected /hermes to resolve to the Hermes handoff command.");
+failures.Add("[tui model picker] expected /hermes to resolve to the Hermes usage command.");
+}
+
+var exactHermesDraft = RfsTuiCommandCatalog.FindExactMatch("/hermes draft");
+if (exactHermesDraft is null || !string.Equals(exactHermesDraft.Usage, "/hermes draft", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes draft to resolve to the Hermes draft command.");
 }
 
 var exactHermesRun = RfsTuiCommandCatalog.FindExactMatch("/hermes run");
@@ -213,7 +225,7 @@ var freshSession = new RfsTuiSessionState();
 var unavailable = RfsTuiHermesPromptBuilder.TryBuild(status, freshSession);
 if (unavailable.Success || unavailable.Draft is not null || !string.Equals(unavailable.ErrorMessage, "No hay una respuesta previa para generar handoff a Hermes.", StringComparison.Ordinal))
 {
-failures.Add("[tui model picker] expected /hermes to report that no prior answer is available before any RFS reply.");
+failures.Add("[tui model picker] expected /hermes draft to report that no prior answer is available before any RFS reply.");
 }
 
 var sessionState = new RfsTuiSessionState();
@@ -238,7 +250,7 @@ answer: "Se validó el ContextPack y se respondió con una propuesta concreta.")
 var draftResult = RfsTuiHermesPromptBuilder.TryBuild(status, sessionState);
 if (!draftResult.Success || draftResult.Draft is null)
 {
-failures.Add("[tui model picker] expected /hermes to build a draft once a prior response exists.");
+failures.Add("[tui model picker] expected /hermes draft to build a draft once a prior response exists.");
 return;
 }
 

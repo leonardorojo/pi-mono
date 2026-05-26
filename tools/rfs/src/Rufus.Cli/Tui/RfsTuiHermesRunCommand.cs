@@ -25,7 +25,7 @@ internal static class RfsTuiHermesRunCommand
         var promptBytes = Encoding.UTF8.GetByteCount(prompt);
         if (promptBytes > RfsTuiHermesRunOptions.DefaultMaxPromptBytes)
         {
-            RfsTuiRenderer.WriteWarningLine("Hermes prompt too large for argv transport. Use /hermes to copy the draft manually, or implement future stdin/file transport.");
+            RfsTuiRenderer.WriteWarningLine("Hermes prompt too large for argv transport. Use /hermes draft to copy the draft manually, or implement future stdin/file transport.");
             return true;
         }
 

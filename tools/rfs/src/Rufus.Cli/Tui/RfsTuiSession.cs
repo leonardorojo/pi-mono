@@ -672,6 +672,9 @@ internal static class RfsTuiSession
         RfsTuiRenderer.WriteHermesHandoffDraft(draftResult.Draft!);
     }
 
+    private static void RenderHermesUsage()
+        => RfsTuiRenderer.WriteHermesUsage();
+
     private static async Task<bool> TryHandleTopLevelCommandAsync(string input, string repoRoot, RckWorkspaceStatus status)
     {
         if (input.StartsWith("/", StringComparison.Ordinal))
@@ -711,6 +714,9 @@ internal static class RfsTuiSession
                     RenderTrace();
                     return true;
                 case RfsTuiCommandKind.Hermes:
+                    RenderHermesUsage();
+                    return true;
+                case RfsTuiCommandKind.HermesDraft:
                     RenderHermesDraft(status);
                     return true;
                 case RfsTuiCommandKind.HermesRun:

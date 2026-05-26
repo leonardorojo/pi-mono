@@ -10,6 +10,22 @@ using Rufus.Agenting.Intent;
 using Rufus.RCK.Workspace;
 
 var failures = new List<string>();
+
+await RunPartitionedChecksAsync(args, failures);
+
+if (failures.Count > 0)
+{
+    foreach (var failure in failures)
+    {
+        Console.Error.WriteLine(failure);
+    }
+
+    return 1;
+}
+
+Console.WriteLine("ParserChecks passed.");
+return 0;
+
 var longPasteOnly = args.Contains("--long-paste-only", StringComparer.Ordinal);
 
 if (longPasteOnly)
@@ -381,6 +397,309 @@ if (failures.Count > 0)
 
 Console.WriteLine("PiJsonEventRunner parser checks passed.");
 return 0;
+
+static async Task RunPartitionedChecksAsync(string[] args, List<string> failures)
+{
+    var longPasteOnly = args.Contains("--long-paste-only", StringComparer.Ordinal);
+    var coreOnly = args.Contains("--core-only", StringComparer.Ordinal);
+    var tuiOnly = args.Contains("--tui-only", StringComparer.Ordinal);
+    var integrationOnly = args.Contains("--integration-only", StringComparer.Ordinal);
+    var legacyOnly = args.Contains("--legacy-only", StringComparer.Ordinal);
+
+    var selectedFlags = new[]
+    {
+        longPasteOnly ? "--long-paste-only" : null,
+        coreOnly ? "--core-only" : null,
+        tuiOnly ? "--tui-only" : null,
+        integrationOnly ? "--integration-only" : null,
+        legacyOnly ? "--legacy-only" : null,
+    }.Where(flag => flag is not null).ToArray();
+
+    Console.WriteLine("ParserChecks");
+
+    if (selectedFlags.Length > 1)
+    {
+        failures.Add("ParserChecks accepts only one mode flag at a time: --core-only, --tui-only, --long-paste-only, --integration-only, or --legacy-only.");
+        return;
+    }
+
+    var selectedMode = selectedFlags.Length == 0 ? "default" : selectedFlags[0];
+
+    switch (selectedMode)
+    {
+        case "--long-paste-only":
+            await RunLongPasteChecksAsync(failures);
+            return;
+        case "--core-only":
+            await RunCoreChecksAsync(failures);
+            Console.WriteLine("Core checks passed.");
+            return;
+        case "--tui-only":
+            await RunTuiDeterministicChecksAsync(failures);
+            Console.WriteLine("TUI deterministic checks passed.");
+            return;
+        case "--integration-only":
+            await RunIntegrationChecksAsync(failures);
+            Console.WriteLine("Integration checks completed.");
+            return;
+        case "--legacy-only":
+            await RunLegacyChecksAsync(failures);
+            Console.WriteLine("Legacy checks completed.");
+            return;
+        default:
+            await RunCoreChecksAsync(failures);
+            await RunTuiDeterministicChecksAsync(failures);
+            Console.WriteLine("Core checks passed.");
+            Console.WriteLine("TUI deterministic checks passed.");
+            Console.WriteLine("Long paste checks skipped by default. Run with --long-paste-only.");
+            Console.WriteLine("Integration checks skipped by default. Run with --integration-only.");
+            Console.WriteLine("Legacy checks skipped by default. Run with --legacy-only.");
+            return;
+    }
+}
+
+static async Task RunCoreChecksAsync(List<string> failures)
+{
+    await RunCaseAsync(
+        name: "structured final answer",
+        fixtureMode: "structured",
+        expectedSuccess: true,
+        expectedAnswer: "structured answer",
+        expectedProvider: "test-provider",
+        expectedModel: "test-model",
+        expectedErrorContains: null,
+        failures: failures);
+
+    await RunCaseAsync(
+        name: "delta fallback with stderr separation",
+        fixtureMode: "delta",
+        expectedSuccess: true,
+        expectedAnswer: "hello world",
+        expectedProvider: null,
+        expectedModel: null,
+        expectedErrorContains: null,
+        failures: failures);
+
+    await RunCaseAsync(
+        name: "final answer beats prior delta",
+        fixtureMode: "delta-then-final",
+        expectedSuccess: true,
+        expectedAnswer: "structured answer",
+        expectedProvider: "test-provider",
+        expectedModel: "test-model",
+        expectedErrorContains: null,
+        failures: failures);
+
+    await RunCaseAsync(
+        name: "no answer fails explicitly",
+        fixtureMode: "no-answer",
+        expectedSuccess: false,
+        expectedAnswer: null,
+        expectedProvider: null,
+        expectedModel: null,
+        expectedErrorContains: "Pi JSON stream ended before a final assistant answer was observed",
+        failures: failures);
+
+    await RunCaseAsync(
+        name: "invalid jsonl",
+        fixtureMode: "invalid",
+        expectedSuccess: false,
+        expectedAnswer: null,
+        expectedProvider: null,
+        expectedModel: null,
+        expectedErrorContains: "Invalid JSONL on line 1",
+        failures: failures);
+
+    await RunIntentInferenceCaseAsync(
+        name: "intent inference success",
+        task: new AgentTask(
+            id: "task-1",
+            kind: "infer-intent",
+            goal: "Infer the operational intent from this prompt.",
+            input: "Build a TraceSlice for the current diff and summarize evidence.",
+            expectedOutput: "PromptIntent JSON"),
+        expectedIntent: "build-trace-slice",
+        failures: failures);
+
+    await RunIntentInferenceFailureCaseAsync(
+        name: "intent inference rejects unsupported kind",
+        task: new AgentTask(
+            id: "task-2",
+            kind: "summarize-evidence",
+            goal: "Summarize evidence for the diff.",
+            input: "Summarize the diff evidence.",
+            expectedOutput: null),
+        expectedErrorContains: "Kind='infer-intent'",
+        failures: failures);
+
+    await RunPromptIntentJsonCodecCaseAsync(
+        name: "prompt intent codec accepts lowercase llm json",
+        json: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\",\"board\"],\"constraints\":[\"do not write RCK\"]}",
+        expectedIntent: "implement-reset-board",
+        expectedSummary: "Implement the reset board action.",
+        failures: failures);
+
+    await RunPromptIntentJsonCodecFailureCaseAsync(
+        name: "prompt intent codec rejects invalid json",
+        json: "{\"intent\":\"implement-reset-board\",\"summary\":\"missing brace\"",
+        expectedErrorContains: "Invalid PromptIntent JSON",
+        failures: failures);
+
+}
+
+static async Task RunTuiDeterministicChecksAsync(List<string> failures)
+{
+    RunRfsTuiModeSelectionParserCases(failures);
+    RunRfsTuiCommandSuggestionCases(failures);
+    RfsTuiModelPickerChecks.Run(failures);
+    RfsTuiMarkdownLiteChecks.Run(failures);
+    await RfsTuiAnsiLeakChecks.Run(failures);
+
+    await RunRfsTuiInitializedSessionCaseAsync(
+        name: "bare rfs enters tui and handles deterministic read-only commands on an initialized repo",
+        failures: failures);
+
+    await RunRfsTuiAnchorUsageSessionCaseAsync(
+        name: "bare rfs /anchor without a name prints usage and does not call the LLM",
+        failures: failures);
+
+    await RunRfsTuiAnchorCommandSessionCaseAsync(
+        name: "bare rfs /anchor creates a milestone anchor on current HEAD",
+        failures: failures);
+
+    await RunRfsTuiAutoInitSessionCaseAsync(
+        name: "bare rfs auto-initializes an empty repo and enters tui",
+        failures: failures);
+}
+
+static async Task RunIntegrationChecksAsync(List<string> failures)
+{
+    await RunIntentCliLlmCaseAsync(
+        name: "intent cli llm renders canonical prompt intent json",
+        prompt: "Implement reset board action",
+        expectedIntent: "implement-reset-board",
+        failures: failures);
+
+    await RunTraceSliceProposalLlmCliCaseAsync(
+        name: "trace slice proposal llm cli renders proposal json",
+        prompt: "Implement rfs show command",
+        failures: failures,
+        fixtureMode: "valid");
+
+    await RunTraceSliceProposalLlmCliCaseAsync(
+        name: "trace slice proposal llm cli rejects contaminated llm output",
+        prompt: "Implement rfs show command",
+        failures: failures,
+        fixtureMode: "contaminated",
+        expectSuccess: false,
+        expectedErrorContains: "rationale entries must be objects");
+
+    await RunTraceSliceValidateLlmCliCaseAsync(
+        name: "trace slice validate llm cli renders validated trace slice json",
+        prompt: "Implement rfs show command",
+        failures: failures,
+        fixtureMode: "valid");
+
+    await RunTraceSliceValidateLlmCliCaseAsync(
+        name: "trace slice validate llm cli rejects unsafe materialization policy",
+        prompt: "Implement rfs show command",
+        failures: failures,
+        fixtureMode: "unsafe-policy",
+        expectSuccess: false,
+        expectedErrorContains: "restricted materialization policy flags must be false");
+
+    await RunRfsTuiCommandSuggestionSessionCaseAsync(
+        "tui slash suggestions are filtered and unknown commands are rejected",
+        failures);
+}
+
+static async Task RunLegacyChecksAsync(List<string> failures)
+{
+    await RunRfsTuiSimpleModeRecordingSessionCaseAsync(
+        name: "bare rfs prompt selects simple mode and records a simple interaction",
+        prompt: "Implement reset board action",
+        input: "Implement reset board action\n2\n/exit\n",
+        failures: failures);
+
+    await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+        name: "bare rfs prompt selects complete mode real pipeline and records a complete interaction",
+        prompt: "Implement reset board action",
+        input: "Implement reset board action\n3\n/exit\n",
+        expectedFragments: new[]
+        {
+            "[Complete]",
+            "[1/5] Inferring intent...",
+            "  intent:",
+            "  summary:",
+            "  source: pi-intent-inference",
+            "[2/5] Building TraceSlice proposal...",
+            "  proposal: pi-trace-slice-proposal",
+            "  requested selection: 5 states · 5 deltas · 0 anchors",
+            "[3/5] Validating proposal...",
+            "  validation: accepted",
+            "[4/5] Building ContextPack...",
+            "  scope:",
+            "  selected states/deltas/anchors:",
+            "  estimated tokens:",
+            "  transport:",
+            "  transport risk:",
+            "[5/5] Asking main LLM...",
+            "  agent:",
+            "  model:",
+            "Respuesta:",
+            "Recorded State + Delta:",
+        },
+        expectPromptEcho: false,
+        forbiddenFragments: new[]
+        {
+            "Context:",
+            "Context ready:",
+        },
+        expectedStateCountDelta: 1,
+        expectedDeltaCountDelta: 1,
+        expectedAnchorCountDelta: 0,
+        failures: failures);
+
+    await RunRfsTuiPlanModeRecordingSessionCaseAsync(
+        name: "bare rfs prompt selects plan mode and records a plan interaction",
+        prompt: "Implement reset board action",
+        input: "Implement reset board action\n4\n/exit\n",
+        failures: failures);
+
+    await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+        name: "bare rfs prompt rejects invalid mode then cancels",
+        prompt: "Implement reset board action",
+        input: "Implement reset board action\nabc\n/cancel\n/exit\n",
+        expectedFragments: new[]
+        {
+            "Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.",
+            "Prompt cancelled.",
+        },
+        expectPromptEcho: false,
+        failures: failures);
+
+    await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+        name: "bare rfs prompt exits from mode selection",
+        prompt: "Implement reset board action",
+        input: "Implement reset board action\n/exit\n",
+        expectedFragments: new[]
+        {
+            "¿Cómo querés procesarlo?",
+            "  1 Direct    — sin contexto RCK",
+            "Elegí 1-4, o /cancel:",
+        },
+        expectPromptEcho: false,
+        failures: failures);
+
+    await RunRfsTuiInternalCommandsPolishSessionCaseAsync(
+        name: "bare rfs internal commands polish session covers status log model context trace and help",
+        failures: failures);
+}
+
+static async Task RunLongPasteChecksAsync(List<string> failures)
+{
+    await RfsTuiLongPasteChecks.RunAsync(failures);
+}
 
 static async Task RunCaseAsync(
     string name,
@@ -3599,58 +3918,75 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
         }
 
         var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
-        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/status\n/help\n/xyz\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
-        if (tuiResult.ExitCode != 0)
+        var sessions = new[]
         {
-            failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
-        {
-            failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
-        }
-
-        var repoName = Path.GetFileName(Path.TrimEndingDirectorySeparator(tempRoot));
-        var requiredFragments = new[]
-        {
-            $"RFS · {repoName}",
-            "Model:",
-            "RCK: states",
-            "Git:",
-            "Commands:",
-            "/anchor \"name\"",
-            "/model <model>",
+            new
+            {
+                Input = "/status\n",
+                Required = new[] { "RFS · ", "RCK:", "Git:", "Model:", "Session:" },
+                Forbidden = new[] { "Workspace not initialized.", "Write a prompt, then choose:" }
+            },
+            new
+            {
+                Input = "/help\n",
+                Required = new[] { "Commands:", "/status", "/anchor \"name\"", "/model <model>", "/exit" },
+                Forbidden = new[] { "Workspace not initialized." }
+            },
+            new
+            {
+                Input = "/log\n",
+                Required = new[] { "Recent interactions:", "genesis" },
+                Forbidden = new[] { "Workspace not initialized." }
+            },
+            new
+            {
+                Input = "/context\n",
+                Required = new[] { "No context has been built yet." },
+                Forbidden = new[] { "Workspace not initialized." }
+            },
+            new
+            {
+                Input = "/trace\n",
+                Required = new[] { "No TraceSlice has been built in this session yet." },
+                Forbidden = new[] { "Workspace not initialized." }
+            },
+            new
+            {
+                Input = "/xyz\n",
+                Required = new[] { "Unknown command: /xyz", "Type /help to show available commands." },
+                Forbidden = new[] { "Workspace not initialized.", "Write a prompt, then choose:" }
+            },
         };
 
-        foreach (var fragment in requiredFragments)
+        foreach (var session in sessions)
         {
-            if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            var tuiResult = await RunProcessAsyncWithInput(tempRoot, session.Input, "dotnet", "run", "--project", cliProjectPath, "--");
+            if (tuiResult.ExitCode != 0)
             {
-                failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+                failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+                return;
             }
-        }
 
-        var forbiddenFragments = new[]
-        {
-            "Write a prompt, then choose:",
-            "  1 Direct",
-            "  2 Simple",
-            "  3 Complete",
-            "  4 Plan",
-        };
-
-        foreach (var fragment in forbiddenFragments)
-        {
-            if (tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
             {
-                failures.Add($"[{name}] expected slash commands to bypass the mode-selection menu, but found '{fragment}'.");
+                failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
             }
-        }
 
-        if (tuiResult.Stdout.Contains("Workspace not initialized.", StringComparison.Ordinal))
-        {
-            failures.Add($"[{name}] expected initialized session to skip auto-init messaging.");
+            foreach (var fragment in session.Required)
+            {
+                if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+                }
+            }
+
+            foreach (var fragment in session.Forbidden)
+            {
+                if (tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected stdout not to contain '{fragment}' but it was present.");
+                }
+            }
         }
 
         var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
@@ -4144,7 +4480,7 @@ static async Task RunRfsTuiAnchorUsageSessionCaseAsync(string name, List<string>
         }
 
         var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
-        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/anchor\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/anchor\n", "dotnet", "run", "--project", cliProjectPath, "--");
         if (tuiResult.ExitCode != 0)
         {
             failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
@@ -4218,7 +4554,7 @@ static async Task RunRfsTuiAnchorCommandSessionCaseAsync(string name, List<strin
         var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
         var headPath = Path.Combine(tempRoot, ".rfs", "rck", "HEAD");
         var headBefore = await File.ReadAllTextAsync(headPath);
-        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/anchor manual-test-anchor\n/status\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/anchor manual-test-anchor\n", "dotnet", "run", "--project", cliProjectPath, "--");
         if (tuiResult.ExitCode != 0)
         {
             failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");

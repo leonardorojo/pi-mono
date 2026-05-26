@@ -8,11 +8,25 @@ internal sealed record RfsTuiHermesRunOptions
 {
     internal const int DefaultMaxPromptBytes = 24_000;
     internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromMilliseconds(300_000);
+    internal static readonly TimeSpan DefaultHeartbeatInterval = TimeSpan.FromSeconds(10);
 
     public TimeSpan Timeout { get; init; } = DefaultTimeout;
 
     public int MaxPromptBytes { get; init; } = DefaultMaxPromptBytes;
+
+    public TimeSpan HeartbeatInterval { get; init; } = DefaultHeartbeatInterval;
 }
+
+internal sealed record RfsTuiHermesRunProgress(
+    string WorkingDirectory,
+    TimeSpan Elapsed,
+    TimeSpan Remaining,
+    TimeSpan Timeout,
+    int PromptBytes,
+    string Transport,
+    int? ProcessId);
+
+internal delegate void RfsTuiHermesRunProgressReporter(RfsTuiHermesRunProgress progress);
 
 internal sealed record RfsTuiHermesRunResult(
     string Stdout,
@@ -37,5 +51,6 @@ internal interface IRfsTuiHermesRunner
         string prompt,
         string? gitStatusBefore = null,
         RfsTuiHermesRunOptions? options = null,
+        RfsTuiHermesRunProgressReporter? progressReporter = null,
         CancellationToken cancellationToken = default);
 }

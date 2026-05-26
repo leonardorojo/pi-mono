@@ -54,7 +54,8 @@ internal static class RfsTuiHermesRunCommand
             {
                 MaxPromptBytes = RfsTuiHermesRunOptions.DefaultMaxPromptBytes,
                 Timeout = RfsTuiHermesRunOptions.DefaultTimeout,
-            }).ConfigureAwait(false);
+            },
+            RfsTuiRenderer.WriteHermesRunHeartbeat).ConfigureAwait(false);
 
         RfsTuiRenderer.WriteHermesRunResult(result);
         return true;

@@ -2,6 +2,7 @@ using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
 using System.Text;
+using System.Globalization;
 
 internal static class RfsTuiModelPickerChecks
 {
@@ -419,6 +420,51 @@ if (!string.Equals(successRunner.CapturedWorkingDirectory, "/tmp/rfs", StringCom
 failures.Add("[tui model picker] expected /hermes run to execute from the repo root.");
 }
 
+var heartbeat = RfsTuiRenderer.FormatHermesRunHeartbeat(
+new RfsTuiHermesRunProgress(
+WorkingDirectory: "/tmp/rfs",
+Elapsed: TimeSpan.FromSeconds(10),
+Remaining: TimeSpan.FromSeconds(290),
+Timeout: RfsTuiHermesRunOptions.DefaultTimeout,
+PromptBytes: Encoding.UTF8.GetByteCount(expectedPrompt),
+Transport: "cli-oneshot",
+ProcessId: 4242));
+
+var requiredHeartbeatFragments = new[]
+{
+    "[Hermes run] still running...",
+    "elapsed: 10s / 300s",
+    "remaining: 290s",
+    "cwd: /tmp/rfs",
+    $"prompt bytes: {Encoding.UTF8.GetByteCount(expectedPrompt).ToString("N0", CultureInfo.InvariantCulture)}",
+    "transport: cli-oneshot",
+    "waiting for final response...",
+};
+
+foreach (var fragment in requiredHeartbeatFragments)
+{
+    if (!heartbeat.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected Hermes heartbeat to include '{fragment}'.");
+    }
+}
+
+var forbiddenHeartbeatFragments = new[]
+{
+    "tool.start",
+    "tool.progress",
+    "tool.complete",
+    "message.delta",
+};
+
+foreach (var fragment in forbiddenHeartbeatFragments)
+{
+    if (heartbeat.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected Hermes heartbeat to avoid invented progress token '{fragment}'.");
+    }
+}
+
 var runOutput = runCapture.ToString();
         if (!runOutput.Contains("[Hermes run]", StringComparison.Ordinal) ||
             !runOutput.Contains("transport: cli-oneshot", StringComparison.Ordinal) ||
@@ -474,6 +520,7 @@ string workingDirectory,
 string prompt,
 string? gitStatusBefore = null,
 RfsTuiHermesRunOptions? options = null,
+RfsTuiHermesRunProgressReporter? progressReporter = null,
 CancellationToken cancellationToken = default)
 {
 RunCalls++;
@@ -481,14 +528,15 @@ CapturedWorkingDirectory = workingDirectory;
 CapturedPrompt = prompt;
 CapturedGitStatusBefore = gitStatusBefore ?? string.Empty;
 CapturedTimeout = options?.Timeout;
-return Task.FromResult(RunResult with
-{
-WorkingDirectory = workingDirectory,
-GitStatusBefore = gitStatusBefore ?? string.Empty,
-GitStatusAfter = GitStatusAfter,
-DirtyStateChanged = !string.Equals(gitStatusBefore ?? string.Empty, GitStatusAfter, StringComparison.Ordinal),
-PromptBytes = Encoding.UTF8.GetByteCount(prompt),
-});
+    return Task.FromResult(RunResult with
+    {
+        WorkingDirectory = workingDirectory,
+        GitStatusBefore = gitStatusBefore ?? string.Empty,
+        GitStatusAfter = GitStatusAfter,
+        DirtyStateChanged = !string.Equals(gitStatusBefore ?? string.Empty, GitStatusAfter, StringComparison.Ordinal),
+        PromptBytes = Encoding.UTF8.GetByteCount(prompt),
+    });
 }
+
 }
 }

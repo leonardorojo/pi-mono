@@ -394,8 +394,27 @@ internal static class RfsTuiRenderer
         }
     }
 
+    internal static void WriteHermesRunHeartbeat(RfsTuiHermesRunProgress progress)
+        => WriteMutedLine(FormatHermesRunHeartbeat(progress));
+
+    internal static string FormatHermesRunHeartbeat(RfsTuiHermesRunProgress progress)
+    {
+        var elapsed = FormatSeconds(progress.Elapsed);
+        var timeout = FormatSeconds(progress.Timeout);
+        var remaining = FormatSeconds(progress.Remaining);
+        var pidLabel = progress.ProcessId is null ? string.Empty : $" · pid: {progress.ProcessId}";
+
+        return $"[Hermes run] still running... elapsed: {elapsed} / {timeout} · remaining: {remaining} · cwd: {progress.WorkingDirectory} · prompt bytes: {progress.PromptBytes.ToString("N0", CultureInfo.InvariantCulture)} · transport: {progress.Transport}{pidLabel} · waiting for final response...";
+    }
+
     private static string FormatGitStatus(string? status)
         => string.IsNullOrWhiteSpace(status) ? "(clean)" : status.TrimEnd();
+
+    private static string FormatSeconds(TimeSpan duration)
+    {
+        var seconds = Math.Max(0, (int)Math.Round(duration.TotalSeconds, MidpointRounding.AwayFromZero));
+        return seconds.ToString(CultureInfo.InvariantCulture) + "s";
+    }
 
     internal static void WriteHelp(IReadOnlyList<RfsTuiCommandInfo> commands)
     {

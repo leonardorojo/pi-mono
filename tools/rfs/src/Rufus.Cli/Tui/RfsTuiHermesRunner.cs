@@ -25,6 +25,7 @@ internal sealed class RealHermesRunner : IRfsTuiHermesRunner
         string prompt,
         string? gitStatusBefore = null,
         RfsTuiHermesRunOptions? options = null,
+        RfsTuiHermesRunProgressReporter? progressReporter = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(workingDirectory))
@@ -67,17 +68,43 @@ internal sealed class RealHermesRunner : IRfsTuiHermesRunner
                 var stderrTask = process.StandardError.ReadToEndAsync();
                 var exitedTask = process.WaitForExitAsync(cancellationToken);
                 var timeoutTask = Task.Delay(options.Timeout, cancellationToken);
-                var completedTask = await Task.WhenAny(exitedTask, timeoutTask).ConfigureAwait(false);
+                var heartbeatInterval = options.HeartbeatInterval;
+                var processId = process.Id;
 
-                timedOut = completedTask == timeoutTask && !cancellationToken.IsCancellationRequested;
-                if (timedOut)
+                while (true)
                 {
-                    TryKill(process);
-                    await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-                }
-                else
-                {
-                    await exitedTask.ConfigureAwait(false);
+                    var heartbeatTask = Task.Delay(heartbeatInterval, cancellationToken);
+                    var completedTask = await Task.WhenAny(exitedTask, timeoutTask, heartbeatTask).ConfigureAwait(false);
+
+                    if (completedTask == exitedTask)
+                    {
+                        await exitedTask.ConfigureAwait(false);
+                        break;
+                    }
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        TryKill(process);
+                        await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+
+                    if (completedTask == timeoutTask)
+                    {
+                        timedOut = true;
+                        TryKill(process);
+                        await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                        break;
+                    }
+
+                    progressReporter?.Invoke(new RfsTuiHermesRunProgress(
+                        WorkingDirectory: workingDirectoryPath,
+                        Elapsed: stopwatch.Elapsed,
+                        Remaining: options.Timeout - stopwatch.Elapsed,
+                        Timeout: options.Timeout,
+                        PromptBytes: promptBytes,
+                        Transport: "cli-oneshot",
+                        ProcessId: processId));
                 }
 
                 stdout = await stdoutTask.ConfigureAwait(false);

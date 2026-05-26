@@ -1,250 +1,494 @@
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
+using System.Text;
 
 internal static class RfsTuiModelPickerChecks
 {
-    internal static void Run(List<string> failures)
-    {
-        RunSessionModelStateCases(failures);
-        RunModelSelectionStateCases(failures);
-        RunRendererAndPrincipalModelCases(failures);
-        RunHermesDraftCases(failures);
-        RunCommandCatalogCases(failures);
-    }
+internal static void Run(List<string> failures)
+{
+RunSessionModelStateCases(failures);
+RunModelSelectionStateCases(failures);
+RunRendererAndPrincipalModelCases(failures);
+RunHermesDraftCases(failures);
+RunHermesRunCases(failures);
+RunCommandCatalogCases(failures);
+}
 
-    private static void RunSessionModelStateCases(List<string> failures)
-    {
-        var sessionState = new RfsTuiSessionState();
-        if (!string.Equals(sessionState.CurrentSessionModel, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
-        {
-            failures.Add($"[tui model picker] expected a fresh session to start on '{RfsTuiSessionState.DefaultSessionModel}' but got '{sessionState.CurrentSessionModel}'.");
-        }
+private static void RunSessionModelStateCases(List<string> failures)
+{
+var sessionState = new RfsTuiSessionState();
+if (!string.Equals(sessionState.CurrentSessionModel, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
+{
+failures.Add($"[tui model picker] expected a fresh session to start on '{RfsTuiSessionState.DefaultSessionModel}' but got '{sessionState.CurrentSessionModel}'.");
+}
 
-        sessionState.SetSessionModel("claude-sonnet-4.5");
-        if (!string.Equals(sessionState.CurrentSessionModel, "claude-sonnet-4.5", StringComparison.Ordinal))
-        {
-            failures.Add($"[tui model picker] expected session model to update to 'claude-sonnet-4.5' but got '{sessionState.CurrentSessionModel}'.");
-        }
+sessionState.SetSessionModel("claude-sonnet-4.5");
+if (!string.Equals(sessionState.CurrentSessionModel, "claude-sonnet-4.5", StringComparison.Ordinal))
+{
+failures.Add($"[tui model picker] expected session model to update to 'claude-sonnet-4.5' but got '{sessionState.CurrentSessionModel}'.");
+}
 
-        sessionState.ResetSessionModel();
-        if (!string.Equals(sessionState.CurrentSessionModel, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
-        {
-            failures.Add($"[tui model picker] expected session reset to restore '{RfsTuiSessionState.DefaultSessionModel}' but got '{sessionState.CurrentSessionModel}'.");
-        }
-    }
+sessionState.ResetSessionModel();
+if (!string.Equals(sessionState.CurrentSessionModel, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
+{
+failures.Add($"[tui model picker] expected session reset to restore '{RfsTuiSessionState.DefaultSessionModel}' but got '{sessionState.CurrentSessionModel}'.");
+}
+}
 
-    private static void RunModelSelectionStateCases(List<string> failures)
-    {
-        var models = new[]
-        {
-            new PiRpcAvailableModel("claude-haiku-4.5", "github-copilot", "Claude Haiku 4.5"),
-            new PiRpcAvailableModel("claude-sonnet-4.5", "github-copilot", "Claude Sonnet 4.5"),
-            new PiRpcAvailableModel("gpt-5.4-mini", "github-copilot", "GPT-5.4 Mini"),
-            new PiRpcAvailableModel("gpt-5.4", "github-copilot", "GPT-5.4"),
-        };
+private static void RunModelSelectionStateCases(List<string> failures)
+{
+var models = new[]
+{
+new PiRpcAvailableModel("claude-haiku-4.5", "github-copilot", "Claude Haiku 4.5"),
+new PiRpcAvailableModel("claude-sonnet-4.5", "github-copilot", "Claude Sonnet 4.5"),
+new PiRpcAvailableModel("gpt-5.4-mini", "github-copilot", "GPT-5.4 Mini"),
+new PiRpcAvailableModel("gpt-5.4", "github-copilot", "GPT-5.4"),
+};
 
-        var state = new RfsTuiModelSelectionState(models, "gpt-5.4-mini");
-        if (state.SelectedIndex != 2)
-        {
-            failures.Add($"[tui model picker] expected the current session model to be selected initially, but got index {state.SelectedIndex}.");
-        }
+var state = new RfsTuiModelSelectionState(models, "gpt-5.4-mini");
+if (state.SelectedIndex != 2)
+{
+failures.Add($"[tui model picker] expected the current session model to be selected initially, but got index {state.SelectedIndex}.");
+}
 
-        var moveDownResult = state.HandleKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
-        if (moveDownResult != RfsTuiModelSelectionAction.Continue || state.SelectedIndex != 3)
-        {
-            failures.Add($"[tui model picker] expected ArrowDown to move to index 3 and continue, but got action {moveDownResult} and index {state.SelectedIndex}.");
-        }
+var moveDownResult = state.HandleKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+if (moveDownResult != RfsTuiModelSelectionAction.Continue || state.SelectedIndex != 3)
+{
+failures.Add($"[tui model picker] expected ArrowDown to move to index 3 and continue, but got action {moveDownResult} and index {state.SelectedIndex}.");
+}
 
-        var moveUpResult = state.HandleKey(new ConsoleKeyInfo('\0', ConsoleKey.UpArrow, false, false, false));
-        if (moveUpResult != RfsTuiModelSelectionAction.Continue || state.SelectedIndex != 2)
-        {
-            failures.Add($"[tui model picker] expected ArrowUp to move back to index 2 and continue, but got action {moveUpResult} and index {state.SelectedIndex}.");
-        }
+var moveUpResult = state.HandleKey(new ConsoleKeyInfo('\0', ConsoleKey.UpArrow, false, false, false));
+if (moveUpResult != RfsTuiModelSelectionAction.Continue || state.SelectedIndex != 2)
+{
+failures.Add($"[tui model picker] expected ArrowUp to move back to index 2 and continue, but got action {moveUpResult} and index {state.SelectedIndex}.");
+}
 
-        var enterResult = state.HandleKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
-        if (enterResult != RfsTuiModelSelectionAction.Confirm || !string.Equals(state.SelectedModelId, "gpt-5.4-mini", StringComparison.Ordinal))
-        {
-            failures.Add($"[tui model picker] expected Enter to confirm 'gpt-5.4-mini' but got action {enterResult} and selected '{state.SelectedModelId ?? "(null)"}'.");
-        }
+var enterResult = state.HandleKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+if (enterResult != RfsTuiModelSelectionAction.Confirm || !string.Equals(state.SelectedModelId, "gpt-5.4-mini", StringComparison.Ordinal))
+{
+failures.Add($"[tui model picker] expected Enter to confirm 'gpt-5.4-mini' but got action {enterResult} and selected '{state.SelectedModelId ?? "(null)"}'.");
+}
 
-        var escapeState = new RfsTuiModelSelectionState(models, "claude-haiku-4.5");
-        var escapeResult = escapeState.HandleKey(new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, false, false, false));
-        if (escapeResult != RfsTuiModelSelectionAction.Cancel)
-        {
-            failures.Add($"[tui model picker] expected Escape to cancel but got {escapeResult}.");
-        }
+var escapeState = new RfsTuiModelSelectionState(models, "claude-haiku-4.5");
+var escapeResult = escapeState.HandleKey(new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, false, false, false));
+if (escapeResult != RfsTuiModelSelectionAction.Cancel)
+{
+failures.Add($"[tui model picker] expected Escape to cancel but got {escapeResult}.");
+}
 
-        var qState = new RfsTuiModelSelectionState(models, "claude-haiku-4.5");
-        var qResult = qState.HandleKey(new ConsoleKeyInfo('q', ConsoleKey.Q, false, false, false));
-        if (qResult != RfsTuiModelSelectionAction.Cancel)
-        {
-            failures.Add($"[tui model picker] expected q to cancel but got {qResult}.");
-        }
+var qState = new RfsTuiModelSelectionState(models, "claude-haiku-4.5");
+var qResult = qState.HandleKey(new ConsoleKeyInfo('q', ConsoleKey.Q, false, false, false));
+if (qResult != RfsTuiModelSelectionAction.Cancel)
+{
+failures.Add($"[tui model picker] expected q to cancel but got {qResult}.");
+}
 
-        var missingCurrentState = new RfsTuiModelSelectionState(models, "does-not-exist");
-        if (missingCurrentState.SelectedIndex != 0)
-        {
-            failures.Add($"[tui model picker] expected missing current model to fall back to the first entry, but got index {missingCurrentState.SelectedIndex}.");
-        }
-    }
+var missingCurrentState = new RfsTuiModelSelectionState(models, "does-not-exist");
+if (missingCurrentState.SelectedIndex != 0)
+{
+failures.Add($"[tui model picker] expected missing current model to fall back to the first entry, but got index {missingCurrentState.SelectedIndex}.");
+}
+}
 
-    private static void RunCommandCatalogCases(List<string> failures)
-    {
-        var helpCommands = RfsTuiCommandCatalog.GetHelpCommands();
-        var modelShow = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelShow);
-        var modelSet = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelSet);
-        var hermes = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes", StringComparison.Ordinal));
+private static void RunCommandCatalogCases(List<string> failures)
+{
+var helpCommands = RfsTuiCommandCatalog.GetHelpCommands();
+var modelShow = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelShow);
+var modelSet = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.ModelSet);
+var hermes = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes", StringComparison.Ordinal));
+var hermesRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes run", StringComparison.Ordinal));
 
-        if (modelShow is null || !string.Equals(modelShow.Description, "Open session model picker", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected /model help text to describe the session picker.");
-        }
+if (modelShow is null || !string.Equals(modelShow.Description, "Open session model picker", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /model help text to describe the session picker.");
+}
 
-        if (modelSet is null || !string.Equals(modelSet.Description, "Set session model (temporary)", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected /model <model> help text to describe temporary session updates.");
-        }
+if (modelSet is null || !string.Equals(modelSet.Description, "Set session model (temporary)", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /model <model> help text to describe temporary session updates.");
+}
 
-        if (hermes is null || !string.Equals(hermes.Description, "Build Hermes handoff draft", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected /hermes help text to describe the handoff draft.");
-        }
+if (hermes is null || !string.Equals(hermes.Description, "Build Hermes handoff draft (draft-only)", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes help text to describe the draft-only handoff.");
+}
 
-        var exactModel = RfsTuiCommandCatalog.FindExactMatch("/model");
-        if (exactModel is null || exactModel.Kind != RfsTuiCommandKind.ModelShow)
-        {
-            failures.Add("[tui model picker] expected /model to resolve to the picker command.");
-        }
+if (hermesRun is null || !string.Equals(hermesRun.Description, "Build Hermes handoff draft and run Hermes", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes run help text to describe the guarded execution path.");
+}
 
-        var exactHermes = RfsTuiCommandCatalog.FindExactMatch("/hermes");
-        if (exactHermes is null || !string.Equals(exactHermes.Usage, "/hermes", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected /hermes to resolve to the Hermes handoff command.");
-        }
+var exactModel = RfsTuiCommandCatalog.FindExactMatch("/model");
+if (exactModel is null || exactModel.Kind != RfsTuiCommandKind.ModelShow)
+{
+failures.Add("[tui model picker] expected /model to resolve to the picker command.");
+}
 
-        var modelSuggestions = RfsTuiCommandCatalog.GetSuggestions("/model");
-        if (modelSuggestions.Count == 0)
-        {
-            failures.Add("[tui model picker] expected /model suggestions to be populated.");
-        }
-    }
+var exactHermes = RfsTuiCommandCatalog.FindExactMatch("/hermes");
+if (exactHermes is null || !string.Equals(exactHermes.Usage, "/hermes", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes to resolve to the Hermes handoff command.");
+}
 
-    private static void RunRendererAndPrincipalModelCases(List<string> failures)
-    {
-        var status = new RckWorkspaceStatus(
-            RepoRoot: "/tmp/rfs",
-            WorkspaceExists: true,
-            ConfigExists: true,
-            RckExists: true,
-            HeadExists: true,
-            Head: "abcdef1234567890",
-            StateCount: 3,
-            DeltaCount: 2,
-            AnchorCount: 1,
-            GitContext: new GitWorkspaceContext("main", "abcdef1234567890", Dirty: false, Array.Empty<GitWorkspaceArtifactChange>()));
+var exactHermesRun = RfsTuiCommandCatalog.FindExactMatch("/hermes run");
+if (exactHermesRun is null || !string.Equals(exactHermesRun.Usage, "/hermes run", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes run to resolve to the guarded Hermes command.");
+}
 
-        var originalOut = Console.Out;
-        using var stdout = new StringWriter();
+var modelSuggestions = RfsTuiCommandCatalog.GetSuggestions("/model");
+if (modelSuggestions.Count == 0)
+{
+failures.Add("[tui model picker] expected /model suggestions to be populated.");
+}
+}
 
-        try
-        {
-            Console.SetOut(stdout);
-            RfsTuiRenderer.WriteHeader(status, "pi-mono", "claude-sonnet-4.5", leadingBlankLine: false);
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
+private static void RunRendererAndPrincipalModelCases(List<string> failures)
+{
+var status = new RckWorkspaceStatus(
+RepoRoot: "/tmp/rfs",
+WorkspaceExists: true,
+ConfigExists: true,
+RckExists: true,
+HeadExists: true,
+Head: "abcdef1234567890",
+StateCount: 3,
+DeltaCount: 2,
+AnchorCount: 1,
+GitContext: new GitWorkspaceContext("main", "abcdef1234567890", Dirty: false, Array.Empty<GitWorkspaceArtifactChange>()));
 
-        var headerText = stdout.ToString();
-        if (!headerText.Contains("claude-sonnet-4.5 · session", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected the header to mark non-default session models as session-scoped.");
-        }
+var originalOut = Console.Out;
+using var stdout = new StringWriter();
 
-        if (!headerText.Contains("Model:", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected the header to include a Model line.");
-        }
+try
+{
+Console.SetOut(stdout);
+RfsTuiRenderer.WriteHeader(status, "pi-mono", "claude-sonnet-4.5", leadingBlankLine: false);
+}
+finally
+{
+Console.SetOut(originalOut);
+}
 
-        var executionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel("claude-sonnet-4.5");
-        if (!string.Equals(executionModel.Model, "claude-sonnet-4.5", StringComparison.Ordinal))
-        {
-            failures.Add($"[tui model picker] expected the principal answer execution model to use the session model but got '{executionModel.Model}'.");
-        }
+var headerText = stdout.ToString();
+if (!headerText.Contains("claude-sonnet-4.5 · session", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected the header to mark non-default session models as session-scoped.");
+}
 
-        var defaultExecutionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(string.Empty);
-        if (!string.Equals(defaultExecutionModel.Model, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
-        {
-            failures.Add($"[tui model picker] expected empty session model to fall back to '{RfsTuiSessionState.DefaultSessionModel}' but got '{defaultExecutionModel.Model}'.");
-        }
-    }
+if (!headerText.Contains("Model:", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected the header to include a Model line.");
+}
 
-    private static void RunHermesDraftCases(List<string> failures)
-    {
-        var status = new RckWorkspaceStatus(
-            RepoRoot: "/tmp/rfs",
-            WorkspaceExists: true,
-            ConfigExists: true,
-            RckExists: true,
-            HeadExists: true,
-            Head: "abcdef1234567890",
-            StateCount: 1,
-            DeltaCount: 1,
-            AnchorCount: 1,
-            GitContext: new GitWorkspaceContext("feature/rufus-cli-design", "abcdef1234567890", Dirty: true, Array.Empty<GitWorkspaceArtifactChange>()));
+var executionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel("claude-sonnet-4.5");
+if (!string.Equals(executionModel.Model, "claude-sonnet-4.5", StringComparison.Ordinal))
+{
+failures.Add($"[tui model picker] expected the principal answer execution model to use the session model but got '{executionModel.Model}'.");
+}
 
-        var freshSession = new RfsTuiSessionState();
-        var unavailable = RfsTuiHermesPromptBuilder.TryBuild(status, freshSession);
-        if (unavailable.Success || unavailable.Draft is not null || !string.Equals(unavailable.ErrorMessage, "No hay una respuesta previa para generar handoff a Hermes.", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected /hermes to report that no prior answer is available before any RFS reply.");
-        }
+var defaultExecutionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(string.Empty);
+if (!string.Equals(defaultExecutionModel.Model, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
+{
+failures.Add($"[tui model picker] expected empty session model to fall back to '{RfsTuiSessionState.DefaultSessionModel}' but got '{defaultExecutionModel.Model}'.");
+}
+}
 
-        var sessionState = new RfsTuiSessionState();
-        sessionState.RecordComplete(
-            new RfsTuiCompleteContextSummary(
-                SelectionStrategy: "trace-slice",
-                ValidationStatus: "validated",
-                ContextPackScope: "repo",
-                IntentSource: "llm",
-                SelectedStateCount: 5,
-                SelectedDeltaCount: 3,
-                SelectedAnchorCount: 2,
-                EstimatedChars: 1234,
-                EstimatedTokens: 321,
-                TransportRisk: "low",
-                Truncated: false,
-                Warnings: ["warning-1"],
-                Omissions: ["omission-1"]),
-            prompt: "¿Qué cambió en la última respuesta?",
-            answer: "Se validó el ContextPack y se respondió con una propuesta concreta.");
+private static void RunHermesDraftCases(List<string> failures)
+{
+var status = new RckWorkspaceStatus(
+RepoRoot: "/tmp/rfs",
+WorkspaceExists: true,
+ConfigExists: true,
+RckExists: true,
+HeadExists: true,
+Head: "abcdef1234567890",
+StateCount: 1,
+DeltaCount: 1,
+AnchorCount: 1,
+GitContext: new GitWorkspaceContext("feature/rufus-cli-design", "abcdef1234567890", Dirty: true, Array.Empty<GitWorkspaceArtifactChange>()));
 
-        var draftResult = RfsTuiHermesPromptBuilder.TryBuild(status, sessionState);
-        if (!draftResult.Success || draftResult.Draft is null)
-        {
-            failures.Add("[tui model picker] expected /hermes to build a draft once a prior response exists.");
-            return;
-        }
+var freshSession = new RfsTuiSessionState();
+var unavailable = RfsTuiHermesPromptBuilder.TryBuild(status, freshSession);
+if (unavailable.Success || unavailable.Draft is not null || !string.Equals(unavailable.ErrorMessage, "No hay una respuesta previa para generar handoff a Hermes.", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes to report that no prior answer is available before any RFS reply.");
+}
 
-        var draft = draftResult.Draft;
-        if (!string.Equals(draft.RepoRoot, "/tmp/rfs", StringComparison.Ordinal) ||
-            !string.Equals(draft.Branch, "feature/rufus-cli-design", StringComparison.Ordinal) ||
-            !string.Equals(draft.DirtyState, "dirty", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected /hermes draft metadata to include repo root, branch, and dirty state.");
-        }
+var sessionState = new RfsTuiSessionState();
+sessionState.RecordComplete(
+new RfsTuiCompleteContextSummary(
+SelectionStrategy: "trace-slice",
+ValidationStatus: "validated",
+ContextPackScope: "repo",
+IntentSource: "llm",
+SelectedStateCount: 5,
+SelectedDeltaCount: 3,
+SelectedAnchorCount: 2,
+EstimatedChars: 1234,
+EstimatedTokens: 321,
+TransportRisk: "low",
+Truncated: false,
+Warnings: ["warning-1"],
+Omissions: ["omission-1"]),
+prompt: "¿Qué cambió en la última respuesta?",
+answer: "Se validó el ContextPack y se respondió con una propuesta concreta.");
 
-        if (!draft.PromptText.Contains("Hermes handoff draft", StringComparison.Ordinal) ||
-            !draft.PromptText.Contains("Repo root: /tmp/rfs", StringComparison.Ordinal) ||
-            !draft.PromptText.Contains("Branch: feature/rufus-cli-design", StringComparison.Ordinal) ||
-            !draft.PromptText.Contains("Dirty state: dirty", StringComparison.Ordinal) ||
-            !draft.PromptText.Contains("Respuesta previa del LLM principal:", StringComparison.Ordinal) ||
-            !draft.PromptText.Contains("ContextPack summary:", StringComparison.Ordinal) ||
-            !draft.PromptText.Contains("Entrega esperada:", StringComparison.Ordinal))
-        {
-            failures.Add("[tui model picker] expected /hermes prompt text to include the required handoff sections.");
-        }
-    }
+var draftResult = RfsTuiHermesPromptBuilder.TryBuild(status, sessionState);
+if (!draftResult.Success || draftResult.Draft is null)
+{
+failures.Add("[tui model picker] expected /hermes to build a draft once a prior response exists.");
+return;
+}
+
+var draft = draftResult.Draft;
+if (!string.Equals(draft.RepoRoot, "/tmp/rfs", StringComparison.Ordinal) ||
+!string.Equals(draft.Branch, "feature/rufus-cli-design", StringComparison.Ordinal) ||
+!string.Equals(draft.DirtyState, "dirty", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes draft metadata to include repo root, branch, and dirty state.");
+}
+
+if (!draft.PromptText.Contains("Hermes handoff draft", StringComparison.Ordinal) ||
+!draft.PromptText.Contains("Repo root: /tmp/rfs", StringComparison.Ordinal) ||
+!draft.PromptText.Contains("Branch: feature/rufus-cli-design", StringComparison.Ordinal) ||
+!draft.PromptText.Contains("Dirty state: dirty", StringComparison.Ordinal) ||
+!draft.PromptText.Contains("Respuesta previa del LLM principal:", StringComparison.Ordinal) ||
+!draft.PromptText.Contains("ContextPack summary:", StringComparison.Ordinal) ||
+!draft.PromptText.Contains("Entrega esperada:", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes prompt text to include the required handoff sections.");
+}
+}
+
+private static void RunHermesRunCases(List<string> failures)
+{
+var status = new RckWorkspaceStatus(
+RepoRoot: "/tmp/rfs",
+WorkspaceExists: true,
+ConfigExists: true,
+RckExists: true,
+HeadExists: true,
+Head: "abcdef1234567890",
+StateCount: 1,
+DeltaCount: 1,
+AnchorCount: 1,
+GitContext: new GitWorkspaceContext("feature/rufus-cli-design", "abcdef1234567890", Dirty: false, Array.Empty<GitWorkspaceArtifactChange>()));
+
+var noResponseSession = new RfsTuiSessionState();
+var captureNoResponse = new StringWriter();
+var originalOut = Console.Out;
+try
+{
+Console.SetOut(captureNoResponse);
+var noResponseRunner = new FakeHermesRunner();
+var noResponseResult = RfsTuiHermesRunCommand.ExecuteAsync(status, noResponseSession, noResponseRunner).GetAwaiter().GetResult();
+if (!noResponseResult)
+{
+failures.Add("[tui model picker] expected /hermes run without a prior response to be handled.");
+}
+
+var noResponseText = captureNoResponse.ToString();
+if (!noResponseText.Contains("No hay una respuesta previa para ejecutar handoff con Hermes.", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes run to report the missing prior response.");
+}
+
+if (noResponseRunner.CaptureGitStatusCalls != 0 || noResponseRunner.RunCalls != 0)
+{
+failures.Add("[tui model picker] expected /hermes run to stop before invoking the runner when no response exists.");
+}
+}
+finally
+{
+Console.SetOut(originalOut);
+}
+
+var longSession = new RfsTuiSessionState();
+longSession.RecordComplete(
+new RfsTuiCompleteContextSummary(
+SelectionStrategy: "trace-slice",
+ValidationStatus: "validated",
+ContextPackScope: "repo",
+IntentSource: "llm",
+SelectedStateCount: 5,
+SelectedDeltaCount: 3,
+SelectedAnchorCount: 2,
+EstimatedChars: 1234,
+EstimatedTokens: 321,
+TransportRisk: "low",
+Truncated: false,
+Warnings: Array.Empty<string>(),
+Omissions: Array.Empty<string>()),
+prompt: "¿Qué cambió en la última respuesta?",
+answer: new string('x', RfsTuiHermesRunOptions.DefaultMaxPromptBytes + 2500));
+
+var guardRunner = new FakeHermesRunner();
+var guardCapture = new StringWriter();
+try
+{
+Console.SetOut(guardCapture);
+var guardResult = RfsTuiHermesRunCommand.ExecuteAsync(status, longSession, guardRunner).GetAwaiter().GetResult();
+if (!guardResult)
+{
+failures.Add("[tui model picker] expected prompt-size guard to return handled state.");
+}
+}
+finally
+{
+Console.SetOut(originalOut);
+}
+
+if (!guardCapture.ToString().Contains("Hermes prompt too large for argv transport.", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes run to reject oversized argv prompts.");
+}
+
+if (guardRunner.CaptureGitStatusCalls != 0 || guardRunner.RunCalls != 0)
+{
+failures.Add("[tui model picker] expected oversized prompts to abort before runner invocation.");
+}
+
+var runSession = new RfsTuiSessionState();
+runSession.RecordComplete(
+new RfsTuiCompleteContextSummary(
+SelectionStrategy: "trace-slice",
+ValidationStatus: "validated",
+ContextPackScope: "repo",
+IntentSource: "llm",
+SelectedStateCount: 5,
+SelectedDeltaCount: 3,
+SelectedAnchorCount: 2,
+EstimatedChars: 1234,
+EstimatedTokens: 321,
+TransportRisk: "low",
+Truncated: false,
+Warnings: Array.Empty<string>(),
+Omissions: Array.Empty<string>()),
+prompt: "¿Qué cambió en la última respuesta?",
+answer: "Se validó el ContextPack y se respondió con una propuesta concreta.");
+
+var expectedPrompt = RfsTuiHermesPromptBuilder.TryBuild(status, runSession).Draft!.PromptText;
+var successRunner = new FakeHermesRunner
+{
+GitStatusBefore = " M changed-file.cs",
+GitStatusAfter = " M changed-file.cs",
+RunResult = new RfsTuiHermesRunResult(
+Stdout: "Hermes output",
+Stderr: "",
+ExitCode: 0,
+StartedAt: DateTimeOffset.UtcNow,
+FinishedAt: DateTimeOffset.UtcNow,
+DurationMs: 123,
+TimedOut: false,
+WorkingDirectory: "/tmp/rfs",
+GitStatusBefore: " M changed-file.cs",
+GitStatusAfter: " M changed-file.cs",
+DirtyStateChanged: false,
+PromptBytes: Encoding.UTF8.GetByteCount(expectedPrompt))
+};
+
+var runCapture = new StringWriter();
+try
+{
+Console.SetOut(runCapture);
+var runResult = RfsTuiHermesRunCommand.ExecuteAsync(status, runSession, successRunner).GetAwaiter().GetResult();
+if (!runResult)
+{
+failures.Add("[tui model picker] expected /hermes run to complete the guarded execution path.");
+}
+}
+finally
+{
+Console.SetOut(originalOut);
+}
+
+if (successRunner.CaptureGitStatusCalls != 1 || successRunner.RunCalls != 1)
+{
+failures.Add("[tui model picker] expected /hermes run to capture git status once and invoke the runner once.");
+}
+
+if (!string.Equals(successRunner.CapturedPrompt, expectedPrompt, StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes run to reuse the Hermes prompt builder output.");
+}
+
+if (!string.Equals(successRunner.CapturedWorkingDirectory, "/tmp/rfs", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes run to execute from the repo root.");
+}
+
+var runOutput = runCapture.ToString();
+        if (!runOutput.Contains("[Hermes run]", StringComparison.Ordinal) ||
+            !runOutput.Contains("transport: cli-oneshot", StringComparison.Ordinal) ||
+            !runOutput.Contains("Git changed: no", StringComparison.Ordinal) ||
+            !runOutput.Contains("Hermes response:", StringComparison.Ordinal) ||
+            !runOutput.Contains("Hermes output", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /hermes run to render guarded execution metadata and stdout.");
+}
+}
+
+private sealed class FakeHermesRunner : IRfsTuiHermesRunner
+{
+public int CaptureGitStatusCalls { get; private set; }
+
+public int RunCalls { get; private set; }
+
+public string GitStatusBefore { get; init; } = string.Empty;
+
+public string GitStatusAfter { get; init; } = string.Empty;
+
+public RfsTuiHermesRunResult RunResult { get; init; } = new(
+Stdout: string.Empty,
+Stderr: string.Empty,
+ExitCode: 0,
+StartedAt: DateTimeOffset.UtcNow,
+FinishedAt: DateTimeOffset.UtcNow,
+DurationMs: 0,
+TimedOut: false,
+WorkingDirectory: string.Empty,
+GitStatusBefore: string.Empty,
+GitStatusAfter: string.Empty,
+DirtyStateChanged: false,
+PromptBytes: 0);
+
+public string CapturedPrompt { get; private set; } = string.Empty;
+
+public string CapturedWorkingDirectory { get; private set; } = string.Empty;
+
+public string CapturedGitStatusBefore { get; private set; } = string.Empty;
+
+public TimeSpan? CapturedTimeout { get; private set; }
+
+public Task<string> CaptureGitStatusAsync(string workingDirectory, CancellationToken cancellationToken = default)
+{
+CaptureGitStatusCalls++;
+CapturedWorkingDirectory = workingDirectory;
+return Task.FromResult(CaptureGitStatusCalls == 1 ? GitStatusBefore : GitStatusAfter);
+}
+
+public Task<RfsTuiHermesRunResult> RunAsync(
+string workingDirectory,
+string prompt,
+string? gitStatusBefore = null,
+RfsTuiHermesRunOptions? options = null,
+CancellationToken cancellationToken = default)
+{
+RunCalls++;
+CapturedWorkingDirectory = workingDirectory;
+CapturedPrompt = prompt;
+CapturedGitStatusBefore = gitStatusBefore ?? string.Empty;
+CapturedTimeout = options?.Timeout;
+return Task.FromResult(RunResult with
+{
+WorkingDirectory = workingDirectory,
+GitStatusBefore = gitStatusBefore ?? string.Empty,
+GitStatusAfter = GitStatusAfter,
+DirtyStateChanged = !string.Equals(gitStatusBefore ?? string.Empty, GitStatusAfter, StringComparison.Ordinal),
+PromptBytes = Encoding.UTF8.GetByteCount(prompt),
+});
+}
+}
 }

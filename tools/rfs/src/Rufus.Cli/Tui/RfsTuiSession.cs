@@ -713,6 +713,8 @@ internal static class RfsTuiSession
                 case RfsTuiCommandKind.Hermes:
                     RenderHermesDraft(status);
                     return true;
+                case RfsTuiCommandKind.HermesRun:
+                    return await RfsTuiHermesRunCommand.ExecuteAsync(status, SessionState);
                 case RfsTuiCommandKind.Anchor:
                     return HandleAnchorCommand(input, repoRoot);
                 case RfsTuiCommandKind.Help:

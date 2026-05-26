@@ -320,6 +320,58 @@ internal static class RfsTuiRenderer
         Console.WriteLine("```");
     }
 
+    internal static void WriteHermesRunResult(RfsTuiHermesRunResult result)
+    {
+        WriteSectionTitle("[Hermes run]");
+        WriteKeyValue("transport", "cli-oneshot");
+        WriteKeyValue("cwd", result.WorkingDirectory);
+        WriteKeyValue("duration", $"{result.DurationMs.ToString(CultureInfo.InvariantCulture)} ms");
+        WriteKeyValue("exit code", result.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "(n/a)");
+        WriteKeyValue("timed out", result.TimedOut ? "yes" : "no");
+        WriteKeyValue("Git changed", result.DirtyStateChanged ? "yes" : "no");
+        WriteKeyValue("prompt bytes", result.PromptBytes.ToString("N0", CultureInfo.InvariantCulture));
+
+        if (result.TimedOut)
+        {
+            Console.WriteLine();
+            WriteWarningLine("Hermes run timed out.");
+        }
+
+        Console.WriteLine();
+        WriteSectionTitle("Hermes response:");
+        WriteDivider("────────────────");
+
+        if (string.IsNullOrWhiteSpace(result.Stdout))
+        {
+            WriteMutedLine("(no stdout)");
+        }
+        else
+        {
+            Console.WriteLine(result.Stdout.TrimEnd());
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Stderr))
+        {
+            Console.WriteLine();
+            WriteSectionTitle("Hermes stderr:");
+            WriteDivider("──────────────");
+            Console.WriteLine(result.Stderr.TrimEnd());
+        }
+
+        if (result.DirtyStateChanged)
+        {
+            Console.WriteLine();
+            WriteWarningLine("WARNING: repository state changed during Hermes run.");
+            WriteSectionTitle("Before:");
+            Console.WriteLine(FormatGitStatus(result.GitStatusBefore));
+            WriteSectionTitle("After:");
+            Console.WriteLine(FormatGitStatus(result.GitStatusAfter));
+        }
+    }
+
+    private static string FormatGitStatus(string? status)
+        => string.IsNullOrWhiteSpace(status) ? "(clean)" : status.TrimEnd();
+
     internal static void WriteHelp(IReadOnlyList<RfsTuiCommandInfo> commands)
     {
         WriteSectionTitle("Commands:");

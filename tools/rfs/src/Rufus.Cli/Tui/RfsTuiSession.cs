@@ -792,8 +792,13 @@ internal static class RfsTuiSession
                     return true;
                 case RfsTuiCommandKind.HermesRun:
                     using (var runCancellationSource = new CancellationTokenSource())
+                    using (var runCancellationMonitorSource = new CancellationTokenSource())
                     {
                         ActiveCommandCancellationSource = runCancellationSource;
+                        var runCancellationMonitorTask = RfsTuiHermesRunCancellationMonitor.WatchAsync(
+                            runCancellationSource,
+                            cancellationToken: runCancellationMonitorSource.Token);
+
                         try
                         {
                             return await RfsTuiHermesRunCommand.ExecuteAsync(status, SessionState, runCancellationSource.Token);
@@ -801,6 +806,14 @@ internal static class RfsTuiSession
                         finally
                         {
                             ActiveCommandCancellationSource = null;
+                            runCancellationMonitorSource.Cancel();
+                            try
+                            {
+                                await runCancellationMonitorTask.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                            }
                         }
                     }
                 case RfsTuiCommandKind.Anchor:

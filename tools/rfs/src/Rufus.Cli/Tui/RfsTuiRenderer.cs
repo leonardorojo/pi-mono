@@ -420,9 +420,9 @@ internal static class RfsTuiRenderer
     }
 
     internal static void WriteHermesRunHeartbeat(RfsTuiHermesRunProgress progress)
-        => WriteMutedLine(FormatHermesRunHeartbeat(progress));
+        => WriteMutedLine(FormatHermesRunHeartbeat(progress, RfsTuiTerminal.IsInteractive));
 
-    internal static string FormatHermesRunHeartbeat(RfsTuiHermesRunProgress progress)
+    internal static string FormatHermesRunHeartbeat(RfsTuiHermesRunProgress progress, bool showCancelHint)
     {
         var elapsed = FormatSeconds(progress.Elapsed);
         var timeout = FormatSeconds(progress.Timeout);
@@ -435,8 +435,8 @@ internal static class RfsTuiRenderer
                 : progress.Elapsed >= TimeSpan.FromSeconds(60)
                     ? "taking longer than usual."
                     : "still running...";
-        var cancelHint = progress.Elapsed >= TimeSpan.FromSeconds(60)
-            ? " · press Ctrl+C to cancel."
+        var cancelHint = showCancelHint
+            ? " · press q to cancel"
             : string.Empty;
 
         return $"[Hermes run] {statusLabel} elapsed: {elapsed} / {timeout} · remaining: {remaining} · cwd: {progress.WorkingDirectory} · prompt bytes: {progress.PromptBytes.ToString("N0", CultureInfo.InvariantCulture)} · transport: {progress.Transport}{pidLabel}{cancelHint}";

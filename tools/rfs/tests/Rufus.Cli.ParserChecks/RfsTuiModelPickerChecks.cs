@@ -429,7 +429,8 @@ Remaining: TimeSpan.FromSeconds(290),
 Timeout: RfsTuiHermesRunOptions.DefaultTimeout,
 PromptBytes: Encoding.UTF8.GetByteCount(expectedPrompt),
 Transport: "cli-oneshot",
-ProcessId: 4242));
+ProcessId: 4242),
+showCancelHint: true);
 
 var requiredHeartbeatFragments = new[]
 {
@@ -499,14 +500,14 @@ if (longRunningProgress.Health != RfsTuiHermesRunHealth.LongRunning)
     failures.Add("[tui model picker] expected 70s Hermes runs to switch to LongRunning health.");
 }
 
-var longRunningHeartbeat = RfsTuiRenderer.FormatHermesRunHeartbeat(longRunningProgress);
+var longRunningHeartbeat = RfsTuiRenderer.FormatHermesRunHeartbeat(longRunningProgress, showCancelHint: true);
 foreach (var fragment in new[]
 {
     "[Hermes run] taking longer than usual.",
     "elapsed: 70s / 300s",
     "remaining: 230s",
     "transport: cli-oneshot",
-    "press Ctrl+C to cancel.",
+    "press q to cancel",
 })
 {
     if (!longRunningHeartbeat.Contains(fragment, StringComparison.Ordinal))
@@ -516,12 +517,12 @@ foreach (var fragment in new[]
 }
 
 var waitingHeartbeat = longRunningProgress with { Elapsed = TimeSpan.FromSeconds(130), Remaining = TimeSpan.FromSeconds(170) };
-var waitingHeartbeatText = RfsTuiRenderer.FormatHermesRunHeartbeat(waitingHeartbeat);
+var waitingHeartbeatText = RfsTuiRenderer.FormatHermesRunHeartbeat(waitingHeartbeat, showCancelHint: true);
 foreach (var fragment in new[]
 {
     "[Hermes run] still waiting for final response; cli-oneshot is final-only.",
     "elapsed: 130s / 300s",
-    "press Ctrl+C to cancel.",
+    "press q to cancel",
 })
 {
     if (!waitingHeartbeatText.Contains(fragment, StringComparison.Ordinal))
@@ -531,13 +532,13 @@ foreach (var fragment in new[]
 }
 
 var timeoutHeartbeat = longRunningProgress with { Elapsed = TimeSpan.FromSeconds(250), Remaining = TimeSpan.FromSeconds(50) };
-var timeoutHeartbeatText = RfsTuiRenderer.FormatHermesRunHeartbeat(timeoutHeartbeat);
+var timeoutHeartbeatText = RfsTuiRenderer.FormatHermesRunHeartbeat(timeoutHeartbeat, showCancelHint: true);
 foreach (var fragment in new[]
 {
     "[Hermes run] close to timeout.",
     "elapsed: 250s / 300s",
     "remaining: 50s",
-    "press Ctrl+C to cancel.",
+    "press q to cancel",
 })
 {
     if (!timeoutHeartbeatText.Contains(fragment, StringComparison.Ordinal))

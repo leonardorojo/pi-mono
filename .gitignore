@@ -21,6 +21,19 @@ packages/*/dist-firefox/
 *.swo
 *~
 
+# .NET build artifacts
+[Bb]in/
+[Oo]bj/
+
+# Test results
+TestResults/
+*.trx
+
+# User/local IDE files
+.vs/
+*.user
+*.suo
+
 # Package specific
 .npm/
 coverage/

@@ -584,7 +584,7 @@ var cancelledOutput = CaptureOutput(() =>
 foreach (var fragment in new[]
 {
     "health: cancelled",
-    "Hermes run cancelled.",
+    "Hermes process was interrupted by user cancellation.",
     "The cli-oneshot transport is final-only, so a partial answer may not be available.",
     "Partial Hermes output:",
     "partial stdout",
@@ -595,6 +595,59 @@ foreach (var fragment in new[]
     if (!cancelledOutput.Contains(fragment, StringComparison.Ordinal))
     {
         failures.Add($"[tui model picker] expected cancelled Hermes output to include '{fragment}'.");
+    }
+}
+
+var cancelledTracebackOutput = CaptureOutput(() =>
+{
+    RfsTuiRenderer.WriteHermesRunResult(new RfsTuiHermesRunResult(
+        Stdout: "partial stdout",
+        Stderr: "Hermes preflight warning\nTraceback (most recent call last):\n  File \"/tmp/hermes.py\", line 4, in <module>\n    main()\n  File \"/tmp/hermes.py\", line 2, in main\n    input()\nKeyboardInterrupt\nHermes cleanup warning",
+        ExitCode: null,
+        StartedAt: DateTimeOffset.UtcNow,
+        FinishedAt: DateTimeOffset.UtcNow,
+        DurationMs: 789,
+        TimedOut: false,
+        WorkingDirectory: "/tmp/rfs",
+        GitStatusBefore: "",
+        GitStatusAfter: "",
+        DirtyStateChanged: true,
+        PromptBytes: 1234,
+        Health: RfsTuiHermesRunHealth.Cancelled));
+});
+
+foreach (var fragment in new[]
+{
+    "health: cancelled",
+    "Hermes process was interrupted by user cancellation.",
+    "The cli-oneshot transport is final-only, so a partial answer may not be available.",
+    "timed out: no",
+    "duration: 789 ms",
+    "prompt bytes: 1,234",
+    "Git changed: yes",
+    "partial stdout",
+    "Hermes preflight warning",
+    "Hermes stderr (filtered):",
+    "Hermes cleanup warning",
+})
+{
+    if (!cancelledTracebackOutput.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected cancelled Hermes output with traceback filtering to include '{fragment}'.");
+    }
+}
+
+foreach (var fragment in new[]
+{
+    "Traceback (most recent call last):",
+    "KeyboardInterrupt",
+    "  File \"/tmp/hermes.py\", line 4, in <module>",
+    "  File \"/tmp/hermes.py\", line 2, in main",
+})
+{
+    if (cancelledTracebackOutput.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected cancelled Hermes output to suppress the traceback fragment '{fragment}'.");
     }
 }
 

@@ -387,12 +387,25 @@ internal static class RfsTuiRenderer
             Console.WriteLine(result.Stdout.TrimEnd());
         }
 
-        if (!string.IsNullOrWhiteSpace(result.Stderr))
+        var stderrToDisplay = GetHermesRunStderrForDisplay(result, out var cancelledTracebackSuppressed);
+        if (!string.IsNullOrWhiteSpace(stderrToDisplay))
         {
             Console.WriteLine();
-            WriteSectionTitle(result.Health is RfsTuiHermesRunHealth.Cancelled or RfsTuiHermesRunHealth.TimedOut ? "Partial Hermes stderr:" : "Hermes stderr:");
+            if (result.Health is RfsTuiHermesRunHealth.Cancelled && cancelledTracebackSuppressed)
+            {
+                WriteSectionTitle("Hermes stderr (filtered):");
+            }
+            else if (result.Health is RfsTuiHermesRunHealth.Cancelled or RfsTuiHermesRunHealth.TimedOut)
+            {
+                WriteSectionTitle("Partial Hermes stderr:");
+            }
+            else
+            {
+                WriteSectionTitle("Hermes stderr:");
+            }
+
             WriteDivider("──────────────");
-            Console.WriteLine(result.Stderr.TrimEnd());
+            Console.WriteLine(stderrToDisplay.TrimEnd());
         }
 
         if (result.DirtyStateChanged)
@@ -429,13 +442,67 @@ internal static class RfsTuiRenderer
         return $"[Hermes run] {statusLabel} elapsed: {elapsed} / {timeout} · remaining: {remaining} · cwd: {progress.WorkingDirectory} · prompt bytes: {progress.PromptBytes.ToString("N0", CultureInfo.InvariantCulture)} · transport: {progress.Transport}{pidLabel}{cancelHint}";
     }
 
+    private static string GetHermesRunStderrForDisplay(RfsTuiHermesRunResult result, out bool cancelledTracebackSuppressed)
+    {
+        cancelledTracebackSuppressed = false;
+        if (result.Health is not RfsTuiHermesRunHealth.Cancelled || string.IsNullOrWhiteSpace(result.Stderr))
+        {
+            return result.Stderr;
+        }
+
+        if (!TryStripExpectedCancelledTraceback(result.Stderr, out var filteredStderr))
+        {
+            return result.Stderr;
+        }
+
+        cancelledTracebackSuppressed = true;
+        return filteredStderr;
+    }
+
+    private static bool TryStripExpectedCancelledTraceback(string stderr, out string filteredStderr)
+    {
+        filteredStderr = stderr;
+        var lines = stderr.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        var keyboardInterruptLineIndex = FindLastLineIndex(lines, "KeyboardInterrupt");
+        if (keyboardInterruptLineIndex < 0)
+        {
+            return false;
+        }
+
+        var tracebackStartLineIndex = FindLastLineIndex(lines, "Traceback (most recent call last):", keyboardInterruptLineIndex);
+        if (tracebackStartLineIndex < 0)
+        {
+            return false;
+        }
+
+        filteredStderr = string.Join(
+            Environment.NewLine,
+            lines.Where((line, index) => index < tracebackStartLineIndex || index > keyboardInterruptLineIndex));
+
+        return !string.Equals(filteredStderr.TrimEnd('\r', '\n'), stderr.TrimEnd('\r', '\n'), StringComparison.Ordinal);
+    }
+
+    private static int FindLastLineIndex(string[] lines, string expectedLine, int beforeIndex = int.MaxValue)
+    {
+        var startIndex = Math.Min(beforeIndex, lines.Length - 1);
+        for (var index = startIndex; index >= 0; index--)
+        {
+            if (string.Equals(lines[index].Trim(), expectedLine, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
     private static void WriteHermesRunOutcomeMessage(RfsTuiHermesRunHealth health)
     {
         switch (health)
         {
             case RfsTuiHermesRunHealth.Cancelled:
                 Console.WriteLine();
-                WriteWarningLine("Hermes run cancelled.");
+                WriteWarningLine("Hermes process was interrupted by user cancellation.");
                 WriteMutedLine("The cli-oneshot transport is final-only, so a partial answer may not be available.");
                 break;
             case RfsTuiHermesRunHealth.TimedOut:

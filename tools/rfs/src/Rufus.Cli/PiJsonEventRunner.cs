@@ -611,7 +611,6 @@ public static class PiJsonEventRunner
                             }
                         }
                         break;
-                        break;
 
                     case "turn_end":
                         completionObserved = true;
@@ -625,7 +624,6 @@ public static class PiJsonEventRunner
                             }
                         }
                         break;
-                        break;
 
                     case "agent_end":
                         completionObserved = true;
@@ -633,7 +631,6 @@ public static class PiJsonEventRunner
                         {
                             structuredAnswer = agentEndAnswer;
                         }
-                        break;
                         break;
 
                     case "compaction_end":
@@ -970,7 +967,6 @@ public static class PiJsonEventRunner
                             }
                         }
                         break;
-                        break;
 
                     case "turn_end":
                         completionObserved = true;
@@ -984,7 +980,6 @@ public static class PiJsonEventRunner
                             }
                         }
                         break;
-                        break;
 
                     case "agent_end":
                         completionObserved = true;
@@ -992,7 +987,6 @@ public static class PiJsonEventRunner
                         {
                             structuredAnswer = agentEndAnswer;
                         }
-                        break;
                         break;
 
                     case "compaction_end":

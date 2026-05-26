@@ -4,11 +4,32 @@ using System.Text.Json;
 using Rufus.Cli.Intent;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
+using Rufus.Cli.ParserChecks;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.RCK.Workspace;
 
 var failures = new List<string>();
+var longPasteOnly = args.Contains("--long-paste-only", StringComparer.Ordinal);
+
+if (longPasteOnly)
+{
+    await RfsTuiLongPasteChecks.RunAsync(failures);
+
+    if (failures.Count > 0)
+    {
+        foreach (var failure in failures)
+        {
+            Console.Error.WriteLine(failure);
+        }
+
+        return 1;
+    }
+
+    Console.WriteLine("Long paste parser checks passed.");
+    return 0;
+}
+
 
 await RunCaseAsync(
     name: "structured final answer",
@@ -319,55 +340,8 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     expectPromptEcho: false,
     failures: failures);
 
-await RunRfsTuiPasteCaptureSessionCaseAsync(
-    name: "bare rfs /paste captures multiline prompt and stores temp paste file",
-    input: "/paste\npaste line 1\npaste line 2\n/end\n1\n/exit\n",
-    expectTempPasteFile: true,
-    expectedFragments: new[]
-    {
-        "Paste multiline prompt. Finish with /end. Use /cancel to discard.",
-        "Captured long paste:",
-        "[paste:",
-        "lines:",
-        "chars:",
-        "estimated tokens:",
-        "¿Cómo querés procesarlo?",
-    },
-    forbiddenFragments: new[]
-    {
-        "Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.",
-    },
-    failures: failures);
 
-await RunRfsTuiPasteCaptureCancelSessionCaseAsync(
-    name: "bare rfs /paste cancel returns to prompt",
-    input: "/paste\npaste line 1\n/cancel\n/exit\n",
-    expectedFragments: new[]
-    {
-        "Paste multiline prompt. Finish with /end. Use /cancel to discard.",
-        "Paste discarded.",
-    },
-    forbiddenFragments: new[]
-    {
-        "Captured long paste:",
-    },
-    failures: failures);
 
-await RunRfsTuiPromptModeSelectionBurstSessionCaseAsync(
-    name: "bare rfs paste burst during mode selection shows one warning and recovers",
-    prompt: "Implement reset board action",
-    input: "Implement reset board action\nfirst paste line\nsecond paste line\n/cancel\n/exit\n",
-    expectedFragments: new[]
-    {
-        "Multiline input detected while choosing processing mode.",
-        "Use /cancel and then /paste for long text.",
-        "Prompt cancelled.",
-    },
-    forbiddenFragments: new[]
-    {
-        "Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.",
-    },
-    failures: failures);
 
 await RunRfsTuiPromptModeSelectionSessionCaseAsync(
     name: "bare rfs prompt exits from mode selection",

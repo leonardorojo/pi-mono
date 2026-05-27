@@ -6,5 +6,5 @@ namespace Rufus.Cli.TraceSlice;
 public sealed record TraceSliceAnchorSelectionAgentInput(
     string UserPrompt,
     RckTraceSliceProposalIntentProjection Intent,
-    RckTraceSliceProposalDagQuickIndex DagQuickIndex,
+    RckDagQuickIndexV1 DagQuickIndex,
     IReadOnlyList<string> PolicyHints);

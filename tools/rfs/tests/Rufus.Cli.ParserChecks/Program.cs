@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Rufus.Cli.Intent;
 using Rufus.Cli.PiIntegration;
+using Rufus.Cli.TraceSlice;
 using Rufus.Cli.Tui;
 using Rufus.Cli.ParserChecks;
 using Rufus.Agenting;
@@ -172,12 +173,25 @@ await RunPiIntentInferenceAgentFailureCaseAsync(
     expectedErrorContains: "Invalid PromptIntent JSON",
     failures: failures);
 
-await RunCompleteModePipelineWithIntentLlmCaseAsync(
-    name: "complete mode uses LLM-backed intent and retains deterministic proposal/validation",
+await RunCompleteModePipelineWithAnchorSelectionLlmCaseAsync(
+    name: "complete mode uses anchor-guided structural slicing and validates the expanded proposal",
     repoRoot: "/home/rufus/DEV/leonardorojo/ChessBoardApp",
     prompt: "Implement reset board action",
     llmAnswerJson: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\"],\"constraints\":[\"do not write RCK\"]}",
-    expectedIntent: "implement-reset-board",
+    failures: failures);
+
+await RunCompleteModePipelineWithAnchorSelectionFallbackCaseAsync(
+    name: "complete mode makes fallback visible when anchor selection returns no anchors",
+    repoRoot: "/home/rufus/DEV/leonardorojo/ChessBoardApp",
+    prompt: "Implement reset board action",
+    llmAnswerJson: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\"],\"constraints\":[\"do not write RCK\"]}",
+    failures: failures);
+
+await RunCompleteModePipelineWithAnchorSelectionFailureCaseAsync(
+    name: "complete mode fails before validation when anchor selection JSON is invalid",
+    repoRoot: "/home/rufus/DEV/leonardorojo/ChessBoardApp",
+    prompt: "Implement reset board action",
+    llmAnswerJson: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\"],\"constraints\":[\"do not write RCK\"]}",
     failures: failures);
 
 await RunCompleteModePipelineWithIntentLlmFailureCaseAsync(
@@ -316,6 +330,10 @@ await RunRfsTuiPromptModeSelectionSessionCaseAsync(
         "[2/5] Building TraceSlice proposal...",
         "  proposal: pi-trace-slice-proposal",
         "  requested selection: 5 states · 5 deltas · 0 anchors",
+        "  slicing: anchor-guided structural",
+        "  anchors selected:",
+        "  expansion:",
+        "  fallback:",
         "[3/5] Validating proposal...",
         "  validation: accepted",
         "[4/5] Building ContextPack...",
@@ -641,6 +659,10 @@ static async Task RunLegacyChecksAsync(List<string> failures)
             "[2/5] Building TraceSlice proposal...",
             "  proposal: pi-trace-slice-proposal",
             "  requested selection: 5 states · 5 deltas · 0 anchors",
+        "  slicing: anchor-guided structural",
+        "  anchors selected:",
+        "  expansion:",
+        "  fallback:",
             "[3/5] Validating proposal...",
             "  validation: accepted",
             "[4/5] Building ContextPack...",
@@ -1319,6 +1341,33 @@ static string BuildTraceSliceProposalContaminatedAnswer(string prompt)
     };
 
     return JsonSerializer.Serialize(proposal);
+}
+
+static string BuildAnchorSelectionAnswer(
+    IReadOnlyList<string> selectedAnchorIds,
+    string fallbackStrategy,
+    IReadOnlyList<(string Target, string Reason)> rationale,
+    IReadOnlyList<string> warnings,
+    double confidence,
+    int schemaVersion,
+    string type)
+{
+    var payload = new Dictionary<string, object?>
+    {
+        ["type"] = type,
+        ["schemaVersion"] = schemaVersion,
+        ["selectedAnchorIds"] = selectedAnchorIds,
+        ["fallbackStrategy"] = fallbackStrategy,
+        ["rationale"] = rationale.Select(item => new Dictionary<string, object?>
+        {
+            ["target"] = item.Target,
+            ["reason"] = item.Reason,
+        }).ToArray(),
+        ["warnings"] = warnings,
+        ["confidence"] = confidence,
+    };
+
+    return JsonSerializer.Serialize(payload);
 }
 
 static async Task RunTraceSliceProposalCliCaseAsync(
@@ -3135,6 +3184,281 @@ static async Task RunCompleteModePipelineWithIntentLlmCaseAsync(
         if (!string.IsNullOrWhiteSpace(workspaceDefault) && !string.Equals(workspaceDefault, "claude-haiku-4.5", StringComparison.Ordinal) && string.Equals(transport.LastModel, workspaceDefault, StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected intent transport model not to inherit workspace default '{workspaceDefault}'.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        Console.SetOut(originalOut);
+    }
+}
+
+static async Task RunCompleteModePipelineWithAnchorSelectionLlmCaseAsync(
+    string name,
+    string repoRoot,
+    string prompt,
+    string llmAnswerJson,
+    List<string> failures)
+{
+    var anchorSelectionJson = BuildAnchorSelectionAnswer(
+        selectedAnchorIds: new[] { "anchor-a" },
+        fallbackStrategy: "none",
+        rationale: new[] { (Target: "anchor-a", Reason: "Best structural entry point for this slice.") },
+        warnings: Array.Empty<string>(),
+        confidence: 0.94,
+        schemaVersion: 1,
+        type: "rufus.anchor-selection");
+
+    await RunCompleteModePipelineWithAnchorSelectionCaseAsync(
+        name,
+        repoRoot,
+        prompt,
+        llmAnswerJson,
+        anchorSelectionJson,
+        expectFailure: false,
+        expectedErrorContains: null,
+        expectedFallbackStrategy: null,
+        failures);
+}
+
+static async Task RunCompleteModePipelineWithAnchorSelectionFallbackCaseAsync(
+    string name,
+    string repoRoot,
+    string prompt,
+    string llmAnswerJson,
+    List<string> failures)
+{
+    var anchorSelectionJson = BuildAnchorSelectionAnswer(
+        selectedAnchorIds: Array.Empty<string>(),
+        fallbackStrategy: "recent-chain",
+        rationale: Array.Empty<(string Target, string Reason)>(),
+        warnings: new[] { "rfs anchor-selection: no relevant anchors; using recent-chain fallback." },
+        confidence: 0.20,
+        schemaVersion: 1,
+        type: "rufus.anchor-selection");
+
+    await RunCompleteModePipelineWithAnchorSelectionCaseAsync(
+        name,
+        repoRoot,
+        prompt,
+        llmAnswerJson,
+        anchorSelectionJson,
+        expectFailure: false,
+        expectedErrorContains: null,
+        expectedFallbackStrategy: "recent-chain-fallback",
+        failures);
+}
+
+static async Task RunCompleteModePipelineWithAnchorSelectionFailureCaseAsync(
+    string name,
+    string repoRoot,
+    string prompt,
+    string llmAnswerJson,
+    List<string> failures)
+{
+    await RunCompleteModePipelineWithAnchorSelectionCaseAsync(
+        name,
+        repoRoot,
+        prompt,
+        llmAnswerJson,
+        anchorSelectionJson: "not-json",
+        expectFailure: true,
+        expectedErrorContains: "Complete mode failed while building anchor selection.",
+        expectedFallbackStrategy: null,
+        failures);
+}
+
+static async Task RunCompleteModePipelineWithAnchorSelectionCaseAsync(
+    string name,
+    string repoRoot,
+    string prompt,
+    string llmAnswerJson,
+    string anchorSelectionJson,
+    bool expectFailure,
+    string? expectedErrorContains,
+    string? expectedFallbackStrategy,
+    List<string> failures)
+{
+    var originalOut = Console.Out;
+    using var stdout = new StringWriter();
+    try
+    {
+        Console.SetOut(stdout);
+        var intentTransport = new FakeIntentLlmTransport(success: true, answerJson: llmAnswerJson);
+        var intentAgent = new PiIntentInferenceAgent(repoRoot, transport: intentTransport);
+        var proposalTransport = new FakeTraceSliceProposalLlmTransport(anchorSelectionJson);
+        var proposalAgent = new PiTraceSliceProposalAgent(repoRoot, transport: proposalTransport);
+        var result = await RfsCompleteModePipeline.BuildAsync(prompt, repoRoot, 5, intentAgent, proposalAgent);
+
+        var completeConsole = stdout.ToString();
+        if (!completeConsole.Contains("model: claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected complete-mode console output to include model: claude-haiku-4.5 but it was missing.");
+        }
+
+        if (!string.Equals(intentAgent.Descriptor.ExecutionModel.Model, "claude-haiku-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected intent agent descriptor model 'claude-haiku-4.5' but got '{intentAgent.Descriptor.ExecutionModel.Model}'.");
+        }
+
+        if (result.Success != !expectFailure)
+        {
+            failures.Add($"[{name}] expected Success={!expectFailure} but got {result.Success}.");
+        }
+
+        if (expectFailure)
+        {
+            if (result.ErrorMessage is null || !result.ErrorMessage.Contains(expectedErrorContains ?? string.Empty, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected ErrorMessage to contain '{expectedErrorContains}' but got '{result.ErrorMessage}'.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.PromptToSend))
+            {
+                failures.Add($"[{name}] expected PromptToSend to be null/empty on failure.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.IntentSource))
+            {
+                failures.Add($"[{name}] expected IntentSource to be empty on failure.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ValidationStatus))
+            {
+                failures.Add($"[{name}] expected ValidationStatus to be empty on failure.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ValidatedContextPackJson))
+            {
+                failures.Add($"[{name}] expected ValidatedContextPackJson to be empty on failure.");
+            }
+
+            if (intentTransport.CallCount != 1)
+            {
+                failures.Add($"[{name}] expected the intent LLM to be called once but got {intentTransport.CallCount} calls.");
+            }
+
+            if (proposalTransport.CallCount != 1)
+            {
+                failures.Add($"[{name}] expected the anchor-selection transport to be called once but got {proposalTransport.CallCount} calls.");
+            }
+
+            return;
+        }
+
+        if (!string.Equals(result.IntentSource, "pi-intent-inference", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected IntentSource 'pi-intent-inference' but got '{result.IntentSource}'.");
+        }
+
+        if (!string.Equals(result.IntentKind, "implement-reset-board", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected IntentKind 'implement-reset-board' but got '{result.IntentKind}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.IntentSummary))
+        {
+            failures.Add($"[{name}] expected IntentSummary to be populated.");
+        }
+
+        if (!string.Equals(result.ProposalSource, "pi-trace-slice-proposal", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected ProposalSource 'pi-trace-slice-proposal' but got '{result.ProposalSource}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.ValidationStatus))
+        {
+            failures.Add($"[{name}] expected ValidationStatus to be populated.");
+        }
+
+        if (result.SelectedStateIds.Count == 0 || result.SelectedDeltaIds.Count == 0 || result.SelectedAnchorIds.Count == 0)
+        {
+            failures.Add($"[{name}] expected selected states/deltas/anchors to be populated.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.PromptToSend))
+        {
+            failures.Add($"[{name}] expected PromptToSend to be populated.");
+        }
+        else
+        {
+            var promptToSend = result.PromptToSend;
+            var expectedPromptFragments = new[]
+            {
+                "Output formatting:",
+                "Markdown-lite rendering",
+                "compact text diagram",
+                "Use text diagrams only when they materially improve clarity.",
+                "Do not include diagrams for simple factual answers.",
+                "At most one diagram unless explicitly requested.",
+                "Do not use Mermaid unless the user explicitly asks for Mermaid.",
+            };
+
+            foreach (var fragment in expectedPromptFragments)
+            {
+                if (!promptToSend.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected PromptToSend to contain '{fragment}' but it was missing.");
+                }
+            }
+        }
+
+        if (intentTransport.CallCount != 1)
+        {
+            failures.Add($"[{name}] expected the intent LLM to be called once but got {intentTransport.CallCount} calls.");
+        }
+
+        if (proposalTransport.CallCount != 1)
+        {
+            failures.Add($"[{name}] expected the anchor-selection transport to be called once but got {proposalTransport.CallCount} calls.");
+        }
+
+        if (!string.Equals(proposalTransport.LastModel, "claude-sonnet-4.5", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected the anchor-selection transport model 'claude-sonnet-4.5' but got '{proposalTransport.LastModel}'.");
+        }
+
+        if (!completeConsole.Contains("  slicing: anchor-guided structural", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected stage output to include anchor-guided structural slicing.");
+        }
+
+        if (!completeConsole.Contains("  anchors selected:", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected stage output to include anchors selected.");
+        }
+
+        if (!completeConsole.Contains("  expansion:", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected stage output to include expansion.");
+        }
+
+        if (!completeConsole.Contains("  fallback:", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected stage output to include fallback.");
+        }
+
+        if (!completeConsole.Contains("[3/5] Validating proposal...", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected validation stage output.");
+        }
+
+        if (!completeConsole.Contains("  validated selection:", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected validated selection stage detail.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedFallbackStrategy) && !completeConsole.Contains($"  fallback: {expectedFallbackStrategy}", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected fallback detail '{expectedFallbackStrategy}' but it was missing.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.MaterializationPolicySummary))
+        {
+            failures.Add($"[{name}] expected MaterializationPolicySummary to be populated.");
         }
     }
     catch (Exception ex)
@@ -5385,5 +5709,32 @@ sealed class FakeIntentLlmTransport : IIntentLlmTransport
         LastPrompt = prompt;
         LastModel = model;
         return Task.FromResult(new PiJsonAskResult(_success, prompt, _answerJson, _errorMessage, "pi", model));
+    }
+}
+
+sealed class FakeTraceSliceProposalLlmTransport : ITraceSliceProposalLlmTransport
+{
+    private readonly string _answerJson;
+
+    public FakeTraceSliceProposalLlmTransport(string answerJson)
+    {
+        _answerJson = answerJson;
+    }
+
+    public int CallCount { get; private set; }
+
+    public string? LastWorkingDirectory { get; private set; }
+
+    public string? LastPrompt { get; private set; }
+
+    public string? LastModel { get; private set; }
+
+    public Task<PiJsonAskResult> AskAsync(string workingDirectory, string prompt, string model, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        LastWorkingDirectory = workingDirectory;
+        LastPrompt = prompt;
+        LastModel = model;
+        return Task.FromResult(new PiJsonAskResult(true, prompt, _answerJson, null, "pi", model));
     }
 }

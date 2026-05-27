@@ -333,16 +333,27 @@ public static class PiTraceSliceAnchorSelectionAgentChecks
         return JsonSerializer.Serialize(payload, JsonOptions);
     }
 
-    private static RckTraceSliceProposalDagQuickIndex CreateDagQuickIndex()
+    private static RckDagQuickIndexV1 CreateDagQuickIndex()
     {
-        return new RckTraceSliceProposalDagQuickIndex(
+        return new RckDagQuickIndexV1(
             HeadStateId: "state-03",
             RecentStateIds: new[] { "state-03", "state-02", "state-01" },
             RecentDeltaIds: new[] { "delta-02", "delta-01" },
             Anchors: new[]
             {
-                new RckTraceSliceProposalAnchorMetadata("anchor-a", "state-02", "anchor A", "branch point A", null, IsRecentChain: true),
-                new RckTraceSliceProposalAnchorMetadata("anchor-b", "state-01", "anchor B", "branch point B", null, IsRecentChain: false),
+                new RckDagAnchorCandidate("anchor-a", "state-02", "anchor A", "branch point A", DateTimeOffset.Parse("2026-01-01T00:00:00+00:00"), true, Array.Empty<string>(), 1, new[] { "delta-1" }, new[] { "delta-2" }),
+                new RckDagAnchorCandidate("anchor-b", "state-01", "anchor B", "branch point B", DateTimeOffset.Parse("2026-01-01T00:00:00+00:00"), false, Array.Empty<string>(), 2, Array.Empty<string>(), new[] { "delta-1" }),
+            },
+            States: new[]
+            {
+                new RckDagStateCandidate("state-01", "state-01", DateTimeOffset.Parse("2026-01-01T00:00:00+00:00"), Array.Empty<string>(), Array.Empty<string>(), new[] { "delta-1" }, 2, null, null, null),
+                new RckDagStateCandidate("state-02", "state-02", DateTimeOffset.Parse("2026-01-01T00:00:00+00:00"), new[] { "anchor-a" }, new[] { "delta-1" }, new[] { "delta-2" }, 1, null, null, null),
+                new RckDagStateCandidate("state-03", "state-03", DateTimeOffset.Parse("2026-01-01T00:00:00+00:00"), Array.Empty<string>(), new[] { "delta-2" }, Array.Empty<string>(), 0, null, null, null),
+            },
+            Deltas: new[]
+            {
+                new RckDagDeltaCandidate("delta-1", "state-01", "state-02", DateTimeOffset.Parse("2026-01-01T00:00:00+00:00"), "replace:notes/1", "evidence 1"),
+                new RckDagDeltaCandidate("delta-2", "state-02", "state-03", DateTimeOffset.Parse("2026-01-01T00:00:00+00:00"), "replace:notes/2", "evidence 2"),
             });
     }
 

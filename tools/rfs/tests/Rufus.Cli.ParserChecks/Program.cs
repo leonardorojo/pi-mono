@@ -555,6 +555,7 @@ static async Task RunTuiDeterministicChecksAsync(List<string> failures)
     RunRfsTuiCommandSuggestionCases(failures);
     RfsTuiModelPickerChecks.Run(failures);
     RfsTuiMarkdownLiteChecks.Run(failures);
+    RfsTuiPiRunRuntimeChecks.Run(failures);
     await RfsTuiAnsiLeakChecks.Run(failures);
 
     await RunRfsTuiInitializedSessionCaseAsync(

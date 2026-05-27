@@ -139,6 +139,12 @@ internal static class RfsTuiRenderer
         Console.WriteLine();
     }
 
+    private const int PiRunTextProgressThresholdChars = 512;
+    private static int PiRunAccumulatedTextChars;
+    private static int PiRunNextTextProgressChars = 1;
+    private static bool PiRunFinalAnswerAnnounced;
+    private static bool PiRunCompletedAnnounced;
+
     internal static void WritePiRunStatusLine(string status)
     {
         WriteMutedLine($"[Pi run] {status}");
@@ -152,24 +158,97 @@ internal static class RfsTuiRenderer
         }
 
         var type = runtimeEvent.Type.Trim();
+        if (type.Length == 0)
+        {
+            return;
+        }
+
+        if (string.Equals(type, "session", StringComparison.Ordinal))
+        {
+            ResetPiRunRuntimeState();
+            WriteMutedLine("[Pi] session started");
+            return;
+        }
+
+        if (string.Equals(type, "agent_start", StringComparison.Ordinal))
+        {
+            WriteMutedLine("[Pi] agent started");
+            return;
+        }
+
+        if (string.Equals(type, "turn_start", StringComparison.Ordinal))
+        {
+            WriteMutedLine("[Pi] turn started");
+            return;
+        }
+
+        if (string.Equals(type, "auto_retry_start", StringComparison.Ordinal))
+        {
+            WriteMutedLine("[Pi] retry started");
+            return;
+        }
+
         if (string.Equals(type, "message_update", StringComparison.Ordinal))
         {
-            var text = RfsTuiText.TruncateInline(runtimeEvent.Text, 96);
-            if (string.Equals(text, "(none)", StringComparison.Ordinal))
+            var delta = runtimeEvent.Text;
+            if (string.IsNullOrWhiteSpace(delta))
             {
-                WriteMutedLine("[Pi] text_delta");
                 return;
             }
 
-            WriteMutedLine($"[Pi] text_delta: {text}");
+            PiRunAccumulatedTextChars += delta.Length;
+            if (PiRunAccumulatedTextChars >= PiRunNextTextProgressChars)
+            {
+                WriteMutedLine($"[Pi] receiving text... {PiRunAccumulatedTextChars.ToString("N0", CultureInfo.InvariantCulture)} chars");
+                PiRunNextTextProgressChars = PiRunAccumulatedTextChars + PiRunTextProgressThresholdChars;
+            }
+
             return;
         }
 
         if (string.Equals(type, "tool_execution_start", StringComparison.Ordinal))
         {
             var toolName = RfsTuiText.TruncateInline(runtimeEvent.Name, 48);
+            if (string.Equals(toolName, "(none)", StringComparison.Ordinal))
+            {
+                return;
+            }
+
             var details = RfsTuiText.TruncateInline(runtimeEvent.Details, 80);
-            WriteMutedLine($"[Pi] tool_execution_start: {toolName}{(string.Equals(details, "(none)", StringComparison.Ordinal) ? string.Empty : $" · {details}")}");
+            if (string.Equals(details, "(none)", StringComparison.Ordinal))
+            {
+                WriteMutedLine($"[Pi] tool started: {toolName}");
+            }
+            else
+            {
+                WriteMutedLine($"[Pi] tool started: {toolName} · {details}");
+            }
+
+            return;
+        }
+
+        if (string.Equals(type, "tool_execution_update", StringComparison.Ordinal))
+        {
+            var toolName = RfsTuiText.TruncateInline(runtimeEvent.Name, 48);
+            var status = RfsTuiText.TruncateInline(runtimeEvent.Summary ?? runtimeEvent.Message ?? runtimeEvent.Details, 80);
+            if (string.Equals(toolName, "(none)", StringComparison.Ordinal) && string.Equals(status, "(none)", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (string.Equals(status, "(none)", StringComparison.Ordinal))
+            {
+                WriteMutedLine($"[Pi] tool updated: {toolName}");
+            }
+            else if (string.Equals(toolName, "(none)", StringComparison.Ordinal))
+            {
+                WriteMutedLine($"[Pi] tool updated: {status}");
+            }
+            else
+            {
+                WriteMutedLine($"[Pi] tool updated: {toolName} · {status}");
+            }
+
             return;
         }
 
@@ -177,25 +256,91 @@ internal static class RfsTuiRenderer
         {
             var toolName = RfsTuiText.TruncateInline(runtimeEvent.Name, 48);
             var summary = RfsTuiText.TruncateInline(runtimeEvent.Summary, 80);
-            WriteMutedLine($"[Pi] tool_execution_end: {toolName}{(string.Equals(summary, "(none)", StringComparison.Ordinal) ? string.Empty : $" · {summary}")}");
+            if (string.Equals(toolName, "(none)", StringComparison.Ordinal) && string.Equals(summary, "(none)", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (string.Equals(summary, "(none)", StringComparison.Ordinal))
+            {
+                WriteMutedLine($"[Pi] tool completed: {toolName}");
+            }
+            else if (string.Equals(toolName, "(none)", StringComparison.Ordinal))
+            {
+                WriteMutedLine($"[Pi] tool completed: {summary}");
+            }
+            else
+            {
+                WriteMutedLine($"[Pi] tool completed: {toolName} · {summary}");
+            }
+
             return;
         }
 
-        if (string.Equals(type, "message_end", StringComparison.Ordinal) ||
-            string.Equals(type, "turn_end", StringComparison.Ordinal) ||
-            string.Equals(type, "agent_end", StringComparison.Ordinal))
+        if (string.Equals(type, "message_end", StringComparison.Ordinal) || string.Equals(type, "turn_end", StringComparison.Ordinal))
         {
-            WriteMutedLine($"[Pi] {type}");
+            AnnouncePiRunFinalAnswer();
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(runtimeEvent.Message))
+        if (string.Equals(type, "agent_end", StringComparison.Ordinal))
         {
-            WriteMutedLine($"[Pi] {type}: {RfsTuiText.TruncateInline(runtimeEvent.Message, 96)}");
+            AnnouncePiRunFinalAnswer();
+            if (!PiRunCompletedAnnounced)
+            {
+                WriteMutedLine("[Pi] completed");
+                PiRunCompletedAnnounced = true;
+            }
+
             return;
         }
 
-        WriteMutedLine($"[Pi] {type}");
+        if (string.Equals(type, "compaction_end", StringComparison.Ordinal))
+        {
+            var message = RfsTuiText.TruncateInline(runtimeEvent.Message, 96);
+            if (!string.Equals(message, "(none)", StringComparison.Ordinal))
+            {
+                WriteMutedLine($"[Pi] compaction failed: {message}");
+            }
+
+            return;
+        }
+
+        if (string.Equals(type, "auto_retry_end", StringComparison.Ordinal))
+        {
+            var message = RfsTuiText.TruncateInline(runtimeEvent.Message, 96);
+            if (!string.Equals(message, "(none)", StringComparison.Ordinal))
+            {
+                WriteMutedLine($"[Pi] retry failed: {message}");
+            }
+
+            return;
+        }
+
+        var messageText = RfsTuiText.TruncateInline(runtimeEvent.Message, 96);
+        if (!string.Equals(messageText, "(none)", StringComparison.Ordinal))
+        {
+            WriteMutedLine($"[Pi] {type}: {messageText}");
+        }
+    }
+
+    private static void ResetPiRunRuntimeState()
+    {
+        PiRunAccumulatedTextChars = 0;
+        PiRunNextTextProgressChars = 1;
+        PiRunFinalAnswerAnnounced = false;
+        PiRunCompletedAnnounced = false;
+    }
+
+    private static void AnnouncePiRunFinalAnswer()
+    {
+        if (PiRunFinalAnswerAnnounced)
+        {
+            return;
+        }
+
+        WriteMutedLine("[Pi] final answer received");
+        PiRunFinalAnswerAnnounced = true;
     }
 
     internal static void WritePiRunResult(RfsTuiPiRunResult result)

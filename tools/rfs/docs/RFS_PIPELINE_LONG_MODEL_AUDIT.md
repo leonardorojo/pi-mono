@@ -455,7 +455,7 @@ No contiene propuestas de implementación ni roadmap.
 
 **Estado:** sí, en ambos.
 
-**Evidencia:** `RckTraceSliceBuilder.cs`, `RckTraceSliceProposalValidator.cs`, `RFS_TRACE_SLICE_LLM_PROPOSAL.md`, `RFS_COMMAND_GOVERNANCE.md`, `RFS_TUI_UX_CONTRACT.md`
+**Evidencia:** `RckTraceSliceBuilder.cs`, `RckTraceSliceProposalValidator.cs`, `RFS_TRACE_SLICE.md`, `RFS_COMMAND_GOVERNANCE.md`, `RFS_TUI_UX_CONTRACT.md`
 
 **Lectura actual:**
 

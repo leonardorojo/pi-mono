@@ -2,13 +2,41 @@
 
 ## Purpose
 
-RCK is not a replacement for Git.
-RCK is not a mirror of the filesystem.
-RCK should not store everything.
-RCK should preserve a minimal, verifiable cognitive memory that helps an LLM reconstruct context correctly.
+RCK is the memory DAG for the repository.
+It is not a replacement for Git.
+It is not a mirror of the filesystem.
+It should preserve a minimal, verifiable cognitive memory that helps an LLM reconstruct context correctly.
 
 The DAG stores facts and references.
-The Context Pack exports interpretation-ready views.
+The ContextPack exports interpretation-ready views.
+TraceSlice is the operational cut of the DAG.
+See [`RFS_TRACE_SLICE.md`](RFS_TRACE_SLICE.md) for the TraceSlice contract.
+
+## RCK DAG structure
+
+The on-disk DAG lives under:
+
+```text
+.rfs/rck/
+  HEAD
+  states/
+  deltas/
+  anchors/
+```
+
+Meaning:
+
+- `HEAD` points to the current state id.
+- `states/` stores state objects.
+- `deltas/` stores transition objects.
+- `anchors/` stores milestone objects.
+
+## Semantics
+
+- `states` = snapshots cognitivos / recorded interactions
+- `deltas` = transitions between states
+- `anchors` = milestones, durable waypoints, and potential semantic indices
+- `HEAD` = current state
 
 ## Core principles
 
@@ -18,6 +46,7 @@ Nothing that can be referenced or reproduced should be stored in the DAG as full
 The DAG should keep the smallest correct representation and point to the rest.
 
 Do not persist, as primary DAG data:
+
 - file contents
 - git diffs
 - blobs
@@ -26,6 +55,7 @@ Do not persist, as primary DAG data:
 - reproducible data that can be reconstructed from Git, the filesystem, or a tool invocation
 
 Prefer references or reproducible evidence instead:
+
 - Git diff -> reference commit + path(s)
 - file content -> reference path + commit/worktree status
 - long tool output -> store tool name + target + status + optional summary
@@ -44,15 +74,18 @@ The DAG must have one clear source of truth for primary objects and links.
 Derived views are useful, but they must not be persisted as if they were source data.
 
 Bad redundancy:
+
 - repeating the same primary truth in multiple locations
 - storing both a source object and a persisted copy of a derived view as equivalent truth
 - encoding the same relationship in several competing structures
 
 Acceptable redundancy:
-- export-time derived views in the Context Pack
+
+- export-time derived views in the ContextPack
 - clearly labeled projections that are recomputable from the DAG
 
 Source objects in the DAG:
+
 - states
 - deltas
 - anchors
@@ -61,6 +94,7 @@ Source objects in the DAG:
 - HEAD
 
 Derived views that should stay derived:
+
 - quickIndex
 - activeChain
 - counts
@@ -75,6 +109,7 @@ The DAG should remain consistent, robust, and non-redundant even when the data g
 
 Complete does not mean large.
 Complete means sufficient to reconstruct:
+
 - where I am
 - what happened
 - why it happened
@@ -98,10 +133,11 @@ A smaller DAG is better only if it remains complete enough to reconstruct the re
 RCK Store / DAG is the persistent minimum.
 It should be referential, compact, and correct.
 
-The Context Pack is a projection for LLM consumption.
+The ContextPack is a projection for LLM consumption.
 It may be more comfortable to read because it is allowed to include derived interpretation layers.
 
-The Context Pack may include:
+The ContextPack may include:
+
 - schema
 - interpretationRules
 - quickIndex
@@ -113,6 +149,7 @@ Do not confuse what is persisted with what is exported.
 ## What belongs in the DAG
 
 Belongs in the DAG:
+
 - state id
 - delta from/to
 - anchor to state
@@ -124,6 +161,7 @@ Belongs in the DAG:
 - minimal metadata
 
 Does not belong in the DAG:
+
 - file contents
 - git diffs
 - binary blobs
@@ -131,6 +169,13 @@ Does not belong in the DAG:
 - huge tool outputs
 - generated artifacts when they can be referenced instead
 - reproducible data
+
+## TraceSlice relation
+
+TraceSlice uses the RCK DAG as its source.
+Current v0 uses a compact `DagQuickIndex`.
+Future anchor-aware selection should rank anchors first and expand into states/deltas.
+See [`RFS_TRACE_SLICE.md`](RFS_TRACE_SLICE.md).
 
 ## Context Pack policy
 
@@ -160,8 +205,14 @@ If it can be referenced or recomputed, do not persist it as primary DAG data.
 ## Future implications
 
 These design principles imply the following next steps:
+
 - improve tool evidence by storing targets and minimal boundaries instead of long outputs
 - implement `rfs show` for point inspection of single objects
 - implement DAG validation
 - keep full context-pack JSON as the canonical export
 - add a shorter optimized context-pack later only if it is genuinely needed
+
+## Related docs
+
+- [`RFS_TRACE_SLICE.md`](RFS_TRACE_SLICE.md)
+- [`RFS_TUI_UX_CONTRACT.md`](RFS_TUI_UX_CONTRACT.md)

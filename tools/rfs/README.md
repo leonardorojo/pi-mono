@@ -18,8 +18,10 @@ Short version:
 - Final assistant responses in the TUI use a lightweight Markdown-lite renderer: headings, bullets, simple bold/inline code cleanup, simple `a^2 -> a²` normalization, a small LaTeX-lite pass for common Greek letters, subscripts, `\text{...}`, and `\boxed{...}` cleanup, and compact text diagrams are preserved verbatim when they help the explanation; this is not full Markdown or LaTeX rendering, and Mermaid is not rendered in this phase.
 - Baseline stable commands: `rfs init`, `rfs status`, `rfs log`, `rfs context-pack`, `rfs model get`, `rfs model set`, `rfs model list`, `rfs ask`, `rfs ask --record`, `rfs intent`, `rfs intent --record`, `rfs intent --llm`.
 
+- Canonical TraceSlice reference: [`docs/RFS_TRACE_SLICE.md`](docs/RFS_TRACE_SLICE.md).
 - LLM experimental proposal pipeline: `rfs trace-slice-proposal-llm "<prompt>"` -> `rfs trace-slice-validate-llm "<prompt>"`.
 - Experimental / diagnostic commands: `rfs ask-json`, `rfs agent-json`, `rfs trace-slice-proposal`, `rfs trace-slice-validate`, `rfs trace-slice-proposal-llm`, `rfs trace-slice-validate-llm`, `rfs context-pack --trace-slice-validated`.
+- Historical TraceSlice docs are kept as pointers and should be read through the canonical TraceSlice doc.
 - Legacy current commands: `rfs agent`, `rfs agent --record`.
 - RCK writers: `rfs ask --record`, `rfs intent --record`, `rfs agent --record`.
 - The current primary UX is the TUI session contract: `cd repo` -> `rfs` -> auto-init if needed -> prompt-first mode selection; PT5 implements the Direct mode path and final-response recording in the TUI; PT7 implements the Simple mode path and final-response recording on top of the Simple Context contract; PT8 implements the Complete mode path with LLM-backed intent -> LLM-backed trace-slice proposal -> validation -> validated ContextPack -> final-response recording; PT9 implements the Plan mode path with Simple Context reuse and final-response recording; PT9.5 adds context budget usage reporting; PT11 keeps the shell output compact; PT13 documents Complete-mode transport hardening (argv for prompts up to 32000 chars, stdin above that) and closes the documentation stop point.

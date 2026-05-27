@@ -388,6 +388,7 @@ Current commands:
 - `rfs trace-slice-validate`
 - `rfs context-pack --trace-slice`
 - `rfs context-pack --trace-slice-validated`
+- Canonical TraceSlice reference: [`RFS_TRACE_SLICE.md`](RFS_TRACE_SLICE.md)
 - `rfs trace-slice-proposal-llm`
 - `rfs trace-slice-validate-llm`
 - `rfs model get`

@@ -258,6 +258,7 @@ await RunTraceSliceValidateLlmCliCaseAsync(
     expectSuccess: false,
     expectedErrorContains: "restricted materialization policy flags must be false");
 
+await PiTraceSliceAnchorSelectionAgentChecks.RunAsync(failures);
 await RunRckTraceSliceProposalValidatorCriticalCasesAsync(failures);
 await RckAnchorExpansionServiceChecks.RunAsync(failures);
 await RckDagQuickIndexV1BuilderChecks.RunAsync(failures);

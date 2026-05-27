@@ -36,8 +36,6 @@ The key boundary is simple:
 - ContextPack materializes;
 - RCK records only after the final answer.
 
-## 3. Complete mode pipeline
-
 Complete mode uses a five-stage pipeline:
 
 ```text
@@ -146,7 +144,258 @@ It does *not* include:
 - stdout/stderr
 - JSONL
 
-## 6. Validation
+PLT2 evolves this input toward `DagQuickIndexV1`, but still keeps it compact, structural, and safe.
+
+## 6. PLT2 — Anchor-guided structural DAG slicing
+
+PLT2 is the next step for TraceSlice selection.
+It is *not* semantic slicing.
+It is *not* RAG.
+It is *not* similarity search.
+It is *not* a free-form selection of memory by textual resemblance.
+
+PLT2 uses anchors as structural entry points into the RCK DAG.
+The LLM chooses candidate anchors.
+RFS expands structurally.
+The validator validates.
+ContextPack materializes.
+
+Conceptually:
+
+```text
+Intent
+  ↓
+DagQuickIndexV1
+  ↓
+PiTraceSliceProposalAgent
+  ↓
+AnchorSelection
+  ↓
+AnchorExpansionService
+  ↓
+TraceSliceProposal v1
+  ↓
+RckTraceSliceProposalValidator
+  ↓
+Validated TraceSlice
+  ↓
+ContextPack
+```
+
+The design rule is simple:
+
+- the LLM chooses points of entry;
+- RFS cuts the DAG;
+- RFS validates the result;
+- ContextPack materializes the validated cut;
+- RCK records only after the final answer.
+
+## 7. DagQuickIndexV1 conceptual shape
+
+`DagQuickIndexV1` is the compact structural index used to guide anchor selection and deterministic expansion.
+It remains safe and intentionally incomplete.
+
+### DagQuickIndexV1
+
+- `headStateId`
+- `recentStateIds[]`
+- `recentDeltaIds[]`
+- `anchors[]`
+- `states[]`
+- `deltas[]`
+
+### AnchorCandidate
+
+- `id`
+- `stateId`
+- `label`
+- `reason`
+- `createdAtUtc`
+- `isRecentChain`
+- `parentAnchorIds[]`
+- `distanceToHead`
+- `incomingDeltaIds[]`
+- `outgoingDeltaIds[]`
+
+### StateCandidate
+
+- `id`
+- `shortId`
+- `createdAtUtc`
+- `attachedAnchorIds[]`
+- `incomingDeltaIds[]`
+- `outgoingDeltaIds[]`
+- `distanceToHead`
+
+### DeltaCandidate
+
+- `id`
+- `fromStateId`
+- `toStateId`
+- `createdAtUtc`
+
+Future-friendly fields such as `promptSummary`, `answerSummary`, `operationSummary`, and `evidenceSummary` are intentionally out of scope for the first PLT2 cut.
+
+The following remain forbidden in `DagQuickIndexV1`:
+
+- full state payloads
+- full answers
+- file contents
+- diffs
+- stdout/stderr
+- raw JSONL
+- secrets
+
+## 8. AnchorSelection internal DTO
+
+`AnchorSelection` is an internal-only output produced by `PiTraceSliceProposalAgent` in PLT2.
+It does not replace the public proposal schema.
+It is not authoritative.
+It does not contain state or delta payloads.
+It does not change the storage schema.
+
+### AnchorSelection
+
+- `selectedAnchorIds[]`
+- `fallbackStrategy`
+- `rationale[]`
+- `warnings[]`
+- `confidence`
+
+Optional later fields may exist internally, but are not required for PLT2 initial delivery:
+
+- `requestedRecentChainFallback`
+- `maxExpansionDepth`
+- `candidateAnchorScores[]`
+
+## 9. AnchorExpansionService
+
+`AnchorExpansionService` lives in `Rufus.RCK.Workspace`.
+It is deterministic.
+It performs structural expansion, not semantic planning.
+It does not call an LLM.
+It does not read file contents, diffs, stdout/stderr, or raw JSONL.
+
+### Input
+
+- `AnchorSelection`
+- `DagQuickIndexV1`
+- `maxStates`
+- `maxDeltas`
+- `expansionPolicy`
+
+### Output
+
+- `anchorIds[]`
+- `stateIds[]`
+- `deltaIds[]`
+- `strategy`
+- `warnings[]`
+- `expansionEvidence[]`
+
+### Minimum rules
+
+For each valid selected anchor, the service should:
+
+- include `anchor.stateId`
+- include connected incoming and outgoing deltas while respecting limits
+- include neighboring states connected by those deltas
+- preserve deterministic ordering
+- respect `maxStates` and `maxDeltas`
+
+If `includePathToHead` is enabled in a later phase, the service may optionally include a structural path toward `HEAD`, but that is not required for PLT2 initial delivery.
+Parent anchor lineage may be carried as metadata when available, but it is not required for the initial cut.
+
+### Explicit fallback rules
+
+- no anchors available → use recent-chain structural fallback with a warning
+- no relevant anchors → use recent-chain structural fallback with a warning
+- selected anchor missing → warn and reject or ignore according to policy
+- anchor points to missing state → warn; the validator decides if the result is acceptable
+- expansion exceeds limits → truncate deterministically and emit a warning
+
+### Out of scope for the first PLT2 cut
+
+- `candidateAnchorScores`
+- mandatory `includePathToHead`
+- `pathToHead` as a requirement
+- schema migration
+
+## 10. TraceSliceProposal compatibility
+
+PLT2 keeps `rufus.trace-slice-proposal` at `schemaVersion = 1`.
+The internal expansion result is transformed into that existing public schema.
+
+### Mapping
+
+- `requestedSelection.anchorIds = expansion.anchorIds`
+- `requestedSelection.stateIds = expansion.stateIds`
+- `requestedSelection.deltaIds = expansion.deltaIds`
+- `requestedSelection.artifactRefs = []`
+- `rationale` explains anchor selection, structural expansion, and fallback if any
+- `warnings` explains truncation, missing anchors, or recent-chain fallback
+- `confidence` is inherited from `AnchorSelection`
+
+This keeps the public proposal shape stable while allowing a richer internal design.
+
+## 11. Validator boundary
+
+`RckTraceSliceProposalValidator` remains the authority for validation.
+It validates ids and policy.
+It does not rank anchors.
+It does not decide relevance.
+It does not plan.
+It does not call an LLM.
+It does not read file contents, diffs, stdout/stderr, or raw JSONL.
+
+The validator may still perform small safety checks that keep it within the role of authority, not planner.
+
+## 12. Fallback rules
+
+All fallback behavior must be explicit.
+There is no silent fallback.
+
+- no anchors available → recent-chain structural fallback with warning
+- no relevant anchors → recent-chain structural fallback with warning
+- selected anchor missing → warning and reject or ignore according to policy
+- anchor points to missing state → warning and validator decides
+- expansion exceeds limits → deterministic truncation with warning
+
+## 13. UI and reporting
+
+The Complete pipeline should distinguish selection, expansion, and validation.
+
+Desired display:
+
+```text
+[2/5] Building TraceSlice proposal...
+  slicing: anchor-guided structural
+  anchors selected: N
+  expansion: X states · Y deltas
+  fallback: none|recent-chain
+
+[3/5] Validating proposal...
+  validation: accepted
+  validated selection: X states · Y deltas · N anchors
+```
+
+Do not display `anchor-guided structural` unless a real `AnchorExpansionService` run was used.
+The UI should distinguish requested, expanded, and validated selections.
+
+## 14. Phased implementation plan
+
+- **PLT2a — design/documentation**
+  - this contract and its supporting cross references
+- **PLT2b — DagQuickIndexV1**
+  - compact structural index builder and unit tests
+- **PLT2c — AnchorExpansionService**
+  - deterministic expansion service and unit tests
+- **PLT2d — PiTraceSliceProposalAgent emits AnchorSelection**
+  - internal anchor selection output and fake transport tests
+- **PLT2e — Complete integration + UI**
+  - public proposal compatibility, validation, and stage reporting
+
+## 15. Validation
 
 The proposal is not the authority.
 RFS validates it before anything downstream consumes it.
@@ -164,93 +413,3 @@ The validator may:
 - accept
 - reject
 - downgrade
-
-## 7. Validated TraceSlice
-
-The validated TraceSlice is the authoritative slice used downstream.
-
-It contains:
-
-- the final `selection`
-- the final `validation` block
-- accepted / rejected / downgraded proposal parts
-- the final materialization policy
-- notes and exclusions
-
-It is the slice RFS actually uses for ContextPack materialization.
-
-## 8. ContextPack
-
-ContextPack is built from the validated TraceSlice.
-It is never built from a raw proposal.
-
-ContextPack is the materialization layer for the main LLM.
-It preserves the selection boundary while projecting the chosen DAG view into a downstream-ready JSON document.
-
-## 9. Anchors current semantics v0
-
-Current v0 anchor semantics are intentionally conservative:
-
-- anchors are passed as metadata/candidates in `DagQuickIndex`
-- anchors can be requested in `requestedSelection.anchorIds`
-- anchors are validated by RFS
-- anchors can be materialized metadata-only
-- anchors are *not* currently the primary semantic index
-- there is *no* automatic expansion `anchor -> states/deltas`
-- `parentAnchorIds` are *not* currently used for semantic navigation
-
-Anchors are milestones and relevance hints, not a recursive expansion mechanism in v0.
-
-## 10. Future direction: anchor-aware TraceSlice selection
-
-A future anchor-aware planner may evolve toward:
-
-- ranking anchors first from intent
-- expanding from selected anchors into linked `stateId`
-- including nearby deltas around those states
-- using `parentAnchorIds` as anchor lineage when available
-- enriching `DagQuickIndex` with summaries and neighborhood signals
-- distinguishing requested selection from hard limits in the UI
-
-That direction is future work, not current v0 behavior.
-
-## 11. Guardrails
-
-The contract boundaries are:
-
-- the agent proposes
-- RFS validates
-- ContextPack materializes
-- RCK records only after the final answer
-
-Prohibited in proposal input and proposal output:
-
-- file contents
-- diffs
-- stdout/stderr dumps
-- JSONL
-- bypassing validation
-- silent fallback that widens scope
-
-## 12. Technical commands
-
-Relevant commands in this phase:
-
-- `rfs trace-slice-proposal`
-- `rfs trace-slice-proposal-llm`
-- `rfs trace-slice-validate`
-- `rfs context-pack --trace-slice-validated`
-- TUI Complete [2/5]
-
-## 13. Known limitations
-
-- `DagQuickIndex` v0 is compact and flat.
-- anchor-aware selection is not implemented yet.
-- `TraceSliceProposal` is not a full DAG traversal.
-- the UI may need to distinguish limits vs requested selection more clearly.
-
-## Related docs
-
-- [`RCK_DAG_PRINCIPLES.md`](RCK_DAG_PRINCIPLES.md)
-- [`RFS_TUI_UX_CONTRACT.md`](RFS_TUI_UX_CONTRACT.md)
-- historical pointers: `RFS_TRACE_SLICE_LLM_PROPOSAL.md`, `RFS_TRACE_SLICE_PROPOSAL_CONTRACT.md`, `RFS_TRACE_SLICE_V0.md`, `RFS_TRACE_SLICE_V0_SHAPE_REVIEW.md`, `RFS_CONTEXT_PACK_FROM_TRACE_SLICE.md`

@@ -1,3 +1,5 @@
+using Rufus.Cli.PiIntegration;
+
 namespace Rufus.Cli.Tui;
 
 internal enum RfsTuiPiRunHealth
@@ -26,4 +28,5 @@ internal sealed record RfsTuiPiRunResult(
     int PromptBytes,
     string? Provider,
     string? Model,
+    IReadOnlyList<PiJsonEventRunner.PiJsonToolEvent> ToolEvents,
     RfsTuiPiRunHealth Health = RfsTuiPiRunHealth.Completed);

@@ -7,7 +7,8 @@ internal static class RfsTuiPiRunRuntimeChecks
     internal static void Run(List<string> failures)
     {
         RunTextProgressAggregationCase(failures);
-        RunToolEventSuppressionCase(failures);
+        RunToolEventSummaryCase(failures);
+        RunTurnStartSuppressionCase(failures);
         RunFinalAnswerAnnouncementCase(failures);
     }
 
@@ -56,7 +57,7 @@ internal static class RfsTuiPiRunRuntimeChecks
         }
     }
 
-    private static void RunToolEventSuppressionCase(List<string> failures)
+    private static void RunToolEventSummaryCase(List<string> failures)
     {
         var originalOut = Console.Out;
         using var stdout = new StringWriter();
@@ -64,9 +65,8 @@ internal static class RfsTuiPiRunRuntimeChecks
         try
         {
             Console.SetOut(stdout);
-            RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("session"));
             RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("tool_execution_start"));
-            RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("tool_execution_start", Name: "read_file"));
+            RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("tool_execution_start", Name: "read_file", Details: "README.md"));
             RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("tool_execution_end", Name: "read_file", Summary: "ok"));
         }
         finally
@@ -80,7 +80,7 @@ internal static class RfsTuiPiRunRuntimeChecks
             failures.Add("[pi run runtime] expected tool events without useful data to be suppressed.");
         }
 
-        if (!output.Contains("[Pi] tool started: read_file", StringComparison.Ordinal))
+        if (!output.Contains("[Pi] tool started: read_file · README.md", StringComparison.Ordinal))
         {
             failures.Add("[pi run runtime] expected useful tool start events to be rendered compactly.");
         }
@@ -88,6 +88,43 @@ internal static class RfsTuiPiRunRuntimeChecks
         if (!output.Contains("[Pi] tool completed: read_file · ok", StringComparison.Ordinal))
         {
             failures.Add("[pi run runtime] expected useful tool completion events to be rendered compactly.");
+        }
+
+        if (output.Contains("[Pi] tool updated:", StringComparison.Ordinal))
+        {
+            failures.Add("[pi run runtime] expected no tool update lines in the compact summary path.");
+        }
+    }
+
+    private static void RunTurnStartSuppressionCase(List<string> failures)
+    {
+        var originalOut = Console.Out;
+        using var stdout = new StringWriter();
+
+        try
+        {
+            Console.SetOut(stdout);
+            RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("session"));
+            RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("agent_start"));
+            RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("turn_start"));
+            RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("turn_start"));
+            RfsTuiRenderer.WritePiRunRuntimeEvent(new PiJsonStreamEvent("turn_start"));
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        var output = stdout.ToString();
+        var turnStartCount = output.Split("[Pi] turn started", StringSplitOptions.None).Length - 1;
+        if (turnStartCount != 0)
+        {
+            failures.Add($"[pi run runtime] expected turn_start to be suppressed, but saw {turnStartCount} lines.");
+        }
+
+        if (!output.Contains("[Pi] session started", StringComparison.Ordinal) || !output.Contains("[Pi] agent started", StringComparison.Ordinal))
+        {
+            failures.Add("[pi run runtime] expected session and agent banners to remain visible.");
         }
     }
 

@@ -42,6 +42,7 @@ internal sealed class RealPiRunner : IRfsTuiPiRunner
             PromptBytes: detailed.PromptBytes,
             Provider: detailed.Provider,
             Model: detailed.Model,
+            ToolEvents: detailed.ToolEvents,
             Health: DetermineHealth(detailed));
     }
 

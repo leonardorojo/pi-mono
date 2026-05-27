@@ -178,7 +178,6 @@ internal static class RfsTuiRenderer
 
         if (string.Equals(type, "turn_start", StringComparison.Ordinal))
         {
-            WriteMutedLine("[Pi] turn started");
             return;
         }
 
@@ -365,6 +364,7 @@ internal static class RfsTuiRenderer
         }
 
         WritePiRunOutcomeMessage(result.Health);
+        WritePiRunActions(result.ToolEvents);
 
         Console.WriteLine();
         WriteSectionTitle("Pi response:");
@@ -384,6 +384,70 @@ internal static class RfsTuiRenderer
             WriteSectionTitle("Pi stderr:");
             WriteDivider("────────────");
             Console.WriteLine(result.Stderr.TrimEnd());
+        }
+    }
+
+    private static void WritePiRunActions(IReadOnlyList<PiJsonEventRunner.PiJsonToolEvent>? toolEvents)
+    {
+        if (toolEvents is null || toolEvents.Count == 0)
+        {
+            return;
+        }
+
+        var renderedActions = new List<string>();
+        foreach (var toolEvent in toolEvents)
+        {
+            if (toolEvent is null)
+            {
+                continue;
+            }
+
+            var name = RfsTuiText.TruncateInline(toolEvent.Name, 48);
+            var details = RfsTuiText.TruncateInline(toolEvent.Details, 80);
+            var summary = RfsTuiText.TruncateInline(toolEvent.Summary, 80);
+
+            if (string.Equals(toolEvent.Type, "tool_execution_start", StringComparison.Ordinal))
+            {
+                if (string.Equals(name, "(none)", StringComparison.Ordinal) && string.Equals(details, "(none)", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                renderedActions.Add(string.Equals(details, "(none)", StringComparison.Ordinal)
+                    ? $"- started: {name}"
+                    : $"- started: {name} · {details}");
+                continue;
+            }
+
+            if (string.Equals(toolEvent.Type, "tool_execution_end", StringComparison.Ordinal))
+            {
+                if (string.Equals(name, "(none)", StringComparison.Ordinal) && string.Equals(summary, "(none)", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                renderedActions.Add(string.Equals(summary, "(none)", StringComparison.Ordinal)
+                    ? $"- completed: {name}"
+                    : $"- completed: {name} · {summary}");
+            }
+        }
+
+        if (renderedActions.Count == 0)
+        {
+            return;
+        }
+
+        Console.WriteLine();
+        WriteSectionTitle("Pi actions:");
+        WriteDivider("────────────────");
+        foreach (var action in renderedActions.Take(8))
+        {
+            WriteMutedLine(action);
+        }
+
+        if (renderedActions.Count > 8)
+        {
+            WriteMutedLine($"(and {renderedActions.Count - 8} more)");
         }
     }
 

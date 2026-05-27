@@ -7,6 +7,7 @@ It is not a replacement for Git.
 It is not a mirror of the filesystem.
 It should preserve a minimal, verifiable cognitive memory that helps an LLM reconstruct context correctly.
 
+The RCK DAG is a persisted graph model, not merely a set of JSON files in folders.
 The DAG stores facts and references.
 The ContextPack exports interpretation-ready views.
 TraceSlice is the operational cut of the DAG.
@@ -35,7 +36,7 @@ Meaning:
 
 - `states` = snapshots cognitivos / recorded interactions
 - `deltas` = transitions between states
-- `anchors` = milestones, durable waypoints, and potential semantic indices
+- `anchors` = current milestones, durable waypoints, and potential semantic indices
 - `HEAD` = current state
 
 ## Core principles
@@ -172,9 +173,28 @@ Does not belong in the DAG:
 
 ## TraceSlice relation
 
+RCK_DAG_PRINCIPLES.md defines the map.
+RFS_TRACE_SLICE.md defines how RFS takes a governed slice of that map.
+
 TraceSlice uses the RCK DAG as its source.
 Current v0 uses a compact `DagQuickIndex`.
+Current TraceSlice v0 does not automatically expand anchors into neighboring states/deltas.
 Future anchor-aware selection should rank anchors first and expand into states/deltas.
+
+Future anchor-aware navigation may follow:
+
+```text
+intent
+  ↓
+relevant anchors
+  ↓
+anchored states
+  ↓
+neighboring deltas/states
+  ↓
+TraceSlice
+```
+
 See [`RFS_TRACE_SLICE.md`](RFS_TRACE_SLICE.md).
 
 ## Context Pack policy

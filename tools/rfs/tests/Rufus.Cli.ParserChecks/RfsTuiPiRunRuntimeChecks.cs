@@ -32,21 +32,28 @@ internal static class RfsTuiPiRunRuntimeChecks
         }
 
         var output = stdout.ToString();
-        if (output.Contains("[Pi run] text_delta", StringComparison.Ordinal) || output.Contains("text_delta:", StringComparison.Ordinal) || output.Contains("receiving text...", StringComparison.Ordinal))
+        if (output.Contains("[Pi] text_delta", StringComparison.Ordinal) || output.Contains("text_delta:", StringComparison.Ordinal))
         {
-            failures.Add("[pi run runtime] expected text_delta and chars-based progress to be suppressed.");
+            failures.Add("[pi run runtime] expected compact text progress output instead of raw text_delta lines.");
         }
 
         foreach (var fragment in new[]
                  {
-                     "[Pi run] session started",
-                     "[Pi run] processing...",
+                     "[Pi] session started",
+                     "[Pi] receiving text... 600 chars",
+                     "[Pi] receiving text... 1,200 chars",
+                     "[Pi] receiving text... 1,800 chars",
                  })
         {
             if (!output.Contains(fragment, StringComparison.Ordinal))
             {
                 failures.Add($"[pi run runtime] expected output fragment '{fragment}'.");
             }
+        }
+
+        if (output.Contains("[Pi] receiving text... 0 chars", StringComparison.Ordinal))
+        {
+            failures.Add("[pi run runtime] expected empty text_delta to be suppressed.");
         }
     }
 
@@ -73,17 +80,17 @@ internal static class RfsTuiPiRunRuntimeChecks
             failures.Add("[pi run runtime] expected tool events without useful data to be suppressed.");
         }
 
-        if (!output.Contains("[Pi run] tool started: read_file · README.md", StringComparison.Ordinal))
+        if (!output.Contains("[Pi] tool started: read_file · README.md", StringComparison.Ordinal))
         {
             failures.Add("[pi run runtime] expected useful tool start events to be rendered compactly.");
         }
 
-        if (!output.Contains("[Pi run] tool completed: read_file · ok", StringComparison.Ordinal))
+        if (!output.Contains("[Pi] tool completed: read_file · ok", StringComparison.Ordinal))
         {
             failures.Add("[pi run runtime] expected useful tool completion events to be rendered compactly.");
         }
 
-        if (output.Contains("[Pi run] tool updated:", StringComparison.Ordinal))
+        if (output.Contains("[Pi] tool updated:", StringComparison.Ordinal))
         {
             failures.Add("[pi run runtime] expected no tool update lines in the compact summary path.");
         }
@@ -109,13 +116,13 @@ internal static class RfsTuiPiRunRuntimeChecks
         }
 
         var output = stdout.ToString();
-        var turnStartCount = output.Split("[Pi run] turn started", StringSplitOptions.None).Length - 1;
+        var turnStartCount = output.Split("[Pi] turn started", StringSplitOptions.None).Length - 1;
         if (turnStartCount != 0)
         {
             failures.Add($"[pi run runtime] expected turn_start to be suppressed, but saw {turnStartCount} lines.");
         }
 
-        if (!output.Contains("[Pi run] session started", StringComparison.Ordinal) || !output.Contains("[Pi run] agent started", StringComparison.Ordinal))
+        if (!output.Contains("[Pi] session started", StringComparison.Ordinal) || !output.Contains("[Pi] agent started", StringComparison.Ordinal))
         {
             failures.Add("[pi run runtime] expected session and agent banners to remain visible.");
         }
@@ -140,20 +147,20 @@ internal static class RfsTuiPiRunRuntimeChecks
         }
 
         var output = stdout.ToString();
-        if (output.Contains("[Pi run] final answer received", StringComparison.Ordinal) || output.Contains("final answer received", StringComparison.Ordinal))
+        if (!output.Contains("[Pi] final answer received", StringComparison.Ordinal))
         {
-            failures.Add("[pi run runtime] expected final answer announcement to be suppressed.");
+            failures.Add("[pi run runtime] expected final answer announcement.");
         }
 
-        if (!output.Contains("[Pi run] completed", StringComparison.Ordinal))
+        if (!output.Contains("[Pi] completed", StringComparison.Ordinal))
         {
             failures.Add("[pi run runtime] expected completion announcement.");
         }
 
-        var finalAnswerCount = output.Split("[Pi run] final answer received", StringSplitOptions.None).Length - 1;
-        if (finalAnswerCount != 0)
+        var finalAnswerCount = output.Split("[Pi] final answer received", StringSplitOptions.None).Length - 1;
+        if (finalAnswerCount != 1)
         {
-            failures.Add($"[pi run runtime] expected no final answer announcement but found {finalAnswerCount}.");
+            failures.Add($"[pi run runtime] expected exactly one final answer announcement but found {finalAnswerCount}.");
         }
     }
 }

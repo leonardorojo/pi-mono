@@ -510,6 +510,8 @@ static async Task RunCoreChecksAsync(List<string> failures)
         expectedErrorContains: "Invalid JSONL on line 1",
         failures: failures);
 
+    await RunPiJsonRunnerRuntimeEventReportingCaseAsync(failures);
+
     await RunIntentInferenceCaseAsync(
         name: "intent inference success",
         task: new AgentTask(
@@ -3515,6 +3517,88 @@ static async Task RunPiJsonRunnerWorkspaceModelCaseAsync(
     finally
     {
         Environment.SetEnvironmentVariable("PATH", originalPath);
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunPiJsonRunnerRuntimeEventReportingCaseAsync(List<string> failures)
+{
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-pi-json-runtime-reporting-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    var scriptPath = Path.Combine(tempRoot, "pi");
+    var script = "#!/usr/bin/env bash\n" +
+                 "set -euo pipefail\n" +
+                 "echo '{\"type\":\"session\"}'\n" +
+                 "echo '{\"type\":\"message_start\"}'\n" +
+                 "echo '{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"hello \"}}'\n" +
+                 "echo '{\"type\":\"tool_execution_start\",\"id\":\"tool-1\",\"name\":\"read\",\"details\":\"README.md\"}'\n" +
+                 "echo '{\"type\":\"tool_execution_end\",\"id\":\"tool-1\",\"name\":\"read\",\"summary\":\"ok\"}'\n" +
+                 "echo '{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"world\"}}'\n" +
+                 "echo '{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"structured answer\"}]}}'\n" +
+                 "exit 0\n";
+
+    await File.WriteAllTextAsync(scriptPath, script);
+    if (!OperatingSystem.IsWindows())
+    {
+        File.SetUnixFileMode(
+            scriptPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+    }
+
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+        var runtimeEvents = new List<PiJsonStreamEvent>();
+        var result = await PiJsonEventRunner.RunAgentDetailedAsync(
+            tempRoot,
+            "test prompt",
+            null,
+            eventReporter: runtimeEvents.Add);
+
+        if (!result.Success)
+        {
+            failures.Add($"[pi runtime event reporting] expected Success=true but got false. Error: {result.ErrorMessage}");
+        }
+
+        if (!string.Equals(result.Answer, "structured answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[pi runtime event reporting] expected answer 'structured answer' but got '{result.Answer}'.");
+        }
+
+        var eventTypes = runtimeEvents.Select(runtimeEvent => runtimeEvent.Type).ToArray();
+        foreach (var expectedType in new[] { "session", "message_start", "message_update", "tool_execution_start", "tool_execution_end", "message_end" })
+        {
+            if (!eventTypes.Contains(expectedType, StringComparer.Ordinal))
+            {
+                failures.Add($"[pi runtime event reporting] missing runtime event type '{expectedType}'.");
+            }
+        }
+
+        var firstDelta = runtimeEvents.FirstOrDefault(runtimeEvent => string.Equals(runtimeEvent.Type, "message_update", StringComparison.Ordinal));
+        if (firstDelta is null || !string.Equals(firstDelta.Text, "hello ", StringComparison.Ordinal))
+        {
+            failures.Add($"[pi runtime event reporting] expected first message_update text 'hello ' but got '{firstDelta?.Text ?? "(null)"}'.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[pi runtime event reporting] threw {ex}");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+
         try
         {
             Directory.Delete(tempRoot, recursive: true);

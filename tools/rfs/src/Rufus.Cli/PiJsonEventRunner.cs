@@ -884,6 +884,11 @@ public static class PiJsonEventRunner
         var lineNumber = 0;
         var toolEvents = new List<PiJsonToolEvent>();
 
+        void ReportRuntimeEvent(PiJsonStreamEvent runtimeEvent)
+        {
+            eventReporter?.Invoke(runtimeEvent);
+        }
+
         while (true)
         {
             var line = await stdout.ReadLineAsync(cancellationToken);
@@ -921,6 +926,7 @@ public static class PiJsonEventRunner
                     case "message_start":
                     case "queue_update":
                     case "auto_retry_start":
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
 
                     case "tool_execution_start":
@@ -934,11 +940,13 @@ public static class PiJsonEventRunner
                             }
 
                             toolEvents.Add(new PiJsonToolEvent("tool_execution_start", id, name, details, null));
+                            ReportRuntimeEvent(new PiJsonStreamEvent(type, id, name, null, null, details, null));
                         }
                         break;
 
                     case "tool_execution_update":
                         // ignore updates for prototype
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
 
                     case "tool_execution_end":
@@ -947,12 +955,14 @@ public static class PiJsonEventRunner
                             var name = GetString(root, "name");
                             var summary = GetString(root, "summary");
                             toolEvents.Add(new PiJsonToolEvent("tool_execution_end", id, name, null, summary));
+                            ReportRuntimeEvent(new PiJsonStreamEvent(type, id, name, null, summary, null, null));
                         }
                         break;
 
                     case "message_update":
                         CaptureAssistantMetadata(root, ref provider, ref model);
-                        AppendTextDelta(root, deltaBuilder);
+                        var delta = AppendTextDelta(root, deltaBuilder);
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type, Text: string.IsNullOrWhiteSpace(delta) ? null : delta));
                         break;
 
                     case "message_end":
@@ -966,6 +976,8 @@ public static class PiJsonEventRunner
                                 completionObserved = true;
                             }
                         }
+
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
 
                     case "turn_end":
@@ -979,6 +991,8 @@ public static class PiJsonEventRunner
                                 structuredAnswer = answerFromTurnEnd;
                             }
                         }
+
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
 
                     case "agent_end":
@@ -987,6 +1001,8 @@ public static class PiJsonEventRunner
                         {
                             structuredAnswer = agentEndAnswer;
                         }
+
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
 
                     case "compaction_end":
@@ -996,6 +1012,8 @@ public static class PiJsonEventRunner
                         {
                             explicitError = GetString(root, "errorMessage") ?? "Pi JSON mode reported a compaction failure.";
                         }
+
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type, Message: explicitError));
                         break;
 
                     case "auto_retry_end":
@@ -1004,9 +1022,12 @@ public static class PiJsonEventRunner
                         {
                             explicitError = GetString(root, "finalError") ?? "Pi JSON mode exhausted retries.";
                         }
+
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type, Message: explicitError));
                         break;
 
                     default:
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
                 }
             }

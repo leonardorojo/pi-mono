@@ -9,6 +9,7 @@ internal static class RfsTuiAnsiLeakChecks
     {
         RunPlainTerminalOverrideCase(failures);
         RunNoColorCase(failures);
+        RunDumbTerminalCase(failures);
         await RunCapturedTuiCase(failures);
     }
 
@@ -110,6 +111,36 @@ internal static class RfsTuiAnsiLeakChecks
         }
     }
 
+    private static void RunDumbTerminalCase(List<string> failures)
+    {
+        var originalTerm = Environment.GetEnvironmentVariable("TERM");
+        var originalPlain = Environment.GetEnvironmentVariable("RFS_TUI_PLAIN");
+        var originalNoColor = Environment.GetEnvironmentVariable("NO_COLOR");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("RFS_TUI_PLAIN", null);
+            Environment.SetEnvironmentVariable("NO_COLOR", null);
+            Environment.SetEnvironmentVariable("TERM", "dumb");
+
+            if (RfsTuiTerminal.IsInteractive)
+            {
+                failures.Add("[tui ansi] expected TERM=dumb to disable interactive mode.");
+            }
+
+            if (RfsTuiTerminal.UseCursorControl || RfsTuiTerminal.UseLivePalette || RfsTuiTerminal.UseColor || RfsTuiTerminal.UseAnsiSgr || RfsTuiTerminal.UseAnsiStyle)
+            {
+                failures.Add("[tui ansi] expected TERM=dumb to disable all TUI chrome.");
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TERM", originalTerm);
+            Environment.SetEnvironmentVariable("RFS_TUI_PLAIN", originalPlain);
+            Environment.SetEnvironmentVariable("NO_COLOR", originalNoColor);
+        }
+    }
+
     private static async Task RunCapturedTuiCase(List<string> failures)
     {
         var toolsRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
@@ -129,6 +160,11 @@ internal static class RfsTuiAnsiLeakChecks
             var runResult = await RunProcessAsyncWithInput(
                 tempRoot,
                 "/help\n/exit\n",
+                new Dictionary<string, string?>
+                {
+                    ["RFS_TUI_PLAIN"] = "1",
+                    ["NO_COLOR"] = "1",
+                },
                 "dotnet",
                 "run",
                 "--project",
@@ -171,16 +207,31 @@ internal static class RfsTuiAnsiLeakChecks
             failures.Add($"[tui ansi] {scenario}: expected no ANSI escape sequences.");
         }
 
-        if (output.Contains("[1m", StringComparison.Ordinal) || output.Contains("[0m", StringComparison.Ordinal) || output.Contains("[90m", StringComparison.Ordinal) || output.Contains("[92m", StringComparison.Ordinal) || output.Contains("[97m", StringComparison.Ordinal))
+        if (output.Contains("[1m", StringComparison.Ordinal) ||
+            output.Contains("[0m", StringComparison.Ordinal) ||
+            output.Contains("[96m", StringComparison.Ordinal) ||
+            output.Contains("[90m", StringComparison.Ordinal) ||
+            output.Contains("[1F", StringComparison.Ordinal) ||
+            output.Contains("[2K", StringComparison.Ordinal))
         {
-            failures.Add($"[tui ansi] {scenario}: expected no raw SGR codes.");
+            failures.Add($"[tui ansi] {scenario}: expected no raw SGR or cursor-control fragments.");
         }
     }
 
     private static Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string workingDirectory, params string[] commandLine)
-        => RunProcessAsyncWithInput(workingDirectory, null, commandLine);
+        => RunProcessAsyncWithInput(workingDirectory, null, null, commandLine);
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsyncWithInput(string workingDirectory, string? standardInput, params string[] commandLine)
+    private static Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsyncWithInput(
+        string workingDirectory,
+        string? standardInput,
+        params string[] commandLine)
+        => RunProcessAsyncWithInput(workingDirectory, standardInput, null, commandLine);
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsyncWithInput(
+        string workingDirectory,
+        string? standardInput,
+        IReadOnlyDictionary<string, string?>? environmentVariables,
+        params string[] commandLine)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -191,6 +242,14 @@ internal static class RfsTuiAnsiLeakChecks
             RedirectStandardInput = standardInput is not null,
             UseShellExecute = false,
         };
+
+        if (environmentVariables is not null)
+        {
+            foreach (var pair in environmentVariables)
+            {
+                startInfo.Environment[pair.Key] = pair.Value;
+            }
+        }
 
         for (var i = 1; i < commandLine.Length; i++)
         {

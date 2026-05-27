@@ -259,9 +259,10 @@ await RunTraceSliceValidateLlmCliCaseAsync(
     expectedErrorContains: "restricted materialization policy flags must be false");
 
 await RunRckTraceSliceProposalValidatorCriticalCasesAsync(failures);
+await RckDagQuickIndexV1BuilderChecks.RunAsync(failures);
 
 await RunContextPackTraceSliceCliCaseAsync(
-    name: "context pack trace-slice cli renders scoped json",
+    name: "context-pack --trace-slice renders deterministic context pack JSON",
     prompt: "Implement rfs show command",
     failures: failures);
 

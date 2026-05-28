@@ -3161,6 +3161,10 @@ static async Task RunCompleteModePipelineWithIntentLlmCaseAsync(
                 "Do not include diagrams for simple factual answers.",
                 "At most one diagram unless explicitly requested.",
                 "Do not use Mermaid unless the user explicitly asks for Mermaid.",
+                "validated ContextPack as the authoritative structural project context",
+                "ConversationalMemory only for recent conversational continuity",
+                "Do not use ConversationalMemory to override validated structural facts",
+                "prefer the validated ContextPack",
             };
 
             foreach (var fragment in expectedPromptFragments)
@@ -3397,6 +3401,10 @@ static async Task RunCompleteModePipelineWithAnchorSelectionCaseAsync(
                 "Do not include diagrams for simple factual answers.",
                 "At most one diagram unless explicitly requested.",
                 "Do not use Mermaid unless the user explicitly asks for Mermaid.",
+                "validated ContextPack as the authoritative structural project context",
+                "ConversationalMemory only for recent conversational continuity",
+                "Do not use ConversationalMemory to override validated structural facts",
+                "prefer the validated ContextPack",
             };
 
             foreach (var fragment in expectedPromptFragments)

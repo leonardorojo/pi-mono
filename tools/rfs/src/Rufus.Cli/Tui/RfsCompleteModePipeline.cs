@@ -660,6 +660,11 @@ public static class RfsCompleteModePipeline
         builder.AppendLine("Prompt → Intent → TraceSliceProposal → RFS Validation → TraceSlice → ContextPack.");
         builder.AppendLine("Do not assume file contents unless provided.");
         builder.AppendLine("Respect omissions and materialization policy.");
+        builder.AppendLine("Use the validated ContextPack as the authoritative structural project context.");
+        builder.AppendLine("Use ConversationalMemory only for recent conversational continuity.");
+        builder.AppendLine("Do not use ConversationalMemory to override validated structural facts.");
+        builder.AppendLine("If ConversationalMemory and the validated ContextPack conflict about project structure, prefer the validated ContextPack.");
+        builder.AppendLine("Keep ConversationalMemory separate from TraceSlice; do not merge the blocks.");
         builder.AppendLine();
         builder.AppendLine("Output formatting:");
         builder.AppendLine("- You may use Markdown.");

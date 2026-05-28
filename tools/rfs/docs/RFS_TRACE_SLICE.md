@@ -13,9 +13,10 @@ See also: [`RCK_DAG_PRINCIPLES.md`](RCK_DAG_PRINCIPLES.md).
 
 ## 2. Relationship with RCK DAG
 
-RCK DAG is the source of truth for repository memory.
+RCK DAG is the source of truth for repository memory and the only persistence layer.
 TraceSlice is a bounded selection over that DAG.
-ContextPack is the materialization of a validated TraceSlice.
+ConversationalMemory is a derived projection over the active chain in that same DAG.
+ContextPack is the composition of a validated TraceSlice plus derived conversational continuity.
 
 Conceptually:
 
@@ -50,7 +51,7 @@ Complete mode uses a five-stage pipeline:
 [3/5] Validation
   RckTraceSliceProposalValidator
 
-[4/5] ContextPack
+[4/5] ContextPack + ConversationalMemory
   RckTraceSliceContextPackBuilder
 
 [5/5] Principal Answer
@@ -65,6 +66,127 @@ The contract is:
 - validation authorizes the slice;
 - ContextPack materializes the validated slice;
 - the principal answer is produced from the resulting context.
+
+## 3. ConversationalMemory
+
+ConversationalMemory is a derived projection from RCK active-chain interactions.
+It is not persisted separately.
+It is injected during [4/5] ContextPack composition.
+It does not participate in [2/5] TraceSlice Proposal.
+It does not affect [3/5] Validation.
+It does not replace anchors or TraceSlice.
+
+### ConversationalMemory source
+
+The canonical source for the first version is `RckWorkspaceLogReader`.
+It reconstructs the active chain from `HEAD`, returning interactions newest-first.
+
+Fields used from each log entry:
+
+- `stateId`
+- `deltaId`
+- `mode`
+- `prompt`
+- `answerSummary`
+- `createdAtUtc`
+
+Notes:
+
+- `answerSummary` is a truncated summary, not the full answer.
+- `prompt` may be taken in full from the log reader.
+- the first version should not read `payloadCanonicalJson` directly.
+
+### ConversationalMemoryInput
+
+Conceptual input shape:
+
+```json
+{
+  "currentPrompt": "...",
+  "recentInteractions": [
+    {
+      "stateId": "...",
+      "deltaId": "...",
+      "mode": "tui-direct",
+      "prompt": "...",
+      "answerSummary": "...",
+      "createdAtUtc": "2026-05-28T12:34:56.0000000Z"
+    }
+  ],
+  "limits": {
+    "maxInteractions": 8,
+    "maxPromptChars": 4000,
+    "maxTotalChars": 12000
+  }
+}
+```
+
+### ConversationalMemory output future shape
+
+The future projected output should remain small and semantic:
+
+```json
+{
+  "type": "rufus.conversational-memory",
+  "schemaVersion": 1,
+  "summary": "...",
+  "activeTopic": "...",
+  "openQuestions": [],
+  "recentDecisions": [],
+  "continuityHints": [],
+  "warnings": []
+}
+```
+
+### Guardrails
+
+ConversationalMemory must not become:
+
+- a second persistence layer
+- a parallel store
+- a RAG system
+- a replacement for TraceSlice
+- a structural DAG selector
+- a validator bypass
+- a source of raw payloads or tool logs
+
+It must not use:
+
+- `selectedStateIds`
+- `selectedDeltaIds`
+- `selectedAnchorIds`
+- `TraceSliceSelectionStrategy`
+- `ContextPackScope`
+- `payloadCanonicalJson`
+- full answers
+- diffs
+- stdout/stderr
+- raw JSONL
+- raw tool logs
+
+### Risks
+
+The main design risks are:
+
+- duplication with TraceSlice semantics
+- invented summaries if the projection is not grounded in RCK data
+- loss of fidelity because `answerSummary` is truncated
+- extra latency from future agent-mediated projection
+- confusion between conversational continuity and structural context
+
+### Future phases
+
+PCM0 — audit conversational persistence ✅
+PCM1 — design/documentation
+PCM2 — `RckConversationalMemoryInputBuilder`
+PCM3 — `PiConversationalMemoryAgent`
+PCM4 — ContextPack integration
+PCM5 — UI + smoke validation
+
+Validation checklist:
+
+- `git status --short --branch`
+- `git diff --check`
 
 ## 4. TraceSliceProposal v0
 

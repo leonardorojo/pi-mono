@@ -58,6 +58,16 @@ public sealed record RckInteractionPipelineSummary
 
     public IReadOnlyList<string>? Omissions { get; }
 
+    public bool? UsesConversationalMemory { get; }
+
+    public int? ConversationalMemoryInteractionCount { get; }
+
+    public string? ConversationalMemoryModel { get; }
+
+    public string? ConversationalMemorySource { get; }
+
+    public IReadOnlyList<string>? ConversationalMemoryWarnings { get; }
+
     public RckInteractionPipelineSummary(
         string kind,
         bool usesRckContext,
@@ -86,7 +96,12 @@ public sealed record RckInteractionPipelineSummary
         string? transportRisk = null,
         bool? truncated = null,
         IReadOnlyList<string>? warnings = null,
-        IReadOnlyList<string>? omissions = null)
+        IReadOnlyList<string>? omissions = null,
+        bool? usesConversationalMemory = null,
+        int? conversationalMemoryInteractionCount = null,
+        string? conversationalMemoryModel = null,
+        string? conversationalMemorySource = null,
+        IReadOnlyList<string>? conversationalMemoryWarnings = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
 
@@ -118,5 +133,10 @@ public sealed record RckInteractionPipelineSummary
         Truncated = truncated;
         Warnings = warnings;
         Omissions = omissions;
+        UsesConversationalMemory = usesConversationalMemory;
+        ConversationalMemoryInteractionCount = conversationalMemoryInteractionCount;
+        ConversationalMemoryModel = conversationalMemoryModel;
+        ConversationalMemorySource = conversationalMemorySource;
+        ConversationalMemoryWarnings = conversationalMemoryWarnings;
     }
 }

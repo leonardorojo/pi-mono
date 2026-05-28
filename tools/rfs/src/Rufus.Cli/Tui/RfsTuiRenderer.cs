@@ -527,7 +527,11 @@ internal static class RfsTuiRenderer
         int selectedAnchorCount,
         RckContextUsageReport contextUsageReport,
         IReadOnlyList<string> warnings,
-        IReadOnlyList<string> omissions)
+        IReadOnlyList<string> omissions,
+        string? conversationalMemoryStatus,
+        int conversationalMemoryInteractionCount,
+        string? conversationalMemoryModel,
+        IReadOnlyList<string> conversationalMemoryWarnings)
     {
         WriteSectionTitle("Context:");
         WriteKeyValue("validation", validationStatus ?? "(unknown)");
@@ -538,6 +542,16 @@ internal static class RfsTuiRenderer
         WriteKeyValue("estimated tokens", contextUsageReport.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture));
         WriteKeyValue("transport", contextUsageReport.TransportSizeChars > 32000 ? "stdin" : "argv");
         WriteKeyValue("transport risk", contextUsageReport.TransportRisk);
+        WriteKeyValue("conversational memory", conversationalMemoryStatus ?? "unavailable");
+        if (!string.IsNullOrWhiteSpace(conversationalMemoryModel))
+        {
+            WriteKeyValue("memory model", conversationalMemoryModel);
+        }
+        if (conversationalMemoryInteractionCount > 0)
+        {
+            WriteKeyValue("memory interactions", conversationalMemoryInteractionCount.ToString(CultureInfo.InvariantCulture));
+        }
+        WriteOptionalList("memory warnings", conversationalMemoryWarnings);
         WriteOptionalList("warnings", warnings);
         WriteOptionalList("omissions", omissions);
     }
@@ -660,6 +674,16 @@ internal static class RfsTuiRenderer
             WriteKeyValue("estimated tokens", complete.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture));
             WriteKeyValue("transport", complete.EstimatedChars > 32000 ? "stdin" : "argv");
             WriteKeyValue("transport risk", complete.TransportRisk);
+            WriteKeyValue("conversational memory", complete.ConversationalMemoryStatus ?? "unavailable");
+            if (!string.IsNullOrWhiteSpace(complete.ConversationalMemoryModel))
+            {
+                WriteKeyValue("memory model", complete.ConversationalMemoryModel);
+            }
+            if (complete.ConversationalMemoryInteractionCount > 0)
+            {
+                WriteKeyValue("memory interactions", complete.ConversationalMemoryInteractionCount.ToString(CultureInfo.InvariantCulture));
+            }
+            WriteOptionalList("memory warnings", complete.ConversationalMemoryWarnings);
             WriteOptionalList("warnings", complete.Warnings);
             WriteOptionalList("omissions", complete.Omissions);
             return;

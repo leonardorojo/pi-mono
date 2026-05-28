@@ -4,6 +4,7 @@ using System.Text.Json;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
 using Rufus.Agenting.TraceSlice;
+using Rufus.Cli.ConversationalMemory;
 using Rufus.Cli.Intent;
 using Rufus.Cli.TraceSlice;
 using Rufus.RCK.Workspace;
@@ -168,7 +169,7 @@ public static class RfsCompleteModePipeline
         int maxRecentInteractions = 5,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
-        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, proposalAgent: null, cancellationToken: cancellationToken, stageWriter: stageWriter).ConfigureAwait(false);
+        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, proposalAgent: null, conversationalMemoryAgent: null, cancellationToken: cancellationToken, stageWriter: stageWriter).ConfigureAwait(false);
 
     public static Task<RfsCompleteModeBuildResult> BuildAsync(
         string prompt,
@@ -183,6 +184,7 @@ public static class RfsCompleteModePipeline
             maxRecentInteractions,
             intentAgent,
             proposalAgent: null,
+            conversationalMemoryAgent: null,
             cancellationToken,
             stageWriter);
 
@@ -192,6 +194,7 @@ public static class RfsCompleteModePipeline
         int maxRecentInteractions,
         IAgent? intentAgent,
         IAgent? proposalAgent,
+        IAgent? conversationalMemoryAgent = null,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
     {
@@ -325,7 +328,9 @@ public static class RfsCompleteModePipeline
             RfsTuiRenderer.WriteCompleteStageDetail("validated selection", BuildValidatedSelectionSummary(validationResult.Json));
         }
 
-        stageWriter?.Invoke("[4/5] Building ContextPack...");
+        stageWriter?.Invoke("[4/5] Building ContextPack + ConversationalMemory...");
+        var conversationalMemoryResult = await BuildConversationalMemoryAsync(currentDirectory, normalizedPrompt, conversationalMemoryAgent, cancellationToken).ConfigureAwait(false);
+
         var contextPackResult = RckTraceSliceContextPackBuilder.BuildFromValidatedTraceSlice(validationResult.Json, currentDirectory);
         if (!contextPackResult.Success || string.IsNullOrWhiteSpace(contextPackResult.Json))
         {
@@ -333,11 +338,14 @@ public static class RfsCompleteModePipeline
                 contextPackResult.ErrorMessage ?? "rfs complete mode: failed to build validated ContextPack.");
         }
 
+        var conversationalMemorySection = BuildConversationalMemorySection(conversationalMemoryResult);
         var summary = ParseCompleteSummary(
             proposalResult,
             validationResult.Json,
             contextPackResult.Json,
-            normalizedPrompt: normalizedPrompt);
+            normalizedPrompt: normalizedPrompt,
+            conversationalMemorySection: conversationalMemorySection,
+            conversationalMemoryResult: conversationalMemoryResult);
 
         var contextUsageReport = RckContextUsageEstimator.Create(summary.EstimatedChars, summary.EstimatedTokens, modelBudgetTokens: null, summary.Truncated);
         if (stageWriter is not null)
@@ -346,6 +354,17 @@ public static class RfsCompleteModePipeline
             RfsTuiRenderer.WriteCompleteStageDetail(
                 "selected states/deltas/anchors",
                 $"{summary.SelectedStateIds.Count} / {summary.SelectedDeltaIds.Count} / {summary.SelectedAnchorIds.Count}");
+            RfsTuiRenderer.WriteCompleteStageDetail(
+                "conversational memory",
+                conversationalMemoryResult.Success ? $"{conversationalMemoryResult.InteractionCount} recent interactions" : "unavailable");
+            if (conversationalMemoryResult.Success)
+            {
+                RfsTuiRenderer.WriteCompleteStageDetail("memory model", conversationalMemoryResult.Model ?? "claude-haiku-4.5");
+            }
+            else if (!string.IsNullOrWhiteSpace(conversationalMemoryResult.ErrorMessage))
+            {
+                RfsTuiRenderer.WriteCompleteStageDetail("warning", RfsTuiText.TruncateInline(conversationalMemoryResult.ErrorMessage, 96));
+            }
             RfsTuiRenderer.WriteCompleteStageDetail("estimated tokens", contextUsageReport.EstimatedTokens.ToString("N0", CultureInfo.InvariantCulture));
             RfsTuiRenderer.WriteCompleteStageDetail("transport", contextUsageReport.TransportSizeChars > 32000 ? "stdin" : "argv");
             RfsTuiRenderer.WriteCompleteStageDetail("transport risk", contextUsageReport.TransportRisk);
@@ -494,11 +513,85 @@ public static class RfsCompleteModePipeline
         }
     }
 
+    private static async Task<RfsCompleteConversationalMemoryResult> BuildConversationalMemoryAsync(
+        string? repoRoot,
+        string normalizedPrompt,
+        IAgent? conversationalMemoryAgent,
+        CancellationToken cancellationToken)
+    {
+        var limits = new RckConversationalMemoryLimits(5, 1500, 6000);
+        var inputResult = RckConversationalMemoryInputBuilder.Build(repoRoot, normalizedPrompt, limits);
+        if (!inputResult.Success || inputResult.Input is null)
+        {
+            var inputWarnings = inputResult.Warnings.Count > 0
+                ? inputResult.Warnings
+                : new[] { "conversational memory: unavailable" };
+            return RfsCompleteConversationalMemoryResult.Failure(inputResult.ErrorMessage ?? "conversational memory input build failed.", inputWarnings);
+        }
+
+        var agent = conversationalMemoryAgent ?? new PiConversationalMemoryAgent(repoRoot ?? string.Empty);
+        var task = new AgentTask(
+            id: $"tui-cm-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}",
+            kind: "build-conversational-memory",
+            goal: "Summarize recent conversation continuity from RCK.",
+            input: JsonSerializer.Serialize(inputResult.Input, JsonOptions));
+
+        AgentTaskResult taskResult;
+        try
+        {
+            taskResult = await agent.ExecuteAsync(task, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            var agentWarnings = MergeDistinct(inputResult.Warnings, new[] { "conversational memory: unavailable" });
+            return RfsCompleteConversationalMemoryResult.Failure($"conversational memory agent failed: {ex.Message}", agentWarnings);
+        }
+
+        var memoryWarnings = MergeDistinct(inputResult.Warnings, taskResult.Warnings);
+        if (taskResult.Status != AgentTaskStatus.Succeeded || string.IsNullOrWhiteSpace(taskResult.Output))
+        {
+            var errorMessage = taskResult.Errors.Count > 0
+                ? string.Join(Environment.NewLine, taskResult.Errors)
+                : taskResult.Summary ?? "conversational memory agent failed.";
+            return RfsCompleteConversationalMemoryResult.Failure(errorMessage, MergeDistinct(memoryWarnings, new[] { "conversational memory: unavailable" }));
+        }
+
+        try
+        {
+            var memory = RckConversationalMemoryJsonCodec.Parse(taskResult.Output);
+            return RfsCompleteConversationalMemoryResult.SuccessResult(memory, memoryWarnings, taskResult.ExecutionModel.Model, inputResult.Input.RecentInteractions.Count);
+        }
+        catch (Exception ex) when (ex is ArgumentException or JsonException)
+        {
+            var mergedWarnings = MergeDistinct(memoryWarnings, new[] { "conversational memory: unavailable" });
+            return RfsCompleteConversationalMemoryResult.Failure($"conversational memory JSON parse failed: {ex.Message}", mergedWarnings);
+        }
+    }
+
+    private static string BuildConversationalMemorySection(RfsCompleteConversationalMemoryResult conversationalMemoryResult)
+    {
+        var builder = new StringBuilder();
+        if (conversationalMemoryResult.Success && conversationalMemoryResult.Memory is not null)
+        {
+            builder.AppendLine(JsonSerializer.Serialize(conversationalMemoryResult.Memory, JsonOptions));
+            return builder.ToString().TrimEnd();
+        }
+
+        builder.AppendLine("unavailable");
+        if (!string.IsNullOrWhiteSpace(conversationalMemoryResult.ErrorMessage))
+        {
+            builder.AppendLine($"warning: {RfsTuiText.TruncateInline(conversationalMemoryResult.ErrorMessage, 160)}");
+        }
+        return builder.ToString().TrimEnd();
+    }
+
     private static RfsCompleteModeBuildResult ParseCompleteSummary(
         RckTraceSliceProposalBuildResult proposalResult,
         string validatedTraceSliceJson,
         string contextPackJson,
-        string normalizedPrompt)
+        string normalizedPrompt,
+        string conversationalMemorySection,
+        RfsCompleteConversationalMemoryResult conversationalMemoryResult)
     {
         using var traceSliceDocument = JsonDocument.Parse(validatedTraceSliceJson);
         var traceSliceRoot = traceSliceDocument.RootElement;
@@ -511,6 +604,7 @@ public static class RfsCompleteModePipeline
         var selectedAnchorIds = ReadStringArray(selectionElement, "anchorIds");
         var materializationPolicySummary = BuildMaterializationPolicySummary(GetRequiredObject(traceSliceRoot, "materializationPolicy"));
         var warnings = MergeDistinct(proposalResult.Warnings, ReadStringArray(GetRequiredObject(traceSliceRoot, "validation"), "reasons"));
+        warnings = MergeDistinct(warnings, conversationalMemoryResult.Warnings);
         var omissions = ReadStringArray(traceSliceRoot, "omissions");
 
         using var contextPackDocument = JsonDocument.Parse(contextPackJson);
@@ -519,7 +613,7 @@ public static class RfsCompleteModePipeline
         var artifactRefCount = ReadArtifactCount(contextPackRoot);
         var contextSummary = BuildContextSummary(contextPackRoot, validationStatus, selectionStrategy, selectedStateIds.Count, selectedDeltaIds.Count, selectedAnchorIds.Count);
 
-        var promptToSend = BuildMainLlmPrompt(normalizedPrompt, contextSummary, contextPackJson);
+        var promptToSend = BuildMainLlmPrompt(normalizedPrompt, contextSummary, contextPackJson, conversationalMemorySection);
         var estimatedChars = promptToSend.Length;
         var estimatedTokens = EstimateTokens(estimatedChars);
         var truncated = false;
@@ -550,10 +644,15 @@ public static class RfsCompleteModePipeline
             estimatedTokens: estimatedTokens,
             truncated: truncated,
             warnings: warnings,
-            omissions: omissions);
+            omissions: omissions,
+            usesConversationalMemory: conversationalMemoryResult.Success,
+            conversationalMemoryInteractionCount: conversationalMemoryResult.InteractionCount,
+            conversationalMemoryModel: conversationalMemoryResult.Model,
+            conversationalMemoryWarnings: conversationalMemoryResult.Warnings,
+            conversationalMemoryStatus: conversationalMemoryResult.Success ? "available" : "unavailable");
     }
 
-    private static string BuildMainLlmPrompt(string normalizedPrompt, string contextSummary, string contextPackJson)
+    private static string BuildMainLlmPrompt(string normalizedPrompt, string contextSummary, string contextPackJson, string conversationalMemorySection)
     {
         var builder = new StringBuilder();
         builder.AppendLine("You are assisting inside an RFS repository session.");
@@ -578,6 +677,9 @@ public static class RfsCompleteModePipeline
         builder.AppendLine();
         builder.AppendLine("[VALIDATED CONTEXTPACK CONTENT]");
         builder.AppendLine(contextPackJson.Trim());
+        builder.AppendLine();
+        builder.AppendLine("[CONVERSATIONAL MEMORY]");
+        builder.AppendLine(conversationalMemorySection.Trim());
         builder.AppendLine();
         builder.AppendLine("[USER PROMPT]");
         builder.AppendLine(normalizedPrompt);
@@ -861,6 +963,11 @@ public sealed record RfsCompleteModeBuildResult
     public bool Truncated { get; }
     public IReadOnlyList<string> Warnings { get; }
     public IReadOnlyList<string> Omissions { get; }
+    public bool UsesConversationalMemory { get; }
+    public int ConversationalMemoryInteractionCount { get; }
+    public string? ConversationalMemoryModel { get; }
+    public string? ConversationalMemoryStatus { get; }
+    public IReadOnlyList<string> ConversationalMemoryWarnings { get; }
 
     private RfsCompleteModeBuildResult(
         bool success,
@@ -885,7 +992,12 @@ public sealed record RfsCompleteModeBuildResult
         int estimatedTokens,
         bool truncated,
         IReadOnlyList<string> warnings,
-        IReadOnlyList<string> omissions)
+        IReadOnlyList<string> omissions,
+        bool usesConversationalMemory,
+        int conversationalMemoryInteractionCount,
+        string? conversationalMemoryModel,
+        string? conversationalMemoryStatus,
+        IReadOnlyList<string> conversationalMemoryWarnings)
     {
         Success = success;
         ErrorMessage = errorMessage;
@@ -910,6 +1022,11 @@ public sealed record RfsCompleteModeBuildResult
         Truncated = truncated;
         Warnings = warnings;
         Omissions = omissions;
+        UsesConversationalMemory = usesConversationalMemory;
+        ConversationalMemoryInteractionCount = conversationalMemoryInteractionCount;
+        ConversationalMemoryModel = conversationalMemoryModel;
+        ConversationalMemoryStatus = conversationalMemoryStatus;
+        ConversationalMemoryWarnings = conversationalMemoryWarnings;
     }
 
     public static RfsCompleteModeBuildResult Failure(string errorMessage)
@@ -936,7 +1053,12 @@ public sealed record RfsCompleteModeBuildResult
             estimatedTokens: 0,
             truncated: false,
             warnings: Array.Empty<string>(),
-            omissions: Array.Empty<string>());
+            omissions: Array.Empty<string>(),
+            usesConversationalMemory: false,
+            conversationalMemoryInteractionCount: 0,
+            conversationalMemoryModel: null,
+            conversationalMemoryStatus: "unavailable",
+            conversationalMemoryWarnings: Array.Empty<string>());
 
     public static RfsCompleteModeBuildResult SuccessResult(
         string promptToSend,
@@ -959,7 +1081,12 @@ public sealed record RfsCompleteModeBuildResult
         int estimatedTokens,
         bool truncated,
         IReadOnlyList<string> warnings,
-        IReadOnlyList<string> omissions)
+        IReadOnlyList<string> omissions,
+        bool usesConversationalMemory,
+        int conversationalMemoryInteractionCount,
+        string? conversationalMemoryModel,
+        IReadOnlyList<string> conversationalMemoryWarnings,
+        string? conversationalMemoryStatus)
         => new(
             success: true,
             errorMessage: null,
@@ -983,5 +1110,29 @@ public sealed record RfsCompleteModeBuildResult
             estimatedTokens: estimatedTokens,
             truncated: truncated,
             warnings: warnings,
-            omissions: omissions);
+            omissions: omissions,
+            usesConversationalMemory: usesConversationalMemory,
+            conversationalMemoryInteractionCount: conversationalMemoryInteractionCount,
+            conversationalMemoryModel: conversationalMemoryModel,
+            conversationalMemoryStatus: conversationalMemoryStatus,
+            conversationalMemoryWarnings: conversationalMemoryWarnings);
+}
+
+internal sealed record RfsCompleteConversationalMemoryResult(
+    bool Success,
+    string? ErrorMessage,
+    RckConversationalMemory? Memory,
+    string? Model,
+    IReadOnlyList<string> Warnings,
+    int InteractionCount)
+{
+    public static RfsCompleteConversationalMemoryResult Failure(string errorMessage, IReadOnlyList<string> warnings)
+        => new(false, errorMessage, null, null, warnings, 0);
+
+    public static RfsCompleteConversationalMemoryResult SuccessResult(
+        RckConversationalMemory memory,
+        IReadOnlyList<string> warnings,
+        string? model,
+        int interactionCount)
+        => new(true, null, memory, model, warnings, interactionCount);
 }

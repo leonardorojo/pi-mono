@@ -113,7 +113,12 @@ internal sealed record RfsTuiCompleteContextSummary(
     string TransportRisk,
     bool Truncated,
     IReadOnlyList<string> Warnings,
-    IReadOnlyList<string> Omissions);
+    IReadOnlyList<string> Omissions,
+    string? ConversationalMemoryStatus = null,
+    int ConversationalMemoryInteractionCount = 0,
+    string? ConversationalMemoryModel = null,
+    IReadOnlyList<string>? ConversationalMemoryWarnings = null);
+
 
 internal sealed record RfsTuiTraceSummary(
     string? SelectionStrategy,

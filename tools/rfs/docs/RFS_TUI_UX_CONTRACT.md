@@ -107,7 +107,7 @@ The slash-command palette is live while typing `/` in the interactive TUI. It is
 
   1 Direct    — sin contexto RCK
   2 Simple    — memoria reciente liviana
-  3 Complete  — TraceSlice + ContextPack validado
+  3 Complete  — TraceSlice + ContextPack + ConversationalMemory validado
   4 Plan      — plan textual sin modificar código
 
 Elegí 1-4, o /cancel:
@@ -199,7 +199,7 @@ Characteristics:
 - proposal output is not authoritative
 - validation is authoritative
 - the resulting context is materialized only after validation
-- Complete uses three real LLM calls: LLM-backed intent inference, LLM-backed trace-slice proposal, and the final answer
+- Complete uses four real LLM calls: LLM-backed intent inference, LLM-backed trace-slice proposal, cheap ConversationalMemory synthesis, and the final answer
 - Intent runs on `claude-haiku-4.5`; trace-slice proposal runs on `claude-sonnet-4.5`
 - TraceSliceProposal validation and ContextPack remain deterministic
 

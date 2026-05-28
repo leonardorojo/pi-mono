@@ -484,7 +484,12 @@ internal static class RfsTuiSession
             transportRisk: completeContextUsageReport.TransportRisk,
             truncated: completeContextUsageReport.Truncated,
             warnings: completeResult.Warnings,
-            omissions: completeResult.Omissions);
+            omissions: completeResult.Omissions,
+            usesConversationalMemory: completeResult.UsesConversationalMemory,
+            conversationalMemoryInteractionCount: completeResult.ConversationalMemoryInteractionCount,
+            conversationalMemoryModel: completeResult.ConversationalMemoryModel,
+            conversationalMemorySource: "rck-workspace-log-reader + pi-conversational-memory",
+            conversationalMemoryWarnings: completeResult.ConversationalMemoryWarnings);
 
         var recordResult = RckInteractionRecorder.RecordTui(
             new RckTuiInteractionRecordInput(
@@ -519,7 +524,11 @@ internal static class RfsTuiSession
                 completeContextUsageReport.TransportRisk,
                 completeContextUsageReport.Truncated,
                 completeResult.Warnings.ToArray(),
-                completeResult.Omissions.ToArray()),
+                completeResult.Omissions.ToArray(),
+                completeResult.ConversationalMemoryStatus,
+                completeResult.ConversationalMemoryInteractionCount,
+                completeResult.ConversationalMemoryModel,
+                completeResult.ConversationalMemoryWarnings.ToArray()),
             prompt,
             principalAnswerOutput.FinalAnswer);
 
@@ -1105,7 +1114,7 @@ internal static class RfsTuiSession
         var scope = completeResult.ContextPackScope ?? "(unknown)";
         var intent = completeResult.IntentSource ?? "(unknown)";
         var selectedCounts = $"{completeResult.SelectedStateIds.Count}/{completeResult.SelectedDeltaIds.Count}/{completeResult.SelectedAnchorIds.Count}";
-        return $"mode=complete; validation={validation}; selection={selection}; scope={scope}; intent={intent}; selected={selectedCounts}; estimatedTokens={completeContextUsageReport.EstimatedTokens}; transportRisk={completeContextUsageReport.TransportRisk}; truncated={completeContextUsageReport.Truncated.ToString().ToLowerInvariant()}";
+        return $"mode=complete; validation={validation}; selection={selection}; scope={scope}; intent={intent}; selected={selectedCounts}; estimatedTokens={completeContextUsageReport.EstimatedTokens}; transportRisk={completeContextUsageReport.TransportRisk}; truncated={completeContextUsageReport.Truncated.ToString().ToLowerInvariant()}; conversationalMemory={completeResult.ConversationalMemoryStatus ?? "unavailable"}; memoryInteractions={completeResult.ConversationalMemoryInteractionCount}; memoryModel={completeResult.ConversationalMemoryModel ?? "(none)"}";
     }
 
     private static void HandleCancelKeyPress(object? sender, ConsoleCancelEventArgs e)

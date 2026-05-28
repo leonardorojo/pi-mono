@@ -22,6 +22,8 @@ public static class PiTraceSliceAnchorSelectionAgentChecks
         await RunInventedAnchorCaseAsync(failures);
         await RunUnknownFallbackCaseAsync(failures);
         await RunContaminationCaseAsync(failures);
+        await RunRecentChainFallbackCaseAsync(failures);
+        await RunInventedTargetWithEmptyAnchorsCaseAsync(failures);
     }
 
     private static async Task RunSuccessCaseAsync(List<string> failures)
@@ -303,6 +305,124 @@ public static class PiTraceSliceAnchorSelectionAgentChecks
         if (result.Errors.Count == 0 || (!result.Errors[0].Contains("forbidden content", StringComparison.OrdinalIgnoreCase) && !result.Errors[0].Contains("stdout", StringComparison.OrdinalIgnoreCase)))
         {
             failures.Add($"[anchor-selection contamination] expected contamination rejection but got: {string.Join(" | ", result.Errors)}");
+        }
+    }
+
+    /// <summary>
+    /// Case 1 — factual prompt without relevant anchors.
+    /// LLM returns selectedAnchorIds=[], fallbackStrategy=recent-chain, rationale.target=recent-chain.
+    /// Parser must accept this as a valid fallback selection.
+    /// </summary>
+    private static async Task RunRecentChainFallbackCaseAsync(List<string> failures)
+    {
+        const string prompt = "What is the capital of Japan?";
+        var intent = new RckTraceSliceProposalIntentProjection(
+            Kind: "question-answer",
+            Summary: "User asks for a factual answer about Japan.",
+            Source: "pi-intent-inference");
+        var dagQuickIndex = CreateDagQuickIndex();
+        var answerJson = BuildAnchorSelectionAnswer(
+            selectedAnchorIds: Array.Empty<string>(),
+            fallbackStrategy: "recent-chain",
+            rationale: new[] { ("recent-chain", "No anchors are relevant to a factual geography question.") },
+            warnings: Array.Empty<string>(),
+            confidence: 0.85,
+            schemaVersion: 1,
+            type: "rufus.anchor-selection");
+        var transport = new FakeTraceSliceProposalLlmTransport(answerJson);
+        var agent = new PiTraceSliceProposalAgent("/tmp/anchor-selection-agent-check", transport: transport);
+        var task = new AgentTask(
+            id: "anchor-selection-recent-chain-fallback",
+            kind: "select-trace-anchors",
+            goal: "build an internal anchor selection",
+            input: JsonSerializer.Serialize(new TraceSliceAnchorSelectionAgentInput(
+                prompt,
+                intent,
+                dagQuickIndex,
+                new[]
+                {
+                    "This is structural DAG slicing, not semantic summarization.",
+                    "Select anchor entry points only.",
+                    "Do not invent ids.",
+                    "Select only anchor ids available in DagQuickIndexV1.",
+                    "If no anchor is relevant, set selectedAnchorIds = [], fallbackStrategy = recent-chain, and use rationale.target = \"recent-chain\".",
+                }), JsonOptions),
+            expectedOutput: "RckAnchorSelection JSON");
+
+        var result = await agent.ExecuteAnchorSelectionAsync(task);
+
+        if (result.Status != AgentTaskStatus.Succeeded)
+        {
+            failures.Add($"[anchor-selection recent-chain-fallback] expected Succeeded but got {result.Status}. Errors: {string.Join(" | ", result.Errors)}");
+            return;
+        }
+
+        var selection = JsonSerializer.Deserialize<RckAnchorSelection>(result.Output!, JsonOptions);
+        if (selection is null)
+        {
+            failures.Add("[anchor-selection recent-chain-fallback] expected output to deserialize to RckAnchorSelection.");
+            return;
+        }
+
+        if (selection.SelectedAnchorIds.Count != 0)
+        {
+            failures.Add($"[anchor-selection recent-chain-fallback] expected 0 selected anchors but got {selection.SelectedAnchorIds.Count}.");
+        }
+
+        if (!string.Equals(selection.FallbackStrategy, "recent-chain", StringComparison.Ordinal))
+        {
+            failures.Add($"[anchor-selection recent-chain-fallback] expected fallbackStrategy='recent-chain' but got '{selection.FallbackStrategy}'.");
+        }
+
+        if (!selection.RequestedRecentChainFallback)
+        {
+            failures.Add("[anchor-selection recent-chain-fallback] expected RequestedRecentChainFallback=true.");
+        }
+
+        if (selection.Rationale.Count == 0)
+        {
+            failures.Add("[anchor-selection recent-chain-fallback] expected at least one rationale entry.");
+        }
+        else if (!string.Equals(selection.Rationale[0].Target, "recent-chain", StringComparison.Ordinal))
+        {
+            failures.Add($"[anchor-selection recent-chain-fallback] expected rationale.target='recent-chain' but got '{selection.Rationale[0].Target}'.");
+        }
+    }
+
+    /// <summary>
+    /// Case 4 — rationale target invented when fallback=none and anchors are empty.
+    /// selectedAnchorIds=[], fallbackStrategy=none, rationale.target=fake → must FAIL.
+    /// </summary>
+    private static async Task RunInventedTargetWithEmptyAnchorsCaseAsync(List<string> failures)
+    {
+        var answerJson = BuildAnchorSelectionAnswer(
+            selectedAnchorIds: Array.Empty<string>(),
+            fallbackStrategy: "none",
+            rationale: new[] { ("fake-target", "not a real anchor and not a fallback strategy") },
+            warnings: Array.Empty<string>(),
+            confidence: 0.5,
+            schemaVersion: 1,
+            type: "rufus.anchor-selection");
+        var agent = new PiTraceSliceProposalAgent("/tmp/anchor-selection-agent-check", transport: new FakeTraceSliceProposalLlmTransport(answerJson));
+        var result = await agent.ExecuteAnchorSelectionAsync(new AgentTask(
+            id: "anchor-selection-invented-target-empty-anchors",
+            kind: "select-trace-anchors",
+            goal: "build an internal anchor selection",
+            input: JsonSerializer.Serialize(new TraceSliceAnchorSelectionAgentInput(
+                "Pick one anchor",
+                new RckTraceSliceProposalIntentProjection("build-trace-slice", "invented target with empty anchors", "pi-intent-inference"),
+                CreateDagQuickIndex(),
+                Array.Empty<string>()), JsonOptions),
+            expectedOutput: "RckAnchorSelection JSON"));
+
+        if (result.Status != AgentTaskStatus.Failed)
+        {
+            failures.Add($"[anchor-selection invented-target-empty-anchors] expected Failed but got {result.Status}.");
+        }
+
+        if (result.Errors.Count == 0 || !result.Errors[0].Contains("not available in dagQuickIndex", StringComparison.OrdinalIgnoreCase))
+        {
+            failures.Add($"[anchor-selection invented-target-empty-anchors] expected dagQuickIndex rejection but got: {string.Join(" | ", result.Errors)}");
         }
     }
 

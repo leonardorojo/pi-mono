@@ -67,6 +67,30 @@ The contract is:
 - ContextPack materializes the validated slice;
 - the principal answer is produced from the resulting context.
 
+## 2.1 Complete context composition
+
+Complete mode composes two differentiated sources for the `PrincipalAnswerAgent`:
+
+1. Validated ContextPack
+   - origin: validated TraceSlice
+   - role: authoritative structural project context
+   - contains the validated cut of the RCK DAG
+   - use for structural facts, states, deltas, anchors, artifacts, and repo context
+
+2. ConversationalMemory
+   - origin: RCK active chain via `RckWorkspaceLogReader`
+   - role: recent conversational continuity
+   - helps resolve local references like “eso”, “lo anterior”, and “esta idea”
+   - is not a second persistence layer
+   - does not participate in [2/5] TraceSlice Proposal
+   - does not participate in [3/5] Validation
+   - does not cut the DAG
+   - does not replace TraceSlice
+
+Priority rule:
+
+- If ConversationalMemory and the validated ContextPack conflict about project structure, prefer the validated ContextPack.
+
 ## 3. ConversationalMemory
 
 ConversationalMemory is a derived projection from RCK active-chain interactions.
@@ -148,7 +172,13 @@ ConversationalMemory must not become:
 - a replacement for TraceSlice
 - a structural DAG selector
 - a validator bypass
+- a structural authority over the project
 - a source of raw payloads or tool logs
+
+It must not be used in:
+
+- [2/5] TraceSlice Proposal
+- [3/5] Validation
 
 It must not use:
 

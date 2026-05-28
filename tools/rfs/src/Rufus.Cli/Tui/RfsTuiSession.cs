@@ -53,8 +53,16 @@ internal static class RfsTuiSession
             status = RckWorkspaceStatusReader.Read(inputDirectory);
         }
 
+        // Respect the workspace-persisted default model (lrfs model set).
+        var workspaceModelConfig = RckWorkspaceModelConfigStore.Read(inputDirectory);
+        if (workspaceModelConfig.Success && workspaceModelConfig.HasConfiguredDefaultModel)
+        {
+            SessionState.SetSessionModel(workspaceModelConfig.DefaultModel!);
+            SessionState.WorkspaceDefaultModel = workspaceModelConfig.DefaultModel!;
+        }
+
         RfsTuiTerminal.ClearIfInteractive();
-        RenderHeader(status, SessionState.CurrentSessionModel);
+        RenderHeader(status, SessionState);
 
         try
         {
@@ -71,8 +79,12 @@ internal static class RfsTuiSession
     private static void RenderAutoInit(RckWorkspaceInitResult initResult)
         => RfsTuiRenderer.WriteAutoInit(initResult);
 
-    private static void RenderHeader(RckWorkspaceStatus status, string? workspaceModel)
-        => RfsTuiRenderer.WriteHeader(status, Path.GetFileName(Path.TrimEndingDirectorySeparator(status.RepoRoot)), workspaceModel, leadingBlankLine: true);
+    private static void RenderHeader(RckWorkspaceStatus status, RfsTuiSessionState sessionState)
+        => RfsTuiRenderer.WriteHeader(
+            status,
+            Path.GetFileName(Path.TrimEndingDirectorySeparator(status.RepoRoot)),
+            sessionState,
+            leadingBlankLine: true);
 
     private static async Task RunPromptLoopAsync(string repoRoot, RckWorkspaceStatus status)
     {
@@ -997,7 +1009,7 @@ internal static class RfsTuiSession
         SessionState.SetSessionModel(pickerResult.SelectedModel);
         Console.WriteLine($"Session model updated: {SessionState.CurrentSessionModel}");
         Console.WriteLine();
-        RenderHeader(status, SessionState.CurrentSessionModel);
+        RenderHeader(status, SessionState);
         return true;
     }
 
@@ -1035,7 +1047,7 @@ internal static class RfsTuiSession
         SessionState.SetSessionModel(validationResult.SelectedModel!);
         Console.WriteLine($"Session model updated: {SessionState.CurrentSessionModel}");
         Console.WriteLine();
-        RenderHeader(status, SessionState.CurrentSessionModel);
+        RenderHeader(status, SessionState);
         return true;
     }
 

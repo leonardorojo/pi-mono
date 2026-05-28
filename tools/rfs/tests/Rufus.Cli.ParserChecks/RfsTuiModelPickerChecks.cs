@@ -178,7 +178,9 @@ using var stdout = new StringWriter();
 try
 {
 Console.SetOut(stdout);
-RfsTuiRenderer.WriteHeader(status, "pi-mono", "claude-sonnet-4.5", leadingBlankLine: false);
+var sessionState = new RfsTuiSessionState();
+sessionState.SetSessionModel("claude-sonnet-4.5");
+RfsTuiRenderer.WriteHeader(status, "pi-mono", sessionState, leadingBlankLine: false);
 }
 finally
 {

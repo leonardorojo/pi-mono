@@ -23,14 +23,17 @@ internal static class RfsTuiRenderer
         WriteStatusLine(initResult.AnchorCreated, "genesis anchor created", "genesis anchor already existed");
     }
 
-    internal static void WriteHeader(RckWorkspaceStatus status, string repoName, string? workspaceModel, bool leadingBlankLine = false)
+    internal static void WriteHeader(RckWorkspaceStatus status, string repoName, RfsTuiSessionState sessionState, bool leadingBlankLine = false)
     {
-        var resolvedModel = string.IsNullOrWhiteSpace(workspaceModel)
+        var effectiveModel = string.IsNullOrWhiteSpace(sessionState.CurrentSessionModel)
             ? RfsTuiSessionState.DefaultSessionModel
-            : workspaceModel.Trim();
-        var modelLabel = string.Equals(resolvedModel, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal)
-            ? resolvedModel
-            : $"{resolvedModel} · session";
+            : sessionState.CurrentSessionModel.Trim();
+        var baselineModel = sessionState.ResolveModelBaseline();
+
+        var modelLabel = string.Equals(effectiveModel, baselineModel, StringComparison.Ordinal)
+            ? effectiveModel
+            : $"{effectiveModel} · session";
+
         var branchLabel = string.IsNullOrWhiteSpace(status.GitContext.Branch) ? "(detached)" : status.GitContext.Branch;
         var dirtyLabel = status.GitContext.Dirty.ToString().ToLowerInvariant();
 
@@ -42,6 +45,13 @@ internal static class RfsTuiRenderer
         WriteTitle($"RFS · {repoName}");
         WriteDivider();
         WriteLabeledValue("Model", modelLabel);
+
+        // Show workspace default when the effective model overrides it.
+        if (!string.Equals(effectiveModel, baselineModel, StringComparison.Ordinal))
+        {
+            WriteMutedLine($"  Default: {baselineModel}");
+        }
+
         WriteLabeledValue("RCK", $"states {status.StateCount} · deltas {status.DeltaCount} · anchors {status.AnchorCount}");
         WriteLabeledValue("Git", $"{branchLabel} · dirty {dirtyLabel}");
         Console.WriteLine();

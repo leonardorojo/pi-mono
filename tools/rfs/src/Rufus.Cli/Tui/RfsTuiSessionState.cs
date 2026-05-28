@@ -6,6 +6,12 @@ internal sealed class RfsTuiSessionState
 
     public string CurrentSessionModel { get; private set; } = DefaultSessionModel;
 
+    /// <summary>
+    /// The workspace-persisted default model (read from .rfs/config.json llm.defaultModel).
+    /// Null when no workspace default is configured — the hardcoded <see cref="DefaultSessionModel"/> applies.
+    /// </summary>
+    public string? WorkspaceDefaultModel { get; internal set; }
+
     public string LastMode { get; private set; } = "none";
 
     public string LastContextKind { get; private set; } = "none";
@@ -18,9 +24,16 @@ internal sealed class RfsTuiSessionState
 
     public RfsTuiTraceSummary? LastTrace { get; private set; }
 
+    /// <summary>
+    /// Returns the baseline model for "is this a session override?" checks.
+    /// When a workspace default is set, that is the baseline; otherwise the hardcoded constant.
+    /// </summary>
+    public string ResolveModelBaseline()
+        => WorkspaceDefaultModel ?? DefaultSessionModel;
+
     public void ResetSessionModel()
     {
-        CurrentSessionModel = DefaultSessionModel;
+        CurrentSessionModel = WorkspaceDefaultModel ?? DefaultSessionModel;
     }
 
     public void ResetInteraction()

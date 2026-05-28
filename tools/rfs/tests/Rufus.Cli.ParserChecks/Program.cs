@@ -160,6 +160,7 @@ await RunPiJsonRunnerWorkspaceModelCaseAsync(
 PrincipalAnswerAgentContractChecks.Run(failures);
 await PiPrincipalAnswerAgentChecks.RunAsync(failures);
 await PiTraceSliceProposalAgentChecks.RunAsync(failures);
+await PiConversationalMemoryAgentChecks.RunAsync(failures);
 
 await RunPiIntentInferenceAgentFailureCaseAsync(
     name: "pi intent agent rejects invalid llm json",

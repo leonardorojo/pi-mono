@@ -6,6 +6,7 @@ It is intentionally still a POC, not a finished product.
 ## Command governance
 
 Canonical policy reference: [`docs/RFS_COMMAND_GOVERNANCE.md`](docs/RFS_COMMAND_GOVERNANCE.md).
+Legacy deprecation plan: [`docs/RFS_LEGACY_DEPRECATION_PLAN.md`](docs/RFS_LEGACY_DEPRECATION_PLAN.md).
 Canonical TUI UX reference: [`docs/RFS_TUI_UX_CONTRACT.md`](docs/RFS_TUI_UX_CONTRACT.md).
 Canonical TUI recording reference: [`docs/RFS_TUI_RECORDING_CONTRACT.md`](docs/RFS_TUI_RECORDING_CONTRACT.md).
 Canonical Simple Context reference: [`docs/RFS_SIMPLE_CONTEXT_CONTRACT.md`](docs/RFS_SIMPLE_CONTEXT_CONTRACT.md).

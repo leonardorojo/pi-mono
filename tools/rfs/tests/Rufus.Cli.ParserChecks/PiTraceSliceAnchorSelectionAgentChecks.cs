@@ -24,6 +24,8 @@ public static class PiTraceSliceAnchorSelectionAgentChecks
         await RunContaminationCaseAsync(failures);
         await RunRecentChainFallbackCaseAsync(failures);
         await RunInventedTargetWithEmptyAnchorsCaseAsync(failures);
+        await RunMixedValidInvalidAnchorsCaseAsync(failures);
+        await RunStateIdAsAnchorCaseAsync(failures);
     }
 
     private static async Task RunSuccessCaseAsync(List<string> failures)
@@ -238,14 +240,33 @@ public static class PiTraceSliceAnchorSelectionAgentChecks
                 Array.Empty<string>()), JsonOptions),
             expectedOutput: "RckAnchorSelection JSON"));
 
-        if (result.Status != AgentTaskStatus.Failed)
+        // With the hardening fix, invented anchor IDs are filtered and fallback kicks in.
+        if (result.Status != AgentTaskStatus.Succeeded)
         {
-            failures.Add($"[anchor-selection invented-anchor] expected Failed but got {result.Status}.");
+            failures.Add($"[anchor-selection invented-anchor] expected Succeeded but got {result.Status}. Errors: {string.Join(" | ", result.Errors)}");
+            return;
         }
 
-        if (result.Errors.Count == 0 || !result.Errors[0].Contains("not available in dagQuickIndex", StringComparison.OrdinalIgnoreCase))
+        var selection = JsonSerializer.Deserialize<RckAnchorSelection>(result.Output!, JsonOptions);
+        if (selection is null)
         {
-            failures.Add($"[anchor-selection invented-anchor] expected invented anchor rejection but got: {string.Join(" | ", result.Errors)}");
+            failures.Add("[anchor-selection invented-anchor] expected output to deserialize to RckAnchorSelection.");
+            return;
+        }
+
+        if (selection.SelectedAnchorIds.Count != 0)
+        {
+            failures.Add($"[anchor-selection invented-anchor] expected 0 selected anchors after filtering but got {selection.SelectedAnchorIds.Count}.");
+        }
+
+        if (!string.Equals(selection.FallbackStrategy, "recent-chain", StringComparison.Ordinal))
+        {
+            failures.Add($"[anchor-selection invented-anchor] expected fallbackStrategy='recent-chain' after filtering but got '{selection.FallbackStrategy}'.");
+        }
+
+        if (selection.Warnings.Count == 0)
+        {
+            failures.Add("[anchor-selection invented-anchor] expected at least one warning about invalid anchor id.");
         }
     }
 
@@ -423,6 +444,121 @@ public static class PiTraceSliceAnchorSelectionAgentChecks
         if (result.Errors.Count == 0 || !result.Errors[0].Contains("not available in dagQuickIndex", StringComparison.OrdinalIgnoreCase))
         {
             failures.Add($"[anchor-selection invented-target-empty-anchors] expected dagQuickIndex rejection but got: {string.Join(" | ", result.Errors)}");
+        }
+    }
+
+    /// <summary>
+    /// Mixed valid and invalid anchor IDs. Valid ones should be kept,
+    /// invalid ones filtered with warnings, and the result should still succeed.
+    /// </summary>
+    private static async Task RunMixedValidInvalidAnchorsCaseAsync(List<string> failures)
+    {
+        var selectionJson = BuildAnchorSelectionAnswer(
+            selectedAnchorIds: new[] { "anchor-a", "anchor-z" },
+            fallbackStrategy: "none",
+            rationale: new[] { ("anchor-a", "valid"), ("anchor-z", "invented") },
+            warnings: Array.Empty<string>(),
+            confidence: 0.8,
+            schemaVersion: 1,
+            type: "rufus.anchor-selection");
+        var agent = new PiTraceSliceProposalAgent("/tmp/anchor-selection-agent-check", transport: new FakeTraceSliceProposalLlmTransport(selectionJson));
+        var result = await agent.ExecuteAnchorSelectionAsync(new AgentTask(
+            id: "anchor-selection-mixed-valid-invalid",
+            kind: "select-trace-anchors",
+            goal: "build an internal anchor selection",
+            input: JsonSerializer.Serialize(new TraceSliceAnchorSelectionAgentInput(
+                "Pick anchors",
+                new RckTraceSliceProposalIntentProjection("build-trace-slice", "mixed valid/invalid", "pi-intent-inference"),
+                CreateDagQuickIndex(),
+                Array.Empty<string>()), JsonOptions),
+            expectedOutput: "RckAnchorSelection JSON"));
+
+        if (result.Status != AgentTaskStatus.Succeeded)
+        {
+            failures.Add($"[anchor-selection mixed-valid-invalid] expected Succeeded but got {result.Status}. Errors: {string.Join(" | ", result.Errors)}");
+            return;
+        }
+
+        var selection = JsonSerializer.Deserialize<RckAnchorSelection>(result.Output!, JsonOptions);
+        if (selection is null)
+        {
+            failures.Add("[anchor-selection mixed-valid-invalid] expected output to deserialize.");
+            return;
+        }
+
+        if (selection.SelectedAnchorIds.Count != 1 || !string.Equals(selection.SelectedAnchorIds[0], "anchor-a", StringComparison.Ordinal))
+        {
+            failures.Add($"[anchor-selection mixed-valid-invalid] expected selectedAnchorIds=['anchor-a'] but got [{string.Join(", ", selection.SelectedAnchorIds)}].");
+        }
+
+        if (!string.Equals(selection.FallbackStrategy, "none", StringComparison.Ordinal))
+        {
+            failures.Add($"[anchor-selection mixed-valid-invalid] expected fallbackStrategy='none' but got '{selection.FallbackStrategy}'.");
+        }
+
+        if (selection.Warnings.Count == 0)
+        {
+            failures.Add("[anchor-selection mixed-valid-invalid] expected at least one warning about invalid anchor id.");
+        }
+    }
+
+    /// <summary>
+    /// State ID passed as anchor ID. Should be filtered (not an anchor),
+    /// all IDs invalid → fallback recent-chain.
+    /// </summary>
+    private static async Task RunStateIdAsAnchorCaseAsync(List<string> failures)
+    {
+        var selectionJson = BuildAnchorSelectionAnswer(
+            selectedAnchorIds: new[] { "state-03" },
+            fallbackStrategy: "none",
+            rationale: new[] { ("state-03", "mistook state for anchor") },
+            warnings: Array.Empty<string>(),
+            confidence: 0.5,
+            schemaVersion: 1,
+            type: "rufus.anchor-selection");
+        var agent = new PiTraceSliceProposalAgent("/tmp/anchor-selection-agent-check", transport: new FakeTraceSliceProposalLlmTransport(selectionJson));
+        var result = await agent.ExecuteAnchorSelectionAsync(new AgentTask(
+            id: "anchor-selection-state-id-as-anchor",
+            kind: "select-trace-anchors",
+            goal: "build an internal anchor selection",
+            input: JsonSerializer.Serialize(new TraceSliceAnchorSelectionAgentInput(
+                "Pick anchors",
+                new RckTraceSliceProposalIntentProjection("build-trace-slice", "state id as anchor", "pi-intent-inference"),
+                CreateDagQuickIndex(),
+                Array.Empty<string>()), JsonOptions),
+            expectedOutput: "RckAnchorSelection JSON"));
+
+        if (result.Status != AgentTaskStatus.Succeeded)
+        {
+            failures.Add($"[anchor-selection state-id-as-anchor] expected Succeeded but got {result.Status}. Errors: {string.Join(" | ", result.Errors)}");
+            return;
+        }
+
+        var selection = JsonSerializer.Deserialize<RckAnchorSelection>(result.Output!, JsonOptions);
+        if (selection is null)
+        {
+            failures.Add("[anchor-selection state-id-as-anchor] expected output to deserialize.");
+            return;
+        }
+
+        if (selection.SelectedAnchorIds.Count != 0)
+        {
+            failures.Add($"[anchor-selection state-id-as-anchor] expected 0 selected anchors but got {selection.SelectedAnchorIds.Count}.");
+        }
+
+        if (!string.Equals(selection.FallbackStrategy, "recent-chain", StringComparison.Ordinal))
+        {
+            failures.Add($"[anchor-selection state-id-as-anchor] expected fallbackStrategy='recent-chain' but got '{selection.FallbackStrategy}'.");
+        }
+
+        if (selection.Warnings.Count == 0)
+        {
+            failures.Add("[anchor-selection state-id-as-anchor] expected at least one warning about invalid anchor id.");
+        }
+
+        if (!result.Warnings.Any(w => w.Contains("state-03", StringComparison.Ordinal)))
+        {
+            failures.Add("[anchor-selection state-id-as-anchor] expected warning to reference 'state-03'.");
         }
     }
 

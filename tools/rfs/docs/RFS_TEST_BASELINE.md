@@ -95,6 +95,8 @@ session does not call Pi).
 **Uses mocks**: Yes — mock `pi` scripts for LLM proposal/validation paths.
 **Covers**:
 - `rfs intent --llm` CLI harness
+- `rfs agent` CLI dispatcher via mock `node` on PATH
+- `rfs agent --record` CLI dispatcher + RCK record path via mock `node` on PATH
 - `rfs trace-slice-proposal-llm` (valid, invalid-json, invalid-shape, contaminated)
 - `rfs trace-slice-validate-llm` (valid, unsafe-policy rejection)
 - TUI slash-command suggestion filtering (`/he` → `/help`, `/xyz` → unknown)

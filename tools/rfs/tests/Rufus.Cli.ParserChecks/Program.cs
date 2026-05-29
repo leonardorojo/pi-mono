@@ -662,6 +662,16 @@ static async Task RunIntegrationChecksAsync(List<string> failures)
         prompt: "Respond with a short answer.",
         failures: failures);
 
+    await RunAgentCliCaseAsync(
+        name: "agent cli renders streamed output through node mock",
+        task: "Inspect the repo read-only.",
+        failures: failures);
+
+    await RunAgentRecordCliCaseAsync(
+        name: "agent cli records interaction when --record is used",
+        task: "Inspect the repo read-only.",
+        failures: failures);
+
     await RunAgentJsonCliCaseAsync(
         name: "agent-json cli renders agent output with tool actions",
         task: "Inspect the repo read-only.",
@@ -992,6 +1002,282 @@ static async Task RunAskRecordCliCaseAsync(
     finally
     {
         TryDeleteDirectory(tempRoot);
+    }
+}
+
+static async Task RunAgentCliCaseAsync(
+    string name,
+    string task,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-agent-cli-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var result = await RunMockedAgentCliAsync(name, cliProjectPath, tempRoot, task, recordInteraction: false, failures);
+        if (result.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {result.Stderr.Trim()}.");
+        }
+
+        if (!result.Stdout.Contains("Rufus Agent", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'Rufus Agent' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("short answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'short answer' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("read_file README.md", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected tool action 'read_file README.md' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("✓ read_file README.md", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected completed tool line for 'read_file README.md' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (Directory.Exists(Path.Combine(tempRoot, ".rfs")))
+        {
+            failures.Add($"[{name}] expected no .rfs directory to be created for non-record agent CLI.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        TryDeleteDirectory(tempRoot);
+    }
+}
+
+static async Task RunAgentRecordCliCaseAsync(
+    string name,
+    string task,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-agent-record-cli-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        if (!await InitializeTempGitRepoAndRckAsync(name, tempRoot, failures))
+        {
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var deltaFilesBefore = Directory.EnumerateFiles(Path.Combine(tempRoot, ".rfs", "rck", "deltas"), "*.json", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var result = await RunMockedAgentCliAsync(name, cliProjectPath, tempRoot, task, recordInteraction: true, failures);
+        if (result.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {result.Stderr.Trim()}.");
+        }
+
+        if (!result.Stdout.Contains("Rufus Agent", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'Rufus Agent' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("short answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'short answer' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("read_file README.md", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected tool action 'read_file README.md' in stdout. stdout: {result.Stdout}");
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        AssertRckCountDeltas(name, statusBefore, statusAfter, expectedStateDelta: 1, expectedDeltaDelta: 1, expectedAnchorDelta: 0, failures);
+
+        if (string.IsNullOrWhiteSpace(statusAfter.Head))
+        {
+            failures.Add($"[{name}] expected HEAD to be updated.");
+            return;
+        }
+
+        var stateFileName = $"{statusAfter.Head}.json";
+        var stateFilePath = Path.Combine(tempRoot, ".rfs", "rck", "states", stateFileName);
+        if (!File.Exists(stateFilePath))
+        {
+            failures.Add($"[{name}] expected state file '{stateFileName}' to exist.");
+            return;
+        }
+
+        var statePayload = ReadRckStatePayload(stateFilePath);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "mode", "agent", failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "prompt", task, failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "answer", "short answer", failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "answerSummary", "short answer", failures);
+
+        var deltaFilesAfter = Directory.EnumerateFiles(Path.Combine(tempRoot, ".rfs", "rck", "deltas"), "*.json", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .ToHashSet(StringComparer.Ordinal);
+        var newDeltaFiles = deltaFilesAfter.Except(deltaFilesBefore, StringComparer.Ordinal).ToArray();
+        if (newDeltaFiles.Length != 1)
+        {
+            failures.Add($"[{name}] expected exactly one new delta file but found {newDeltaFiles.Length}.");
+            return;
+        }
+
+        var deltaPayload = ReadRckDeltaOperationPayload(Path.Combine(tempRoot, ".rfs", "rck", "deltas", newDeltaFiles[0]));
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "type", "llm-interaction", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "mode", "agent", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "prompt", task, failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "answer", "short answer", failures);
+        AssertJsonArrayLength(name, deltaPayload.GetProperty("evidence"), "tools", 1, failures);
+
+        var toolElement = deltaPayload.GetProperty("evidence").GetProperty("tools")[0];
+        AssertJsonString(name, toolElement, "name", "read_file", failures);
+        AssertJsonString(name, toolElement, "status", "completed", failures);
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        TryDeleteDirectory(tempRoot);
+    }
+}
+
+static async Task<(int ExitCode, string Stdout, string Stderr)> RunMockedAgentCliAsync(
+    string name,
+    string cliProjectPath,
+    string workingDirectory,
+    string task,
+    bool recordInteraction,
+    List<string> failures)
+{
+    var tempToolRoot = Path.Combine(Path.GetTempPath(), "rfs-agent-cli-mock", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempToolRoot);
+
+    var nodeScriptPath = Path.Combine(tempToolRoot, "node");
+    var expectedTask = EscapeBashDoubleQuotedJson(task);
+    var nodeScript = "#!/usr/bin/env bash\n" +
+                     "set -euo pipefail\n" +
+                     "helper_path=${1:-}\n" +
+                     "received_task=${2:-}\n" +
+                     $"expected_task=\"{expectedTask}\"\n" +
+                     "if [[ -z \"$helper_path\" || -z \"$received_task\" ]]; then\n" +
+                     "  echo 'missing node args' >&2\n" +
+                     "  exit 97\n" +
+                     "fi\n" +
+                     "if [[ \"$helper_path\" != *\"rfs-agent.mjs\" ]]; then\n" +
+                     "  echo \"unexpected helper path: $helper_path\" >&2\n" +
+                     "  exit 98\n" +
+                     "fi\n" +
+                     "if [[ \"$received_task\" != \"$expected_task\" ]]; then\n" +
+                     "  echo \"unexpected task: $received_task\" >&2\n" +
+                     "  exit 99\n" +
+                     "fi\n" +
+                     "echo '[agent:start] mocked agent start'\n" +
+                     "echo '[tool:start] id=tool-1 name=read_file path=README.md'\n" +
+                     "echo '[tool:end] id=tool-1 name=read_file ok'\n" +
+                     "echo '[assistant] short answer'\n" +
+                     "echo '[agent:end]'\n" +
+                     "exit 0\n";
+
+    await File.WriteAllTextAsync(nodeScriptPath, nodeScript);
+    if (!OperatingSystem.IsWindows())
+    {
+        File.SetUnixFileMode(
+            nodeScriptPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+    }
+
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        Environment.SetEnvironmentVariable("PATH", tempToolRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add("--project");
+        startInfo.ArgumentList.Add(cliProjectPath);
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add("agent");
+        if (recordInteraction)
+        {
+            startInfo.ArgumentList.Add("--record");
+        }
+
+        startInfo.ArgumentList.Add(task);
+
+        using var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            failures.Add($"[{name}] failed to start dotnet run for rfs agent.");
+            return (-1, string.Empty, string.Empty);
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        return (process.ExitCode, stdout, stderr);
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+        return (-1, string.Empty, string.Empty);
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+
+        try
+        {
+            Directory.Delete(tempToolRoot, recursive: true);
+        }
+        catch
+        {
+        }
     }
 }
 

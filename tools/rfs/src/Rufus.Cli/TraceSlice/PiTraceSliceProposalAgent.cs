@@ -351,14 +351,30 @@ public sealed class PiTraceSliceProposalAgent : IAgent
             }
 
             var availableAnchorIds = new HashSet<string>(dagQuickIndex.Anchors.Select(anchor => anchor.Id), StringComparer.Ordinal);
+            var filteredWarnings = new List<string>(warnings);
+            var validSelectedAnchorIds = new List<string>();
+            var invalidAnchorCount = 0;
+
             foreach (var anchorId in selectedAnchorIds)
             {
-                if (!availableAnchorIds.Contains(anchorId))
+                if (availableAnchorIds.Contains(anchorId))
                 {
-                    errorMessage = $"rfs anchor-selection-llm: selected anchor '{anchorId}' is not available in dagQuickIndex.";
-                    return false;
+                    validSelectedAnchorIds.Add(anchorId);
+                }
+                else
+                {
+                    invalidAnchorCount++;
+                    filteredWarnings.Add($"rfs anchor-selection-llm: selected anchor id '{anchorId}' is not available in dagQuickIndex; ignored.");
                 }
             }
+
+            if (validSelectedAnchorIds.Count == 0 && invalidAnchorCount > 0)
+            {
+                filteredWarnings.Add($"rfs anchor-selection-llm: all {invalidAnchorCount} selected anchor ids were invalid; switching to recent-chain fallback.");
+                fallbackStrategy = "recent-chain";
+            }
+
+            var filteredSelectionCount = validSelectedAnchorIds.Count;
 
             var rationale = new List<RckAnchorSelectionRationale>();
             foreach (var item in rationaleElement.EnumerateArray())
@@ -370,13 +386,13 @@ public sealed class PiTraceSliceProposalAgent : IAgent
                 }
 
                 var target = GetRequiredString(item, "target");
-                var isFallbackTarget = selectedAnchorIds.Count == 0
+                var isFallbackTarget = filteredSelectionCount == 0
                     && IsAllowedFallbackStrategy(target)
                     && string.Equals(target, fallbackStrategy, StringComparison.Ordinal);
                 if (!availableAnchorIds.Contains(target) && !isFallbackTarget)
                 {
-                    errorMessage = $"rfs anchor-selection-llm: rationale target '{target}' is not available in dagQuickIndex.";
-                    return false;
+                    filteredWarnings.Add($"rfs anchor-selection-llm: rationale target '{target}' is not an available anchor; skipped.");
+                    continue;
                 }
 
                 rationale.Add(new RckAnchorSelectionRationale(
@@ -390,10 +406,10 @@ public sealed class PiTraceSliceProposalAgent : IAgent
             }
 
             selection = new RckAnchorSelection(
-                SelectedAnchorIds: selectedAnchorIds,
+                SelectedAnchorIds: validSelectedAnchorIds,
                 FallbackStrategy: fallbackStrategy,
                 Rationale: rationale,
-                Warnings: warnings,
+                Warnings: filteredWarnings,
                 Confidence: confidence,
                 RequestedRecentChainFallback: string.Equals(fallbackStrategy, "recent-chain", StringComparison.Ordinal));
             return true;

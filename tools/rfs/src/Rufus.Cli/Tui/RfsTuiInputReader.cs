@@ -61,6 +61,13 @@ internal static class RfsTuiInputReader
             return firstLine;
         }
 
+        // RFS_TUI_PLAIN disables interactive features including burst paste capture.
+        // When set, treat redirected stdin as a plain pipe — one line per ReadLine call.
+        if (!RfsTuiTerminal.IsInteractive)
+        {
+            return firstLine;
+        }
+
         if (TryReadRedirectedBurst(firstLine, out var burst))
         {
             return burst;

@@ -634,9 +634,203 @@ static async Task RunIntegrationChecksAsync(List<string> failures)
         expectSuccess: false,
         expectedErrorContains: "restricted materialization policy flags must be false");
 
+    await RunAskJsonCliCaseAsync(
+        name: "ask-json cli renders structured answer",
+        prompt: "Respond with a structured answer.",
+        failures: failures);
+
+    await RunAskJsonCliErrorCaseAsync(
+        name: "ask-json cli fails when no answer in stream",
+        prompt: "This prompt gets no answer.",
+        failures: failures);
+
     await RunRfsTuiCommandSuggestionSessionCaseAsync(
         "tui slash suggestions are filtered and unknown commands are rejected",
         failures);
+}
+
+static async Task RunAskJsonCliCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-ask-json-cli-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    var scriptPath = Path.Combine(tempRoot, "pi");
+    var script = "#!/usr/bin/env bash\n" +
+                 "set -euo pipefail\n" +
+                 "echo '{\"type\":\"session\"}'\n" +
+                 "echo '{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"structured answer\"}]}}'\n" +
+                 "exit 0\n";
+
+    await File.WriteAllTextAsync(scriptPath, script);
+    if (!OperatingSystem.IsWindows())
+    {
+        File.SetUnixFileMode(
+            scriptPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+    }
+
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = repoRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add("--project");
+        startInfo.ArgumentList.Add(cliProjectPath);
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add("ask-json");
+        startInfo.ArgumentList.Add(prompt);
+
+        using var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            failures.Add($"[{name}] failed to start dotnet run for rfs ask-json.");
+            return;
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        if (process.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {process.ExitCode}. stderr: {stderr}");
+            return;
+        }
+
+        if (!stdout.Contains("Rufus Ask JSON Prototype", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'Rufus Ask JSON Prototype' in stdout. stdout: {stdout}");
+        }
+
+        if (!stdout.Contains("structured answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'structured answer' in stdout. stdout: {stdout}");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunAskJsonCliErrorCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-ask-json-cli-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    var scriptPath = Path.Combine(tempRoot, "pi");
+    var script = "#!/usr/bin/env bash\n" +
+                 "set -euo pipefail\n" +
+                 "echo '{\"type\":\"session\"}'\n" +
+                 "exit 0\n";
+
+    await File.WriteAllTextAsync(scriptPath, script);
+    if (!OperatingSystem.IsWindows())
+    {
+        File.SetUnixFileMode(
+            scriptPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+    }
+
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = repoRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add("--project");
+        startInfo.ArgumentList.Add(cliProjectPath);
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add("ask-json");
+        startInfo.ArgumentList.Add(prompt);
+
+        using var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            failures.Add($"[{name}] failed to start dotnet run for rfs ask-json.");
+            return;
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        if (process.ExitCode == 0)
+        {
+            failures.Add($"[{name}] expected non-zero exit code but got 0. stdout: {stdout}");
+            return;
+        }
+
+        if (!stderr.Contains("final assistant answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'final assistant answer' in stderr. stderr: {stderr}");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
 }
 
 static async Task RunLegacyChecksAsync(List<string> failures)

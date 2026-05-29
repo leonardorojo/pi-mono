@@ -14,6 +14,7 @@ It does not create a `ModelRouter`.
 Canonical UX reference: [`RFS_TUI_UX_CONTRACT.md`](RFS_TUI_UX_CONTRACT.md).
 Canonical TUI recording reference: [`RFS_TUI_RECORDING_CONTRACT.md`](RFS_TUI_RECORDING_CONTRACT.md).
 Canonical Simple Context reference: [`RFS_SIMPLE_CONTEXT_CONTRACT.md`](RFS_SIMPLE_CONTEXT_CONTRACT.md).
+Future legacy deprecation plan: [`RFS_LEGACY_DEPRECATION_PLAN.md`](RFS_LEGACY_DEPRECATION_PLAN.md).
 
 The governed backend pipeline remains relevant behind the TUI, but it is not the primary UX anymore.
 

@@ -350,6 +350,25 @@ From the repository root:
 dotnet build tools/rfs/Rufus.Cli.sln
 ```
 
+## Tests
+
+Parser checks live under `tests/Rufus.Cli.ParserChecks/`. All suites are
+deterministic — no real Pi required. Pi-backed paths use mock `pi` scripts.
+
+```bash
+# Default: core + tui (fast, recommended for everyday development)
+dotnet run --project tools/rfs/tests/Rufus.Cli.ParserChecks/Rufus.Cli.ParserChecks.csproj
+
+# Partitioned suites
+dotnet run --project ... -- --core-only        # parser, codec, agent contracts
+dotnet run --project ... -- --tui-only         # TUI renderer, command catalog
+dotnet run --project ... -- --integration-only  # CLI integration paths
+dotnet run --project ... -- --long-paste-only   # long paste capture guard
+dotnet run --project ... -- --legacy-only       # full TUI sessions (all modes)
+```
+
+Canonical reference: [`docs/RFS_TEST_BASELINE.md`](docs/RFS_TEST_BASELINE.md)
+
 ## Test `--version`
 
 ```bash

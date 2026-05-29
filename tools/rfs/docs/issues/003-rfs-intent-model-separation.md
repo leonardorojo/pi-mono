@@ -1,5 +1,8 @@
 # RFS: prepare intent inference for future lightweight model selection
 
+> **Status: implemented** — `PiIntentInferenceAgent` exists and is used in Complete mode stage 1/5.
+> Kept for historical reference.
+
 ## Context
 
 The audit found that intent-related concepts exist, including local deterministic/mock agents, but there is no dedicated LLM subagent or per-stage model selection.

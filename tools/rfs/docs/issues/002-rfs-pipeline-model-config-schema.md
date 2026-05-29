@@ -1,5 +1,8 @@
 # RFS: document conceptual model configuration schema for pipeline stages
 
+> **Status: deferred / not implemented**
+> Kept for historical reference.
+
 ## Context
 
 Current audit result:

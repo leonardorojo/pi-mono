@@ -1,5 +1,8 @@
 # RFS: define long pipeline model strategy from audit
 
+> **Status: implemented / documented** — Output doc `RFS_PIPELINE_LONG_MODEL_STRATEGY.md` exists.
+> Kept for historical reference.
+
 ## Context
 
 The audit in `tools/rfs/docs/RFS_PIPELINE_LONG_MODEL_AUDIT.md` found that RFS currently uses a single workspace default model:

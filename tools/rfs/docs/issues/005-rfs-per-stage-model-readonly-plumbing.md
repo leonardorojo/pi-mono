@@ -1,5 +1,8 @@
 # RFS: introduce per-stage model configuration behind non-invasive read-only plumbing
 
+> **Status: deferred / not implemented**
+> Kept for historical reference.
+
 ## Context
 
 Previous issues should document:

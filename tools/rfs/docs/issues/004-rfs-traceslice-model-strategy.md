@@ -1,5 +1,8 @@
 # RFS: define TraceSlice generation model strategy
 
+> **Status: implemented** — `PiTraceSliceProposalAgent` exists and is used in Complete mode stage 2/5.
+> Kept for historical reference.
+
 ## Context
 
 The audit found that TraceSlice concepts exist, but there is no formal long pipeline abstraction with model profiles per stage.

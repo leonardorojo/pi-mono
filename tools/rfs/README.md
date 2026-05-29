@@ -233,10 +233,10 @@ High-level behavior:
 
 ## Legacy bridges
 
-- `tools/rfs/bridge/rfs-ask.mjs`: legacy Node fallback for `rfs ask`, activated only via `RFS_USE_LEGACY_ASK_BRIDGE=1`. The primary path is the Pi JSON Event Stream runner. Kept as an escape hatch; not deprecated yet.
-- `tools/rfs/bridge/rfs-agent.mjs`: current active Node bridge for `rfs agent` / `rfs agent --record`. This is the only agent execution path today. Not deprecated.
-- `rfs ask-json`: experimental / diagnostic JSON-mode ask path. Validates the Pi JSON Event Stream transport independently. Experimental.
-- `rfs agent-json`: experimental forward-path agent using Pi JSON Event Stream natively. Intended to replace the Node bridge when mature. Experimental; does not support `--record` yet.
+- `tools/rfs/bridge/rfs-ask.mjs`: legacy Node fallback for `rfs ask`, activated only via `RFS_USE_LEGACY_ASK_BRIDGE=1`. The primary path is the Pi JSON Event Stream runner. Kept as an escape hatch; not deprecated yet. Runtime label: `Status: legacy ask bridge fallback enabled by RFS_USE_LEGACY_ASK_BRIDGE.`
+- `tools/rfs/bridge/rfs-agent.mjs`: current active Node bridge for `rfs agent` / `rfs agent --record`. This is the only agent execution path today. Not deprecated. Runtime label: `Status: legacy active bridge (Node)`; `--record` adds `with RCK recording`.
+- `rfs ask-json`: experimental / diagnostic JSON-mode ask path. Validates the Pi JSON Event Stream transport independently. Experimental. Runtime label: `Status: experimental diagnostic path.`
+- `rfs agent-json`: experimental forward-path agent using Pi JSON Event Stream natively. Intended to replace the Node bridge when mature. Experimental; does not support `--record` yet. Runtime label: `Status: experimental forward path.`
 
 ## Agent / Task abstraction
 

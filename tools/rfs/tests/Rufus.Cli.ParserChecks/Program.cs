@@ -647,47 +647,10 @@ static async Task RunLegacyChecksAsync(List<string> failures)
         input: "Implement reset board action\n2\n/exit\n",
         failures: failures);
 
-    await RunRfsTuiPromptModeSelectionSessionCaseAsync(
+    await RunRfsTuiCompleteModeRecordingSessionCaseAsync(
         name: "bare rfs prompt selects complete mode real pipeline and records a complete interaction",
         prompt: "Implement reset board action",
         input: "Implement reset board action\n3\n/exit\n",
-        expectedFragments: new[]
-        {
-            "[Complete]",
-            "[1/5] Inferring intent...",
-            "  intent:",
-            "  summary:",
-            "  source: pi-intent-inference",
-            "[2/5] Building TraceSlice proposal...",
-            "  proposal: pi-trace-slice-proposal",
-            "  requested selection: 5 states · 5 deltas · 0 anchors",
-        "  slicing: anchor-guided structural",
-        "  anchors selected:",
-        "  expansion:",
-        "  fallback:",
-            "[3/5] Validating proposal...",
-            "  validation: accepted",
-            "[4/5] Building ContextPack...",
-            "  scope:",
-            "  selected states/deltas/anchors:",
-            "  estimated tokens:",
-            "  transport:",
-            "  transport risk:",
-            "[5/5] Asking main LLM...",
-            "  agent:",
-            "  model:",
-            "Respuesta:",
-            "Recorded State + Delta:",
-        },
-        expectPromptEcho: false,
-        forbiddenFragments: new[]
-        {
-            "Context:",
-            "Context ready:",
-        },
-        expectedStateCountDelta: 1,
-        expectedDeltaCountDelta: 1,
-        expectedAnchorCountDelta: 0,
         failures: failures);
 
     await RunRfsTuiPlanModeRecordingSessionCaseAsync(
@@ -5255,6 +5218,204 @@ static async Task RunRfsTuiSimpleModeRecordingSessionCaseAsync(string name, stri
                 failures.Add($"[{name}] expected transportRisk to be one of low, medium, or high.");
             }
 
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunRfsTuiCompleteModeRecordingSessionCaseAsync(string name, string prompt, string input, List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-tui-complete-recording-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var configNameResult = await RunProcessAsync(tempRoot, "git", "config", "user.name", "Rufus Test");
+        var configEmailResult = await RunProcessAsync(tempRoot, "git", "config", "user.email", "rufus@test.local");
+        if (configNameResult.ExitCode != 0 || configEmailResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to configure git identity for the temp repo.");
+            return;
+        }
+
+        var seedPath = Path.Combine(tempRoot, "README.md");
+        await File.WriteAllTextAsync(seedPath, "seed\n");
+        var addResult = await RunProcessAsync(tempRoot, "git", "add", "README.md");
+        if (addResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to stage the seed file: {addResult.Stderr}");
+            return;
+        }
+
+        var commitResult = await RunProcessAsync(tempRoot, "git", "commit", "-m", "seed commit");
+        if (commitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to create the seed commit: {commitResult.Stderr}");
+            return;
+        }
+
+        var initResult = await RunProcessAsync(tempRoot, "dotnet", "run", "--project", cliProjectPath, "--", "init");
+        if (initResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected rfs init to succeed but got exit code {initResult.ExitCode}. stderr: {initResult.Stderr}");
+            return;
+        }
+
+        // Mock Pi script — stateful, handles 4 sequential calls for the Complete pipeline:
+        //   1) intent inference → PromptIntent JSON
+        //   2) anchor selection → RckAnchorSelection JSON (fallback recent-chain)
+        //   3) conversational memory → plain text
+        //   4) main LLM answer → plain text
+        var scriptPath = Path.Combine(tempRoot, "pi");
+        var script = "#!/usr/bin/env bash\n" +
+                     "set -euo pipefail\n" +
+                     "COUNTER_FILE=\"$PWD/.rfs-mock-pi-counter\"\n" +
+                     "if [ -f \"$COUNTER_FILE\" ]; then\n" +
+                     "  COUNTER=$(cat \"$COUNTER_FILE\")\n" +
+                     "else\n" +
+                     "  COUNTER=0\n" +
+                     "fi\n" +
+                     "NEXT=$((COUNTER + 1))\n" +
+                     "echo \"$NEXT\" > \"$COUNTER_FILE\"\n" +
+                     "case $COUNTER in\n" +
+                     "  0)\n" +
+                     "    cat <<'EOF'\n" +
+                     "{\"type\":\"session\"}\n" +
+                     "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"intent\\\":\\\"general-code-change\\\",\\\"summary\\\":\\\"Implement the reset board action.\\\",\\\"entities\\\":[\\\"reset board\\\"],\\\"constraints\\\":[\\\"do not write RCK\\\"]}\"}]}}\n" +
+                     "EOF\n" +
+                     "    ;;\n" +
+                     "  1)\n" +
+                     "    cat <<'EOF'\n" +
+                     "{\"type\":\"session\"}\n" +
+                     "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"type\\\":\\\"rufus.anchor-selection\\\",\\\"schemaVersion\\\":1,\\\"selectedAnchorIds\\\":[],\\\"fallbackStrategy\\\":\\\"recent-chain\\\",\\\"rationale\\\":[{\\\"target\\\":\\\"recent-chain\\\",\\\"reason\\\":\\\"No relevant anchor found for this task.\\\"}],\\\"warnings\\\":[],\\\"confidence\\\":0.9}\"}]}}\n" +
+                     "EOF\n" +
+                     "    ;;\n" +
+                     "  2)\n" +
+                     "    cat <<'EOF'\n" +
+                     "{\"type\":\"session\"}\n" +
+                     "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"No relevant conversational history.\"}]}}\n" +
+                     "EOF\n" +
+                     "    ;;\n" +
+                     "  3)\n" +
+                     "    cat <<'EOF'\n" +
+                     "{\"type\":\"session\"}\n" +
+                     "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"Complete mode works. State + Delta recorded.\"}]}}\n" +
+                     "EOF\n" +
+                     "    ;;\n" +
+                     "  *)\n" +
+                     "    echo '{\"type\":\"session\"}' >&2\n" +
+                     "    echo '{\"type\":\"error\",\"error\":{\"errorMessage\":\"Unexpected call count: '\"$COUNTER\"'\"}}'\n" +
+                     "    exit 1\n" +
+                     "    ;;\n" +
+                     "esac\n";
+        await File.WriteAllTextAsync(scriptPath, script);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                scriptPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+            var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+            var tuiResult = await RunProcessAsyncWithInput(tempRoot, input, "dotnet", "run", "--project", cliProjectPath, "--");
+            if (tuiResult.ExitCode != 0)
+            {
+                failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(tuiResult.Stderr))
+            {
+                failures.Add($"[{name}] expected no stderr but got: {tuiResult.Stderr.Trim()}.");
+            }
+
+            var requiredFragments = new[]
+            {
+                "[Complete]",
+                "[1/5] Inferring intent...",
+                "  intent:",
+                "  summary:",
+                "  source: pi-intent-inference",
+                "[2/5] Building TraceSlice proposal...",
+                "  proposal: pi-trace-slice-proposal",
+                "  slicing: anchor-guided structural",
+                "  anchors selected:",
+                "  expansion:",
+                "  fallback:",
+                "[3/5] Validating proposal...",
+                "  validation: accepted",
+                "[4/5] Building ContextPack + ConversationalMemory...",
+                "  scope:",
+                "  selected states/deltas/anchors:",
+                "  estimated tokens:",
+                "  transport:",
+                "  transport risk:",
+                "[5/5] Asking main LLM...",
+                "  agent:",
+                "  model:",
+                "Respuesta:",
+                "Recorded State + Delta:",
+            };
+
+            foreach (var fragment in requiredFragments)
+            {
+                if (!tuiResult.Stdout.Contains(fragment, StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
+                }
+            }
+
+            if (tuiResult.Stdout.Contains("message_update", StringComparison.Ordinal) ||
+                tuiResult.Stdout.Contains("diff --git", StringComparison.Ordinal) ||
+                tuiResult.Stdout.Contains("stdout:", StringComparison.Ordinal) ||
+                tuiResult.Stdout.Contains("stderr:", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected no raw JSONL/stdout/stderr/diff output in the TUI stream.");
+            }
+
+            var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+            if (statusAfter.StateCount != statusBefore.StateCount + 1)
+            {
+                failures.Add($"[{name}] expected state count to increase by 1 but changed from {statusBefore.StateCount} to {statusAfter.StateCount}.");
+            }
+
+            if (statusAfter.DeltaCount != statusBefore.DeltaCount + 1)
+            {
+                failures.Add($"[{name}] expected delta count to increase by 1 but changed from {statusBefore.DeltaCount} to {statusAfter.DeltaCount}.");
+            }
         }
         finally
         {

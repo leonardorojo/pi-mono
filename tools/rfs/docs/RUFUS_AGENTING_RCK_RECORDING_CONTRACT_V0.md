@@ -3,15 +3,13 @@
 ## Status
 
 Contract v0.
-Design-only.
-Implementable.
-No runtime behavior change in this phase.
+Design. Implemented.
+The `rfs intent --record` command implements this contract via
+`RckAgentTaskRecorder.RecordIntent()` in `Program.cs`.
 
-This document defines the concrete contract that a future P13 implementation must follow for `rfs intent --record`.
-It does not implement recording.
-It does not modify `Rufus.RCK.Core`.
+This document defines the concrete contract. The implementation
+does not modify `Rufus.RCK.Core`.
 It does not modify `Rufus.Agenting` execution semantics.
-It does not write into `.rfs/rck`.
 
 Current architectural split remains unchanged:
 

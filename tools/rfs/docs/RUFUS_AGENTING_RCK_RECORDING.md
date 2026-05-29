@@ -2,9 +2,10 @@
 
 ## Status of this document
 
-This document is design-only.
-It does not implement recording.
-It does not change runtime behavior.
+This document is the design reference for agent-task recording.
+The `rfs intent --record` path is implemented (see Contract v0).
+The remaining design sections cover future generalization to other agent tasks.
+
 It does not change `Rufus.RCK.Core`.
 It does not change `Rufus.Agenting` execution semantics.
 

@@ -1,6 +1,16 @@
 # TODO — Rufus CLI / RCK Cognitive Git
 
-## Current baseline
+> **Note (2026-05-29): This document is historical.** It was written early in
+> the RFS POC and many items listed as future work are now implemented.
+> For current canonical references see:
+> - [`README.md`](README.md) — command surface, build, tests
+> - [`docs/RFS_COMMAND_GOVERNANCE.md`](docs/RFS_COMMAND_GOVERNANCE.md) — baseline commands, RCK writes, Pi/legacy map
+> - [`docs/RFS_TRACE_SLICE.md`](docs/RFS_TRACE_SLICE.md) — TraceSlice, Complete mode pipeline
+> - [`docs/RFS_TEST_BASELINE.md`](docs/RFS_TEST_BASELINE.md) — test suites, mock Pi policy
+>
+> Kept for reference. Do not treat as a current roadmap.
+
+## Current baseline (historical snapshot)
 
 `rfs` currently supports:
 

@@ -154,9 +154,11 @@ Behavior in this phase:
 - does not write `.rfs/rck`
 - still relies on Pi JSON Event Stream plus Pi `--tools` restriction for read-only execution
 
-## `IntentInferenceAgent`
+## Intent inference agents
 
-`IntentInferenceAgent` is the first example agent.
+`Rufus.Agenting` provides two intent inference agents:
+
+### `IntentInferenceAgent` (deterministic)
 
 - Lives in `Rufus.Agenting.Intent`
 - Is mock/deterministic
@@ -164,7 +166,15 @@ Behavior in this phase:
 - Returns a `PromptIntent` JSON payload
 - Returns `Failed` when the task kind is unsupported
 
-This agent is a contract example, not a real LLM-backed inference path yet.
+This agent is a contract example. Used by `rfs intent`.
+
+### `PiIntentInferenceAgent` (LLM-backed)
+
+- Lives in `Rufus.Cli.Intent`
+- Uses Pi JSON Event Stream (`claude-haiku-4.5`)
+- Accepts only `AgentTask` with `Kind = infer-intent`
+- Parses the LLM answer into `PromptIntent` JSON via `PromptIntentJsonCodec`
+- Used by Complete mode stage [1/5] and `rfs intent --llm`
 
 ## Non-goals for this phase
 
@@ -178,16 +188,19 @@ Not part of this layer:
 - tools
 - memory
 - handoffs
-- real Pi/OpenAI/Codex integration
 - RCK writes from the agent itself
 - TraceSlice execution
 - migration of `rfs agent`
 - migration of `rfs agent --record`
 
+(Note: Pi-backed agents exist in `Rufus.Cli` — `PiIntentInferenceAgent`,
+`PiTraceSliceProposalAgent`, `PiPrincipalAnswerAgent` — and are operational
+in Complete mode. They are CLI-layer adapters, not Agenting-layer primitives.)
+
 ## Possible next steps
 
 Future work could include:
 
-- connecting `AgentTaskResult` to RCK `State` / `Delta`
-- adding agents for `TraceSlice` and `ContextPack`
-- swapping `mock` agents for provider-backed agents where needed
+- connecting `AgentTaskResult` to RCK `State` / `Delta` (done: `rfs intent --record`)
+- adding agents for `TraceSlice` and `ContextPack` (done: `PiTraceSliceProposalAgent` in `Rufus.Cli`)
+- swapping `mock` agents for provider-backed agents where needed (done for Complete mode)

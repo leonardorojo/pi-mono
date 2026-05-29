@@ -42,16 +42,16 @@ In practice, the system currently splits into three kinds of work:
 
 ### 1. Intent inference
 
-- **Classification:** implemented, deterministic
-- **Current shape:** local agent step used to infer operational intent
-- **Evidence:** `tools/rfs/src/Rufus.Agenting/Intent/IntentInferenceAgent.cs`, `tools/rfs/src/Rufus.Cli/Tui/RfsCompleteModePipeline.cs`, `tools/rfs/src/Rufus.Cli/TraceSlice/TraceSliceProposalLlmRunner.cs`
-- **Note:** this is a real stage, but it is not LLM-routed today.
+- **Classification:** implemented; deterministic path (`IntentInferenceAgent`) and LLM-backed path (`PiIntentInferenceAgent`, `claude-haiku-4.5`) both exist
+- **Current shape:** Complete mode uses the LLM-backed agent in stage [1/5]; the deterministic path remains available via `rfs intent`
+- **Evidence:** `tools/rfs/src/Rufus.Agenting/Intent/IntentInferenceAgent.cs`, `tools/rfs/src/Rufus.Cli/Intent/PiIntentInferenceAgent.cs`, `tools/rfs/src/Rufus.Cli/Tui/RfsCompleteModePipeline.cs`
+- **Note:** the LLM-backed path is operational in Complete mode, not just experimental.
 
 ### 2. TraceSlice generation
 
-- **Classification:** implemented, deterministic-first; experimental LLM proposal path exists
-- **Current shape:** baseline deterministic planning plus a proposal-oriented LLM experiment
-- **Evidence:** `tools/rfs/src/Rufus.Agenting/TraceSlice/TraceSlicePlannerAgent.cs`, `tools/rfs/src/Rufus.RCK.Workspace/RckTraceSliceBuilder.cs`, `tools/rfs/src/Rufus.Cli/Tui/RfsCompleteModePipeline.cs`, `tools/rfs/src/Rufus.Cli/TraceSlice/TraceSliceProposalLlmRunner.cs`, `tools/rfs/src/Rufus.RCK.Workspace/RckTraceSliceProposalValidator.cs`
+- **Classification:** implemented; deterministic baseline plus LLM-backed proposal/selection path
+- **Current shape:** `PiTraceSliceProposalAgent` (`claude-sonnet-4.5`) performs anchor selection in Complete mode stage [2/5]; deterministic `TraceSlicePlannerAgent` remains available for baseline paths
+- **Evidence:** `tools/rfs/src/Rufus.Agenting/TraceSlice/TraceSlicePlannerAgent.cs`, `tools/rfs/src/Rufus.Cli/TraceSlice/PiTraceSliceProposalAgent.cs`, `tools/rfs/src/Rufus.RCK.Workspace/RckTraceSliceBuilder.cs`, `tools/rfs/src/Rufus.Cli/Tui/RfsCompleteModePipeline.cs`, `tools/rfs/src/Rufus.RCK.Workspace/RckTraceSliceProposalValidator.cs`
 - **Note:** proposal output is never authoritative by itself; RFS validation remains the authority boundary.
 
 ### 3. ContextPack generation

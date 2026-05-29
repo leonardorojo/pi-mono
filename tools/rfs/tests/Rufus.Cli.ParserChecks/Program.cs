@@ -652,6 +652,16 @@ static async Task RunIntegrationChecksAsync(List<string> failures)
         prompt: "This prompt gets no answer.",
         failures: failures);
 
+    await RunAskCliCaseAsync(
+        name: "ask cli renders short answer without recording",
+        prompt: "Respond with a short answer.",
+        failures: failures);
+
+    await RunAskRecordCliCaseAsync(
+        name: "ask cli records interaction when --record is used",
+        prompt: "Respond with a short answer.",
+        failures: failures);
+
     await RunAgentJsonCliCaseAsync(
         name: "agent-json cli renders agent output with tool actions",
         task: "Inspect the repo read-only.",
@@ -844,6 +854,261 @@ static async Task RunAskJsonCliErrorCaseAsync(
         {
         }
     }
+}
+static async Task RunAskCliCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-ask-cli-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+        if (gitInitResult.ExitCode != 0)
+        {
+            failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var result = await RunMockedAskCliAsync(name, cliProjectPath, tempRoot, prompt, answer: "short answer", recordInteraction: false, failures);
+        if (result.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+            return;
+        }
+
+        if (!result.Stdout.Contains("Rufus Ask", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'Rufus Ask' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("short answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'short answer' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (result.Stdout.Contains("Rufus Ask JSON Prototype", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected ask output not to use the ask-json formatter. stdout: {result.Stdout}");
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        AssertRckCountDeltas(name, statusBefore, statusAfter, expectedStateDelta: 0, expectedDeltaDelta: 0, expectedAnchorDelta: 0, failures);
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        TryDeleteDirectory(tempRoot);
+    }
+}
+
+static async Task RunAskRecordCliCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-ask-record-cli-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        if (!await InitializeTempGitRepoAndRckAsync(name, tempRoot, failures))
+        {
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        var deltaFilesBefore = Directory.EnumerateFiles(Path.Combine(tempRoot, ".rfs", "rck", "deltas"), "*.json", SearchOption.TopDirectoryOnly).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
+
+        var result = await RunMockedAskCliAsync(name, cliProjectPath, tempRoot, prompt, answer: "short answer", recordInteraction: true, failures);
+        if (result.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+            return;
+        }
+
+        if (!result.Stdout.Contains("Rufus Ask", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'Rufus Ask' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("short answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'short answer' in stdout. stdout: {result.Stdout}");
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        AssertRckCountDeltas(name, statusBefore, statusAfter, expectedStateDelta: 1, expectedDeltaDelta: 1, expectedAnchorDelta: 0, failures);
+
+        if (string.IsNullOrWhiteSpace(statusAfter.Head))
+        {
+            failures.Add($"[{name}] expected HEAD to be updated.");
+            return;
+        }
+
+        var stateFileName = $"{statusAfter.Head}.json";
+        var stateFilePath = Path.Combine(tempRoot, ".rfs", "rck", "states", stateFileName);
+        if (!File.Exists(stateFilePath))
+        {
+            failures.Add($"[{name}] expected state file '{stateFileName}' to exist.");
+            return;
+        }
+
+        var statePayload = ReadRckStatePayload(stateFilePath);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "mode", "ask", failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "prompt", prompt, failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "answer", "short answer", failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "answerSummary", "short answer", failures);
+
+        var deltaFilesAfter = Directory.EnumerateFiles(Path.Combine(tempRoot, ".rfs", "rck", "deltas"), "*.json", SearchOption.TopDirectoryOnly).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
+        var newDeltaFiles = deltaFilesAfter.Except(deltaFilesBefore, StringComparer.Ordinal).ToArray();
+        if (newDeltaFiles.Length != 1)
+        {
+            failures.Add($"[{name}] expected exactly one new delta file but found {newDeltaFiles.Length}.");
+            return;
+        }
+
+        var deltaPayload = ReadRckDeltaOperationPayload(Path.Combine(tempRoot, ".rfs", "rck", "deltas", newDeltaFiles[0]));
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "type", "llm-interaction", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "mode", "ask", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "prompt", prompt, failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "answer", "short answer", failures);
+        AssertJsonArrayLength(name, deltaPayload.GetProperty("evidence"), "tools", 0, failures);
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        TryDeleteDirectory(tempRoot);
+    }
+}
+
+static async Task<(int ExitCode, string Stdout, string Stderr)> RunMockedAskCliAsync(
+    string name,
+    string cliProjectPath,
+    string workingDirectory,
+    string prompt,
+    string answer,
+    bool recordInteraction,
+    List<string> failures)
+{
+    var tempToolRoot = Path.Combine(Path.GetTempPath(), "rfs-ask-cli-mock", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempToolRoot);
+
+    var piScriptPath = Path.Combine(tempToolRoot, "pi");
+    var piScript = "#!/usr/bin/env bash\n" +
+                   "set -euo pipefail\n" +
+                   "echo '{\"type\":\"session\"}'\n" +
+                   $"echo '{{\"type\":\"message_end\",\"message\":{{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{{\"type\":\"text\",\"text\":\"{EscapeBashDoubleQuotedJson(answer)}\"}}]}}}}'\n" +
+                   "exit 0\n";
+
+    var nodeScriptPath = Path.Combine(tempToolRoot, "node");
+    var nodeScript = "#!/usr/bin/env bash\n" +
+                     "set -euo pipefail\n" +
+                     "echo 'legacy ask bridge should not be invoked' >&2\n" +
+                     "exit 99\n";
+
+    await File.WriteAllTextAsync(piScriptPath, piScript);
+    await File.WriteAllTextAsync(nodeScriptPath, nodeScript);
+    if (!OperatingSystem.IsWindows())
+    {
+        var executableMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                              UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                              UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+        File.SetUnixFileMode(piScriptPath, executableMode);
+        File.SetUnixFileMode(nodeScriptPath, executableMode);
+    }
+
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        startInfo.Environment["PATH"] = tempToolRoot + Path.PathSeparator + (originalPath ?? string.Empty);
+        startInfo.Environment.Remove("RFS_USE_LEGACY_ASK_BRIDGE");
+
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add("--project");
+        startInfo.ArgumentList.Add(cliProjectPath);
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add("ask");
+        if (recordInteraction)
+        {
+            startInfo.ArgumentList.Add("--record");
+        }
+
+        startInfo.ArgumentList.Add(prompt);
+
+        using var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            failures.Add($"[{name}] failed to start dotnet run for rfs ask.");
+            return (-1, string.Empty, string.Empty);
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        return (process.ExitCode, await stdoutTask, await stderrTask);
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+        return (-1, string.Empty, string.Empty);
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempToolRoot, recursive: true);
+        }
+        catch
+        {
+        }
+
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+    }
+}
+
+static string EscapeBashDoubleQuotedJson(string text)
+{
+    return text.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+}
+
+static JsonElement ReadRckStatePayload(string stateFilePath)
+{
+    using var stateDocument = JsonDocument.Parse(File.ReadAllText(stateFilePath));
+    var payloadJson = stateDocument.RootElement.GetProperty("payloadCanonicalJson").GetString() ?? throw new InvalidDataException("state payloadCanonicalJson missing");
+    using var payloadDocument = JsonDocument.Parse(payloadJson);
+    return payloadDocument.RootElement.Clone();
+}
+
+static JsonElement ReadRckDeltaOperationPayload(string deltaFilePath)
+{
+    using var deltaDocument = JsonDocument.Parse(File.ReadAllText(deltaFilePath));
+    var valueJson = deltaDocument.RootElement.GetProperty("ops")[0].GetProperty("valueJson").GetString() ?? throw new InvalidDataException("delta op valueJson missing");
+    using var payloadDocument = JsonDocument.Parse(valueJson);
+    return payloadDocument.RootElement.Clone();
 }
 
 static async Task RunAgentJsonCliCaseAsync(

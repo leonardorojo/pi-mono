@@ -644,6 +644,11 @@ static async Task RunIntegrationChecksAsync(List<string> failures)
         prompt: "This prompt gets no answer.",
         failures: failures);
 
+    await RunAgentJsonCliCaseAsync(
+        name: "agent-json cli renders agent output with tool actions",
+        task: "Inspect the repo read-only.",
+        failures: failures);
+
     await RunRfsTuiCommandSuggestionSessionCaseAsync(
         "tui slash suggestions are filtered and unknown commands are rejected",
         failures);
@@ -813,6 +818,113 @@ static async Task RunAskJsonCliErrorCaseAsync(
         if (!stderr.Contains("final assistant answer", StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected 'final assistant answer' in stderr. stderr: {stderr}");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+static async Task RunAgentJsonCliCaseAsync(
+    string name,
+    string task,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-agent-json-cli-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    var scriptPath = Path.Combine(tempRoot, "pi");
+    var script = "#!/usr/bin/env bash\n" +
+                 "set -euo pipefail\n" +
+                 "echo '{\"type\":\"session\"}'\n" +
+                 "echo '{\"type\":\"tool_execution_start\",\"id\":\"tool-1\",\"name\":\"read\",\"details\":\"README.md\"}'\n" +
+                 "echo '{\"type\":\"tool_execution_end\",\"id\":\"tool-1\",\"name\":\"read\",\"summary\":\"ok\"}'\n" +
+                 "echo '{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"test-model\",\"content\":[{\"type\":\"text\",\"text\":\"structured agent answer\"}]}}'\n" +
+                 "exit 0\n";
+
+    await File.WriteAllTextAsync(scriptPath, script);
+    if (!OperatingSystem.IsWindows())
+    {
+        File.SetUnixFileMode(
+            scriptPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+    }
+
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        Environment.SetEnvironmentVariable("PATH", tempRoot + Path.PathSeparator + (originalPath ?? string.Empty));
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = repoRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add("--project");
+        startInfo.ArgumentList.Add(cliProjectPath);
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add("agent-json");
+        startInfo.ArgumentList.Add(task);
+
+        using var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            failures.Add($"[{name}] failed to start dotnet run for rfs agent-json.");
+            return;
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        if (process.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {process.ExitCode}. stderr: {stderr}");
+            return;
+        }
+
+        if (!stderr.Contains("Experimental: relies on Pi --tools enforcement", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'Experimental: relies on Pi --tools enforcement' in stderr. stderr: {stderr}");
+        }
+
+        if (!stdout.Contains("Rufus Agent JSON Prototype", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'Rufus Agent JSON Prototype' in stdout. stdout: {stdout}");
+        }
+
+        if (!stdout.Contains("structured agent answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'structured agent answer' in stdout. stdout: {stdout}");
+        }
+
+        if (!stdout.Contains("read README.md", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'read README.md' tool action in stdout. stdout: {stdout}");
         }
     }
     catch (Exception ex)

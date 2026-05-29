@@ -157,6 +157,14 @@ await RunPiJsonRunnerWorkspaceModelCaseAsync(
     expectedModel: "gpt-5.4-mini",
     failures: failures);
 
+await RunRckRecordAskCaseAsync(
+    name: "rck interaction recorder persists ask interactions",
+    failures: failures);
+
+await RunRckRecordAgentCaseAsync(
+    name: "rck interaction recorder persists agent interactions with tool evidence",
+    failures: failures);
+
 PrincipalAnswerAgentContractChecks.Run(failures);
 await PiPrincipalAnswerAgentChecks.RunAsync(failures);
 await PiTraceSliceProposalAgentChecks.RunAsync(failures);
@@ -4131,6 +4139,268 @@ static async Task RunPiJsonRunnerWorkspaceModelCaseAsync(
         catch
         {
         }
+    }
+}
+
+static async Task RunRckRecordAskCaseAsync(
+    string name,
+    List<string> failures)
+{
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-rck-record-ask-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        if (!await InitializeTempGitRepoAndRckAsync(name, tempRoot, failures))
+        {
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        const string prompt = "Summarize the reset board change.";
+        const string answer = "The reset board action clears the ChessBoardApp state safely.";
+        var result = RckInteractionRecorder.RecordAsk(prompt, answer, tempRoot);
+        if (!AssertRecorderResult(name, result, failures))
+        {
+            return;
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        AssertRckCountDeltas(name, statusBefore, statusAfter, expectedStateDelta: 1, expectedDeltaDelta: 1, expectedAnchorDelta: 0, failures);
+        AssertHeadUpdated(name, result, failures);
+
+        var statePayload = ReadStatePayload(result);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "mode", "ask", failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "prompt", prompt, failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "answer", answer, failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "answerSummary", answer, failures);
+
+        var deltaPayload = ReadFirstDeltaOperationPayload(result);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "type", "llm-interaction", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "mode", "ask", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "prompt", prompt, failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "answer", answer, failures);
+        AssertJsonArrayLength(name, deltaPayload.GetProperty("evidence"), "tools", 0, failures);
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        TryDeleteDirectory(tempRoot);
+    }
+}
+
+static async Task RunRckRecordAgentCaseAsync(
+    string name,
+    List<string> failures)
+{
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-rck-record-agent-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        if (!await InitializeTempGitRepoAndRckAsync(name, tempRoot, failures))
+        {
+            return;
+        }
+
+        var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+        const string task = "Inspect the repo read-only.";
+        const string answer = "The agent inspected README.md and Program.cs without modifying files.";
+        var tools = new[]
+        {
+            RckInteractionTool.Completed("read"),
+            RckInteractionTool.Completed("grep"),
+        };
+
+        var result = RckInteractionRecorder.RecordAgent(task, answer, tools, tempRoot);
+        if (!AssertRecorderResult(name, result, failures))
+        {
+            return;
+        }
+
+        var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+        AssertRckCountDeltas(name, statusBefore, statusAfter, expectedStateDelta: 1, expectedDeltaDelta: 1, expectedAnchorDelta: 0, failures);
+        AssertHeadUpdated(name, result, failures);
+
+        var statePayload = ReadStatePayload(result);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "mode", "agent", failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "prompt", task, failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "answer", answer, failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "answerSummary", answer, failures);
+
+        var deltaPayload = ReadFirstDeltaOperationPayload(result);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "type", "llm-interaction", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "mode", "agent", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "prompt", task, failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "answer", answer, failures);
+        AssertJsonArrayLength(name, deltaPayload.GetProperty("evidence"), "tools", 2, failures);
+
+        var toolElements = deltaPayload.GetProperty("evidence").GetProperty("tools").EnumerateArray().ToArray();
+        AssertJsonString(name, toolElements[0], "name", "read", failures);
+        AssertJsonString(name, toolElements[0], "status", "completed", failures);
+        AssertJsonString(name, toolElements[1], "name", "grep", failures);
+        AssertJsonString(name, toolElements[1], "status", "completed", failures);
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        TryDeleteDirectory(tempRoot);
+    }
+}
+
+static async Task<bool> InitializeTempGitRepoAndRckAsync(
+    string name,
+    string tempRoot,
+    List<string> failures)
+{
+    var gitInitResult = await RunProcessAsync(tempRoot, "git", "init");
+    if (gitInitResult.ExitCode != 0)
+    {
+        failures.Add($"[{name}] failed to initialize a temporary git repo: {gitInitResult.Stderr}");
+        return false;
+    }
+
+    var initResult = RckWorkspaceInitializer.Initialize(tempRoot);
+    if (!initResult.Success)
+    {
+        failures.Add($"[{name}] expected RCK init to succeed but got: {initResult.ErrorMessage}");
+        return false;
+    }
+
+    return true;
+}
+
+static bool AssertRecorderResult(
+    string name,
+    RckInteractionRecordResult result,
+    List<string> failures)
+{
+    if (!result.Success)
+    {
+        failures.Add($"[{name}] expected recorder success but got: {result.ErrorMessage}");
+        return false;
+    }
+
+    if (!result.StateCreated || !result.DeltaCreated || !result.HeadUpdated)
+    {
+        failures.Add($"[{name}] expected StateCreated/DeltaCreated/HeadUpdated to be true but got state={result.StateCreated}, delta={result.DeltaCreated}, head={result.HeadUpdated}.");
+    }
+
+    if (result.AnchorCreated || result.AnchorId is not null || result.AnchorLabel is not null)
+    {
+        failures.Add($"[{name}] expected no anchor creation but got AnchorCreated={result.AnchorCreated}, AnchorId={result.AnchorId}, AnchorLabel={result.AnchorLabel}.");
+    }
+
+    if (result.Paths is null || result.StateId is null || result.DeltaId is null)
+    {
+        failures.Add($"[{name}] expected recorder result to include paths/state/delta ids.");
+        return false;
+    }
+
+    return true;
+}
+
+static void AssertRckCountDeltas(
+    string name,
+    RckWorkspaceStatus statusBefore,
+    RckWorkspaceStatus statusAfter,
+    int expectedStateDelta,
+    int expectedDeltaDelta,
+    int expectedAnchorDelta,
+    List<string> failures)
+{
+    if (statusAfter.StateCount - statusBefore.StateCount != expectedStateDelta ||
+        statusAfter.DeltaCount - statusBefore.DeltaCount != expectedDeltaDelta ||
+        statusAfter.AnchorCount - statusBefore.AnchorCount != expectedAnchorDelta)
+    {
+        failures.Add($"[{name}] expected RCK count deltas state +{expectedStateDelta}, delta +{expectedDeltaDelta}, anchor +{expectedAnchorDelta} but got state {statusBefore.StateCount}->{statusAfter.StateCount}, delta {statusBefore.DeltaCount}->{statusAfter.DeltaCount}, anchor {statusBefore.AnchorCount}->{statusAfter.AnchorCount}.");
+    }
+}
+
+static void AssertHeadUpdated(
+    string name,
+    RckInteractionRecordResult result,
+    List<string> failures)
+{
+    var head = File.ReadAllText(result.Paths!.HeadPath).Trim();
+    if (!string.Equals(head, result.StateId!.ToString(), StringComparison.Ordinal))
+    {
+        failures.Add($"[{name}] expected HEAD to be '{result.StateId}' but got '{head}'.");
+    }
+}
+
+static JsonElement ReadStatePayload(RckInteractionRecordResult result)
+{
+    var statePath = Path.Combine(result.Paths!.StatesDirectory, $"{result.StateId}.json");
+    using var stateDocument = JsonDocument.Parse(File.ReadAllText(statePath));
+    var payloadJson = stateDocument.RootElement.GetProperty("payloadCanonicalJson").GetString() ?? throw new InvalidDataException("state payloadCanonicalJson missing");
+    using var payloadDocument = JsonDocument.Parse(payloadJson);
+    return payloadDocument.RootElement.Clone();
+}
+
+static JsonElement ReadFirstDeltaOperationPayload(RckInteractionRecordResult result)
+{
+    var deltaPath = Path.Combine(result.Paths!.DeltasDirectory, $"{result.DeltaId}.json");
+    using var deltaDocument = JsonDocument.Parse(File.ReadAllText(deltaPath));
+    var valueJson = deltaDocument.RootElement.GetProperty("ops")[0].GetProperty("valueJson").GetString() ?? throw new InvalidDataException("delta op valueJson missing");
+    using var payloadDocument = JsonDocument.Parse(valueJson);
+    return payloadDocument.RootElement.Clone();
+}
+
+static void AssertJsonString(
+    string name,
+    JsonElement element,
+    string propertyName,
+    string expected,
+    List<string> failures)
+{
+    if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+    {
+        failures.Add($"[{name}] expected JSON property '{propertyName}' to be a string.");
+        return;
+    }
+
+    var actual = property.GetString();
+    if (!string.Equals(actual, expected, StringComparison.Ordinal))
+    {
+        failures.Add($"[{name}] expected JSON property '{propertyName}' to be '{expected}' but got '{actual}'.");
+    }
+}
+
+static void AssertJsonArrayLength(
+    string name,
+    JsonElement element,
+    string propertyName,
+    int expectedLength,
+    List<string> failures)
+{
+    if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
+    {
+        failures.Add($"[{name}] expected JSON property '{propertyName}' to be an array.");
+        return;
+    }
+
+    var actualLength = property.GetArrayLength();
+    if (actualLength != expectedLength)
+    {
+        failures.Add($"[{name}] expected JSON array '{propertyName}' length {expectedLength} but got {actualLength}.");
+    }
+}
+
+static void TryDeleteDirectory(string path)
+{
+    try
+    {
+        Directory.Delete(path, recursive: true);
+    }
+    catch
+    {
     }
 }
 

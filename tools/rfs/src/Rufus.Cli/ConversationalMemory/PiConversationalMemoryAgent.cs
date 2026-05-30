@@ -40,20 +40,24 @@ public sealed class PiConversationalMemoryAgent : IAgent
     };
 
     private readonly string _workingDirectory;
+    private readonly string _executionModel;
     private readonly IConversationalMemoryLlmTransport _transport;
 
-    public PiConversationalMemoryAgent(string? workingDirectory = null, IConversationalMemoryLlmTransport? transport = null)
+    public PiConversationalMemoryAgent(string? workingDirectory = null, string? model = null, IConversationalMemoryLlmTransport? transport = null)
     {
         _workingDirectory = string.IsNullOrWhiteSpace(workingDirectory)
             ? Directory.GetCurrentDirectory()
             : workingDirectory;
+        _executionModel = string.IsNullOrWhiteSpace(model)
+            ? DefaultExecutionModel
+            : model.Trim();
         _transport = transport ?? new PiJsonConversationalMemoryLlmTransport();
 
         Descriptor = new AgentDescriptor(
             id: AgentId,
             name: "Pi Conversational Memory Agent",
             role: "Produce a compact conversational continuity projection from recent RCK interactions.",
-            executionModel: new AgentExecutionModel(ExecutionProvider, DefaultExecutionModel),
+            executionModel: new AgentExecutionModel(ExecutionProvider, _executionModel),
             capabilities: new[] { SupportedKind });
     }
 

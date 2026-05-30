@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Rufus.RCK.Semantic;
 
 namespace Rufus.Cli.ParserChecks;
@@ -14,6 +15,9 @@ internal static class RckSemanticChecks
         RunTopicNormalization(failures);
         RunEmptyAnchors(failures);
         RunJsonStoreRoundtrip(failures);
+        RunWorkspaceRebuild(failures);
+        RunWorkspaceShowWithoutProjection(failures);
+        RunWorkspaceShowWithProjection(failures);
     }
 
     private static void RunSingleAnchor(List<string> failures)
@@ -214,6 +218,158 @@ internal static class RckSemanticChecks
         {
             if (File.Exists(tempPath))
                 File.Delete(tempPath);
+        }
+    }
+
+    private static void RunWorkspaceRebuild(List<string> failures)
+    {
+        const string name = "rck semantic workspace rebuild";
+        var tempRoot = CreateTempRoot(name);
+        try
+        {
+            CreateWorkspaceFixture(tempRoot, anchorCount: 2);
+
+            var result = RckSemanticWorkspaceAdapter.RebuildProjection(tempRoot);
+
+            Expect(result.Success, $"[{name}] rebuild should succeed.", failures);
+            Expect(result.NodeCount == 2, $"[{name}] expected 2 nodes, got {result.NodeCount}.", failures);
+            Expect(result.DeltaCount == 1, $"[{name}] expected 1 delta, got {result.DeltaCount}.", failures);
+            Expect(!string.IsNullOrWhiteSpace(result.OutputPath), $"[{name}] output path should not be empty.", failures);
+
+            var projectionPath = Path.Combine(tempRoot, ".rfs", "semantic", "projection.json");
+            Expect(File.Exists(projectionPath), $"[{name}] projection.json should exist.", failures);
+
+            // Verify .rfs/rck was NOT modified (no new files created there)
+            var rckStatesPath = Path.Combine(tempRoot, ".rfs", "rck", "states");
+            var stateFiles = Directory.GetFiles(rckStatesPath, "*.json");
+            Expect(stateFiles.Length == 1, $"[{name}] states should remain at 1, got {stateFiles.Length}.", failures);
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static void RunWorkspaceShowWithoutProjection(List<string> failures)
+    {
+        const string name = "rck semantic show without projection";
+        var tempRoot = CreateTempRoot(name);
+        try
+        {
+            CreateWorkspaceFixture(tempRoot, anchorCount: 2);
+            // Don't rebuild — so no projection exists
+
+            var projection = RckSemanticWorkspaceAdapter.TryReadProjection(tempRoot);
+            Expect(projection is null, $"[{name}] should return null when no projection exists.", failures);
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static void RunWorkspaceShowWithProjection(List<string> failures)
+    {
+        const string name = "rck semantic show with projection";
+        var tempRoot = CreateTempRoot(name);
+        try
+        {
+            CreateWorkspaceFixture(tempRoot, anchorCount: 3);
+
+            var rebuildResult = RckSemanticWorkspaceAdapter.RebuildProjection(tempRoot);
+            Expect(rebuildResult.Success, $"[{name}] rebuild prerequisite failed.", failures);
+            if (!rebuildResult.Success) return;
+
+            var projection = RckSemanticWorkspaceAdapter.TryReadProjection(tempRoot);
+            Expect(projection is not null, $"[{name}] should return projection after rebuild.", failures);
+            if (projection is null) return;
+
+            Expect(projection.Nodes.Count == 3, $"[{name}] expected 3 nodes.", failures);
+            Expect(projection.Deltas.Count == 2, $"[{name}] expected 2 deltas.", failures);
+            Expect(projection.SchemaVersion == 1, $"[{name}] expected schema version 1.", failures);
+
+            // Check anchor names are present
+            var names = projection.Nodes.Select(n => n.AnchorName).ToArray();
+            Expect(names.Contains("Anchor 1"), $"[{name}] should contain 'Anchor 1'.", failures);
+            Expect(names.Contains("Anchor 2"), $"[{name}] should contain 'Anchor 2'.", failures);
+            Expect(names.Contains("Anchor 3"), $"[{name}] should contain 'Anchor 3'.", failures);
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static void CreateWorkspaceFixture(string tempRoot, int anchorCount)
+    {
+        var rfsRoot = Path.Combine(tempRoot, ".rfs");
+        var rckRoot = Path.Combine(rfsRoot, "rck");
+        var statesRoot = Path.Combine(rckRoot, "states");
+        var deltasRoot = Path.Combine(rckRoot, "deltas");
+        var anchorsRoot = Path.Combine(rckRoot, "anchors");
+
+        Directory.CreateDirectory(statesRoot);
+        Directory.CreateDirectory(deltasRoot);
+        Directory.CreateDirectory(anchorsRoot);
+
+        // Create a single state
+        var stateId = "s-" + Guid.NewGuid().ToString("N")[..8];
+        File.WriteAllText(
+            Path.Combine(statesRoot, $"{stateId}.json"),
+            JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["schemaVersion"] = 1,
+                ["type"] = "rufus.rck.state",
+                ["id"] = stateId,
+                ["payloadCanonicalJson"] = JsonSerializer.Serialize(new { type = "fixture.semantic" }),
+                ["refs"] = Array.Empty<object>(),
+                ["meta"] = new Dictionary<string, object?>
+                {
+                    ["createdAtUtc"] = "2026-01-01T00:00:00.0000000+00:00",
+                },
+            }));
+
+        File.WriteAllText(Path.Combine(rckRoot, "HEAD"), stateId + Environment.NewLine);
+
+        // Create anchors with increasing timestamps
+        var baseTime = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        for (var i = 1; i <= anchorCount; i++)
+        {
+            var anchorId = $"a-{Guid.NewGuid().ToString("N")[..8]}";
+            var anchorTime = baseTime.AddHours(i);
+            File.WriteAllText(
+                Path.Combine(anchorsRoot, $"{anchorId}.json"),
+                JsonSerializer.Serialize(new Dictionary<string, object?>
+                {
+                    ["schemaVersion"] = 1,
+                    ["type"] = "rufus.rck.anchor",
+                    ["id"] = anchorId,
+                    ["stateId"] = stateId,
+                    ["parentAnchorIds"] = Array.Empty<object>(),
+                    ["meta"] = new Dictionary<string, object?>
+                    {
+                        ["createdAtUtc"] = anchorTime.ToString("O"),
+                        ["Label"] = $"Anchor {i}",
+                    },
+                }));
+        }
+    }
+
+    private static string CreateTempRoot(string prefix)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), prefix + "-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        return tempRoot;
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
         }
     }
 

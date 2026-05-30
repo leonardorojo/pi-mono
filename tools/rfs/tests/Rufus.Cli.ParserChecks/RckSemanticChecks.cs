@@ -18,6 +18,8 @@ internal static class RckSemanticChecks
         RunWorkspaceRebuild(failures);
         RunWorkspaceShowWithoutProjection(failures);
         RunWorkspaceShowWithProjection(failures);
+        RunCliContractRebuildResult(failures);
+        RunCliContractShowProjection(failures);
     }
 
     private static void RunSingleAnchor(List<string> failures)
@@ -352,6 +354,82 @@ internal static class RckSemanticChecks
                         ["Label"] = $"Anchor {i}",
                     },
                 }));
+        }
+    }
+
+    private static void RunCliContractRebuildResult(List<string> failures)
+    {
+        const string name = "rck semantic cli contract rebuild";
+        var tempRoot = CreateTempRoot(name);
+        try
+        {
+            CreateWorkspaceFixture(tempRoot, anchorCount: 2);
+
+            var result = RckSemanticWorkspaceAdapter.RebuildProjection(tempRoot);
+
+            Expect(result.Success, $"[{name}] rebuild should succeed.", failures);
+            Expect(!string.IsNullOrWhiteSpace(result.OutputPath), $"[{name}] should have output path for CLI display.", failures);
+            Expect(result.OutputPath!.Contains("semantic"), $"[{name}] output path should be under .rfs/semantic/.", failures);
+            Expect(result.NodeCount == 2, $"[{name}] should report 2 nodes for CLI display.", failures);
+            Expect(result.DeltaCount == 1, $"[{name}] should report 1 delta for CLI display.", failures);
+
+            // Verify the projection on disk has the contract fields
+            var projection = RckSemanticWorkspaceAdapter.TryReadProjection(tempRoot);
+            Expect(projection is not null, $"[{name}] projection should be readable after rebuild.", failures);
+            if (projection is null) return;
+
+            Expect(projection.SchemaVersion == 1, $"[{name}] schemaVersion must be present.", failures);
+            Expect(projection.Nodes.Count == 2, $"[{name}] nodes count contract.", failures);
+            Expect(projection.Deltas.Count == 1, $"[{name}] deltas count contract.", failures);
+            Expect(projection.Deltas[0].SourceDeltaIds.Count == 0,
+                $"[{name}] sourceDeltaIds must be empty in v0 (known limitation).", failures);
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static void RunCliContractShowProjection(List<string> failures)
+    {
+        const string name = "rck semantic cli contract show";
+        var tempRoot = CreateTempRoot(name);
+        try
+        {
+            CreateWorkspaceFixture(tempRoot, anchorCount: 1);
+
+            var rebuildResult = RckSemanticWorkspaceAdapter.RebuildProjection(tempRoot);
+            Expect(rebuildResult.Success, $"[{name}] rebuild prerequisite failed.", failures);
+            if (!rebuildResult.Success) return;
+
+            var projection = RckSemanticWorkspaceAdapter.TryReadProjection(tempRoot);
+            Expect(projection is not null, $"[{name}] projection should exist.", failures);
+            if (projection is null) return;
+
+            Expect(projection.SchemaVersion == 1, $"[{name}] schemaVersion in show output.", failures);
+            Expect(projection.Nodes.Count == 1, $"[{name}] node count in show output.", failures);
+            Expect(projection.Nodes[0].AnchorName.Length > 0, $"[{name}] anchor name for show.", failures);
+            Expect(projection.Nodes[0].AnchorId.Length > 10, $"[{name}] anchor id for show (abbreviated).", failures);
+            Expect(projection.Nodes[0].StateId.Length > 10, $"[{name}] state id for show (abbreviated).", failures);
+            Expect(projection.Deltas.Count == 0, $"[{name}] delta count for 1 anchor should be 0.", failures);
+
+            // Show without projection returns null (no crash)
+            var freshRoot = CreateTempRoot(name + "-fresh");
+            try
+            {
+                CreateWorkspaceFixture(freshRoot, anchorCount: 1);
+                // Don't rebuild — should return null gracefully
+                var noProj = RckSemanticWorkspaceAdapter.TryReadProjection(freshRoot);
+                Expect(noProj is null, $"[{name}] no projection before rebuild should return null gracefully.", failures);
+            }
+            finally
+            {
+                TryDeleteDirectory(freshRoot);
+            }
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
         }
     }
 

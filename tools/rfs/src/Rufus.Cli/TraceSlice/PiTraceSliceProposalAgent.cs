@@ -175,7 +175,7 @@ public sealed class PiTraceSliceProposalAgent : IAgent
             warnings: warnings);
     }
 
-    public async Task<AgentTaskResult> ExecuteAnchorSelectionAsync(AgentTask task, CancellationToken cancellationToken = default)
+    public async Task<AgentTaskResult> ExecuteAnchorSelectionAsync(AgentTask task, CancellationToken cancellationToken = default, Action<string>? onPromptDumped = null)
     {
         ArgumentNullException.ThrowIfNull(task);
         cancellationToken.ThrowIfCancellationRequested();
@@ -218,6 +218,18 @@ public sealed class PiTraceSliceProposalAgent : IAgent
         }
 
         var llmPrompt = BuildAnchorSelectionPrompt(input);
+
+        var promptDumpPath = RfsPromptDump.TryDump(
+            stage: "traceslice-anchors",
+            prompt: llmPrompt,
+            model: Descriptor.ExecutionModel.Model,
+            source: AgentId,
+            workingDirectory: _workingDirectory);
+        if (promptDumpPath is not null)
+        {
+            onPromptDumped?.Invoke(promptDumpPath);
+        }
+
         var llmResult = await _transport
             .AskAsync(_workingDirectory, llmPrompt, Descriptor.ExecutionModel.Model, cancellationToken)
             .ConfigureAwait(false);

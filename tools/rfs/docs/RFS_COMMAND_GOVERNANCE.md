@@ -57,8 +57,8 @@ These commands are the current baseline surface. They are not experimental.
 | `rfs model get` | no | local config | Reads `.rfs/config.json` when present. |
 | `rfs model set <model>` | no | local config | Writes `.rfs/config.json` only; does not write RCK. |
 | `rfs model list` | no | Pi RPC | Uses Pi RPC to list available models. |
-| `rfs ask <prompt>` | no | Pi JSON mode | Headless ask path. |
-| `rfs ask --record <prompt>` | yes | Pi JSON mode | Headless ask path plus controlled RCK recording. |
+| `rfs ask <prompt>` | no | Pi JSON mode | Headless ask path. If `RFS_USE_LEGACY_ASK_BRIDGE=1` is enabled, the CLI prints `Status: legacy ask bridge fallback enabled by RFS_USE_LEGACY_ASK_BRIDGE.` |
+| `rfs ask --record <prompt>` | yes | Pi JSON mode | Headless ask path plus controlled RCK recording. If `RFS_USE_LEGACY_ASK_BRIDGE=1` is enabled, the CLI prints `Status: legacy ask bridge fallback enabled by RFS_USE_LEGACY_ASK_BRIDGE.` |
 | `rfs intent <prompt>` | no | deterministic AgentTask | Intent inference only. |
 | `rfs intent --record <prompt>` | yes | deterministic AgentTask | Intent inference plus controlled RCK recording. |
 
@@ -125,8 +125,8 @@ Experimental does not mean broken; it means the pipeline is still being hardened
 
 | Command | Status | Transport / backend | Notes |
 | --- | --- | --- | --- |
-| `rfs ask-json <prompt>` | experimental / diagnostic | Pi JSON mode | Diagnostic JSON-mode ask path. |
-| `rfs agent-json <task>` | experimental / diagnostic | Pi JSON/tools | Experimental agent JSON path. |
+| `rfs ask-json <prompt>` | experimental / diagnostic | Pi JSON mode | Diagnostic JSON-mode ask path. Runtime label: `Status: experimental diagnostic path.` |
+| `rfs agent-json <task>` | experimental / diagnostic | Pi JSON/tools | Experimental agent JSON path. Runtime label: `Status: experimental forward path.` |
 | `rfs trace-slice-proposal <prompt>` | experimental | deterministic proposal pipeline | Proposal only; not authoritative. |
 | `rfs trace-slice-validate <prompt>` | experimental | deterministic proposal pipeline + RFS validation | Produces the final validated TraceSlice. |
 | `rfs trace-slice-proposal-llm <prompt>` | experimental | Pi / LLM proposal path | LLM proposes only. |
@@ -139,8 +139,8 @@ These are the current agent paths. They are legacy in the sense that they are no
 
 | Command | Status | Transport / backend | Notes |
 | --- | --- | --- | --- |
-| `rfs agent <task>` | legacy current | legacy bridge | Current agent path; not deprecated yet. |
-| `rfs agent --record <task>` | legacy current | legacy bridge | Current agent path plus controlled RCK recording; not deprecated yet. |
+| `rfs agent <task>` | legacy current | legacy bridge | Current agent path; not deprecated yet. Runtime label: `Status: legacy active bridge (Node). Use agent-json only for experimental JSON Event Stream validation.` |
+| `rfs agent --record <task>` | legacy current | legacy bridge | Current agent path plus controlled RCK recording; not deprecated yet. Runtime label: `Status: legacy active bridge (Node) with RCK recording.` |
 
 Important:
 
@@ -194,14 +194,14 @@ Note:
 | Command | Transport / backend |
 | --- | --- |
 | `rfs model list` | Pi RPC |
-| `rfs ask` | Pi JSON mode |
-| `rfs ask --record` | Pi JSON mode |
-| `rfs ask-json` | Pi JSON mode, diagnostic |
+| `rfs ask` | Pi JSON mode; runtime label `Status: legacy ask bridge fallback enabled by RFS_USE_LEGACY_ASK_BRIDGE.` when the legacy bridge is enabled. |
+| `rfs ask --record` | Pi JSON mode; runtime label `Status: legacy ask bridge fallback enabled by RFS_USE_LEGACY_ASK_BRIDGE.` when the legacy bridge is enabled. |
+| `rfs ask-json` | Pi JSON mode, diagnostic; runtime label `Status: experimental diagnostic path.` |
 | `rfs trace-slice-proposal-llm` | Pi / LLM experimental |
 | `rfs trace-slice-validate-llm` | Pi / LLM experimental + RFS validation |
-| `rfs agent` | legacy bridge |
-| `rfs agent --record` | legacy bridge |
-| `rfs agent-json` | Pi JSON/tools experimental |
+| `rfs agent` | legacy bridge; runtime label `Status: legacy active bridge (Node). Use agent-json only for experimental JSON Event Stream validation.` |
+| `rfs agent --record` | legacy bridge; runtime label `Status: legacy active bridge (Node) with RCK recording.` |
+| `rfs agent-json` | Pi JSON/tools experimental; runtime label `Status: experimental forward path.` |
 | `rfs pi` | passthrough / TUI |
 
 Complete-mode transport note:

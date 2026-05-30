@@ -46,6 +46,7 @@ It is a decision contract, not an execution plan.
 
 - **Phase 3A**: document the plan.
 - **Phase 3B**: optionally add warnings or status labels.
+- CLI status labels are soft UX markers only; they do not imply deprecation or behavior change.
 - **Phase 3C**: run external smoke against the real bridges.
 - **Phase 3D**: finish parity work for `agent-json`.
 - **Phase 3E**: deprecate or remove only after all gates pass.

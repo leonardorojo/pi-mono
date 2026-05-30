@@ -662,6 +662,11 @@ static async Task RunIntegrationChecksAsync(List<string> failures)
         prompt: "Respond with a short answer.",
         failures: failures);
 
+    await RunLegacyAskBridgeCliCaseAsync(
+        name: "ask cli surfaces legacy fallback status when RFS_USE_LEGACY_ASK_BRIDGE=1 is set",
+        prompt: "Respond with a short answer.",
+        failures: failures);
+
     await RunAgentCliCaseAsync(
         name: "agent cli renders streamed output through node mock",
         task: "Inspect the repo read-only.",
@@ -752,6 +757,11 @@ static async Task RunAskJsonCliCaseAsync(
         if (!stdout.Contains("Rufus Ask JSON Prototype", StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected 'Rufus Ask JSON Prototype' in stdout. stdout: {stdout}");
+        }
+
+        if (!stdout.Contains("Status: experimental diagnostic path.", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected ask-json status label in stdout. stdout: {stdout}");
         }
 
         if (!stdout.Contains("structured answer", StringComparison.Ordinal))
@@ -885,7 +895,7 @@ static async Task RunAskCliCaseAsync(
         }
 
         var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
-        var result = await RunMockedAskCliAsync(name, cliProjectPath, tempRoot, prompt, answer: "short answer", recordInteraction: false, failures);
+        var result = await RunMockedAskCliAsync(name, cliProjectPath, tempRoot, prompt, answer: "short answer", recordInteraction: false, useLegacyBridge: false, failures);
         if (result.ExitCode != 0)
         {
             failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
@@ -940,7 +950,7 @@ static async Task RunAskRecordCliCaseAsync(
         var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
         var deltaFilesBefore = Directory.EnumerateFiles(Path.Combine(tempRoot, ".rfs", "rck", "deltas"), "*.json", SearchOption.TopDirectoryOnly).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
 
-        var result = await RunMockedAskCliAsync(name, cliProjectPath, tempRoot, prompt, answer: "short answer", recordInteraction: true, failures);
+        var result = await RunMockedAskCliAsync(name, cliProjectPath, tempRoot, prompt, answer: "short answer", recordInteraction: true, useLegacyBridge: false, failures);
         if (result.ExitCode != 0)
         {
             failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
@@ -1005,6 +1015,69 @@ static async Task RunAskRecordCliCaseAsync(
     }
 }
 
+static async Task RunLegacyAskBridgeCliCaseAsync(
+    string name,
+    string prompt,
+    List<string> failures)
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    var cliProjectPath = Path.Combine(repoRoot, "src", "Rufus.Cli", "Rufus.Cli.csproj");
+    var tempRoot = Path.Combine(Path.GetTempPath(), "rfs-legacy-ask-bridge-cli-checks", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tempRoot);
+
+    try
+    {
+        var result = await RunMockedAskCliAsync(
+            name,
+            cliProjectPath,
+            tempRoot,
+            prompt,
+            answer: "short answer",
+            recordInteraction: false,
+            useLegacyBridge: true,
+            failures);
+
+        if (result.ExitCode != 0)
+        {
+            failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Stderr))
+        {
+            failures.Add($"[{name}] expected no stderr but got: {result.Stderr.Trim()}.");
+        }
+
+        if (!result.Stdout.Contains("Rufus Ask", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'Rufus Ask' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("Status: legacy ask bridge fallback enabled by RFS_USE_LEGACY_ASK_BRIDGE.", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected legacy ask fallback status label in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("short answer", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected 'short answer' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (Directory.Exists(Path.Combine(tempRoot, ".rfs")))
+        {
+            failures.Add($"[{name}] expected no .rfs directory to be created for non-record ask CLI.");
+        }
+    }
+    catch (Exception ex)
+    {
+        failures.Add($"[{name}] threw {ex}");
+    }
+    finally
+    {
+        TryDeleteDirectory(tempRoot);
+    }
+}
+
 static async Task RunAgentCliCaseAsync(
     string name,
     string task,
@@ -1039,6 +1112,11 @@ static async Task RunAgentCliCaseAsync(
         if (!result.Stdout.Contains("Rufus Agent", StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected 'Rufus Agent' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("Status: legacy active bridge (Node). Use agent-json only for experimental JSON Event Stream validation.", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected legacy agent status label in stdout. stdout: {result.Stdout}");
         }
 
         if (!result.Stdout.Contains("short answer", StringComparison.Ordinal))
@@ -1108,6 +1186,11 @@ static async Task RunAgentRecordCliCaseAsync(
         if (!result.Stdout.Contains("Rufus Agent", StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected 'Rufus Agent' in stdout. stdout: {result.Stdout}");
+        }
+
+        if (!result.Stdout.Contains("Status: legacy active bridge (Node) with RCK recording.", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected legacy agent recording status label in stdout. stdout: {result.Stdout}");
         }
 
         if (!result.Stdout.Contains("short answer", StringComparison.Ordinal))
@@ -1288,6 +1371,7 @@ static async Task<(int ExitCode, string Stdout, string Stderr)> RunMockedAskCliA
     string prompt,
     string answer,
     bool recordInteraction,
+    bool useLegacyBridge,
     List<string> failures)
 {
     var tempToolRoot = Path.Combine(Path.GetTempPath(), "rfs-ask-cli-mock", Guid.NewGuid().ToString("N"));
@@ -1301,10 +1385,15 @@ static async Task<(int ExitCode, string Stdout, string Stderr)> RunMockedAskCliA
                    "exit 0\n";
 
     var nodeScriptPath = Path.Combine(tempToolRoot, "node");
-    var nodeScript = "#!/usr/bin/env bash\n" +
-                     "set -euo pipefail\n" +
-                     "echo 'legacy ask bridge should not be invoked' >&2\n" +
-                     "exit 99\n";
+    var nodeScript = useLegacyBridge
+        ? "#!/usr/bin/env bash\n" +
+          "set -euo pipefail\n" +
+          $"echo '{EscapeBashDoubleQuotedJson(answer)}'\n" +
+          "exit 0\n"
+        : "#!/usr/bin/env bash\n" +
+          "set -euo pipefail\n" +
+          "echo 'legacy ask bridge should not be invoked' >&2\n" +
+          "exit 99\n";
 
     await File.WriteAllTextAsync(piScriptPath, piScript);
     await File.WriteAllTextAsync(nodeScriptPath, nodeScript);
@@ -1330,7 +1419,14 @@ static async Task<(int ExitCode, string Stdout, string Stderr)> RunMockedAskCliA
         };
 
         startInfo.Environment["PATH"] = tempToolRoot + Path.PathSeparator + (originalPath ?? string.Empty);
-        startInfo.Environment.Remove("RFS_USE_LEGACY_ASK_BRIDGE");
+        if (useLegacyBridge)
+        {
+            startInfo.Environment["RFS_USE_LEGACY_ASK_BRIDGE"] = "1";
+        }
+        else
+        {
+            startInfo.Environment.Remove("RFS_USE_LEGACY_ASK_BRIDGE");
+        }
 
         startInfo.ArgumentList.Add("run");
         startInfo.ArgumentList.Add("--project");
@@ -1474,6 +1570,11 @@ static async Task RunAgentJsonCliCaseAsync(
         if (!stdout.Contains("Rufus Agent JSON Prototype", StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected 'Rufus Agent JSON Prototype' in stdout. stdout: {stdout}");
+        }
+
+        if (!stdout.Contains("Status: experimental forward path.", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected agent-json status label in stdout. stdout: {stdout}");
         }
 
         if (!stdout.Contains("structured agent answer", StringComparison.Ordinal))

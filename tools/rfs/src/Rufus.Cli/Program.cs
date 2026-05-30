@@ -574,6 +574,9 @@ if (args[0] == "agent")
         WriteOutLine("───────────");
         WriteOutLine("Task");
         WriteOutLine(task);
+        WriteOutLine(recordInteraction
+            ? "Status: legacy active bridge (Node) with RCK recording."
+            : "Status: legacy active bridge (Node). Use agent-json only for experimental JSON Event Stream validation.");
         WriteOutLine("Mode: headless, read-only");
         WriteOutLine("Scope: repository root");
         WriteOutLine(string.Empty);
@@ -889,6 +892,8 @@ if (args[0] == "agent-json")
     Console.WriteLine();
     Console.WriteLine("Rufus Agent JSON Prototype");
     Console.WriteLine("────────────────────────────");
+    Console.WriteLine("Status: experimental forward path.");
+    Console.WriteLine();
     Console.WriteLine("Task:");
     Console.WriteLine($"  {agentResult.Task}");
     Console.WriteLine();
@@ -1082,6 +1087,8 @@ if (args[0] == "ask-json")
     Console.WriteLine();
     Console.WriteLine("Rufus Ask JSON Prototype");
     Console.WriteLine("────────────────────────");
+    Console.WriteLine("Status: experimental diagnostic path.");
+    Console.WriteLine();
     Console.WriteLine("Prompt:");
     Console.WriteLine($"  {askJsonResult.Prompt}");
     Console.WriteLine();
@@ -1157,6 +1164,8 @@ if (args[0] == "ask")
         Console.WriteLine();
         Console.WriteLine("Rufus Ask");
         Console.WriteLine("─────────");
+        Console.WriteLine("Status: legacy ask bridge fallback enabled by RFS_USE_LEGACY_ASK_BRIDGE.");
+        Console.WriteLine();
         Console.WriteLine(prompt);
         Console.WriteLine();
         Console.WriteLine("Answer");

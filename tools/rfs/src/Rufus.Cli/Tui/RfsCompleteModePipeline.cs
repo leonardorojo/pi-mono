@@ -245,6 +245,13 @@ public static class RfsCompleteModePipeline
 
         stageWriter?.Invoke("[2/5] Building TraceSlice proposal...");
 
+        // Report model before the LLM call so timeouts don't hide which model was used.
+        if (stageWriter is not null)
+        {
+            RfsTuiRenderer.WriteCompleteStageDetail("model", anchorSelectionAgent.Descriptor.ExecutionModel.Model);
+            RfsTuiRenderer.WriteCompleteStageDetail("source", anchorSelectionAgent.Id);
+        }
+
         var anchorSelectionInput = new TraceSliceAnchorSelectionAgentInput(
             normalizedPrompt,
             proposalIntent,

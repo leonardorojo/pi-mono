@@ -301,6 +301,8 @@ RunCompleteModeFailureRendererCase(
     reason: "Complete mode failed while inferring intent.",
     failures: failures);
 
+await RfsCompleteModeProposalObservabilityChecks.RunAsync(failures);
+
 await RunIntentCliCaseAsync(
     name: "intent cli renders result",
     prompt: "Implement rfs show command",

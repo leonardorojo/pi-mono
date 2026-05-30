@@ -145,6 +145,90 @@ await RunPiIntentInferenceAgentCaseAsync(
     expectedIntent: "implement-reset-board",
     failures: failures);
 
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent parses code-change intent",
+    task: new AgentTask(
+        id: "task-rfs-codechange",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "How do I fix this C# NullReferenceException in Program.cs?",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "{\"intent\":\"code-change\",\"summary\":\"Fix NullReferenceException in Program.cs.\",\"entities\":[\"Program.cs\"],\"constraints\":[]}",
+    expectedIntent: "code-change",
+    failures: failures);
+
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent parses repo-analysis intent",
+    task: new AgentTask(
+        id: "task-rfs-repoanalysis",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Analiza este repo en modo read-only.",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "{\"intent\":\"repo-analysis\",\"summary\":\"Analyze the repository in read-only mode.\",\"entities\":[],\"constraints\":[]}",
+    expectedIntent: "repo-analysis",
+    failures: failures);
+
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent parses planning intent",
+    task: new AgentTask(
+        id: "task-rfs-planning",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Planifiquemos la proxima fase de cobertura.",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "{\"intent\":\"planning\",\"summary\":\"Plan the next coverage phase.\",\"entities\":[],\"constraints\":[]}",
+    expectedIntent: "planning",
+    failures: failures);
+
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent parses rck-memory intent",
+    task: new AgentTask(
+        id: "task-rfs-rckmemory",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Retomemos el anchor sobre continuidad conversacional.",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "{\"intent\":\"rck-memory\",\"summary\":\"Resume anchor on conversational continuity.\",\"entities\":[\"anchor\"],\"constraints\":[]}",
+    expectedIntent: "rck-memory",
+    failures: failures);
+
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent parses docs-update intent",
+    task: new AgentTask(
+        id: "task-rfs-docsupdate",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Actualiza README.md para documentar agent-json.",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "{\"intent\":\"docs-update\",\"summary\":\"Update README.md to document agent-json.\",\"entities\":[\"README.md\",\"agent-json\"],\"constraints\":[]}",
+    expectedIntent: "docs-update",
+    failures: failures);
+
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent parses question intent",
+    task: new AgentTask(
+        id: "task-rfs-question",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Cual es la capital de Japon?",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "{\"intent\":\"question\",\"summary\":\"Ask about the capital of Japan.\",\"entities\":[\"Japon\"],\"constraints\":[]}",
+    expectedIntent: "question",
+    failures: failures);
+
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent parses chat intent",
+    task: new AgentTask(
+        id: "task-rfs-chat",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Hola, como estas?",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "{\"intent\":\"chat\",\"summary\":\"Casual greeting.\",\"entities\":[],\"constraints\":[]}",
+    expectedIntent: "chat",
+    failures: failures);
+
 await RunIntentCliLlmCaseAsync(
     name: "intent cli llm renders fixed lightweight model",
     prompt: "Implement reset board action",
@@ -3971,9 +4055,19 @@ static async Task RunPiIntentInferenceAgentCaseAsync(
             failures.Add($"[{name}] expected transport model 'claude-haiku-4.5' but got '{transport.LastModel}'.");
         }
 
-        if (string.IsNullOrWhiteSpace(transport.LastPrompt) || !transport.LastPrompt.Contains("Required JSON shape:", StringComparison.Ordinal) || !transport.LastPrompt.Contains(task.Input!, StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(transport.LastPrompt) ||
+            !transport.LastPrompt.Contains("Valid intent labels:", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains("Classify by operational intent, not grammatical form.", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains("code-change", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains("repo-analysis", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains("planning", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains("rck-memory", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains("docs-update", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains("chat", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains("question", StringComparison.Ordinal) ||
+            !transport.LastPrompt.Contains(task.Input!, StringComparison.Ordinal))
         {
-            failures.Add($"[{name}] expected the generated LLM prompt to include the JSON contract and user prompt.");
+            failures.Add($"[{name}] expected the generated LLM prompt to include valid intent labels, classification rules, few-shot examples, and the user prompt.");
         }
 
         if (string.IsNullOrWhiteSpace(result.Output))

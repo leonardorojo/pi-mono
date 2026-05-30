@@ -101,6 +101,8 @@ public static class PiJsonEventRunner
             return new PiJsonAskResult(false, trimmedPrompt, string.Empty, $"Failed to start pi JSON process: {ex.Message}", null, null);
         }
 
+        var startedAt = DateTimeOffset.UtcNow;
+
         if (useStdinPrompt)
         {
             await process.StandardInput.WriteAsync(trimmedPrompt);
@@ -158,11 +160,13 @@ public static class PiJsonEventRunner
         {
             TryKill(process);
             var stderrText = await AwaitStderrAfterKillAsync(stderrTask);
+            var transportMode = useStdinPrompt ? "stdin" : "argv";
+            var elapsed = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
             return new PiJsonAskResult(
                 false,
                 trimmedPrompt,
                 string.Empty,
-                CombineError($"Timed out waiting for Pi JSON response after {DefaultTimeout.TotalSeconds:0} seconds.", stderrText),
+                CombineError($"Timed out waiting for Pi JSON response after {elapsed:F0}s (limit {DefaultTimeout.TotalSeconds:0}s, transport={transportMode}, promptLen={trimmedPrompt.Length}).", stderrText),
                 null,
                 null);
         }
@@ -446,13 +450,15 @@ public static class PiJsonEventRunner
             var stderrText = await AwaitStderrAfterKillAsync(stderrTask).ConfigureAwait(false);
             var finishedAt = DateTimeOffset.UtcNow;
             var cancelled = cancellationToken.IsCancellationRequested;
+            var transportMode = useStdinPrompt ? "stdin" : "argv";
+            var elapsed = (finishedAt - startedAt).TotalSeconds;
             return new PiJsonAgentDetailedResult(
                 false,
                 trimmedTask,
                 string.Empty,
                 cancelled
                     ? CombineError("Pi JSON execution was cancelled.", stderrText)
-                    : CombineError($"Timed out waiting for Pi JSON response after {DefaultTimeout.TotalSeconds:0} seconds.", stderrText),
+                    : CombineError($"Timed out waiting for Pi JSON response after {elapsed:F0}s (limit {DefaultTimeout.TotalSeconds:0}s, transport={transportMode}, taskLen={trimmedTask.Length}).", stderrText),
                 null,
                 null,
                 Array.Empty<PiJsonToolEvent>(),
@@ -527,6 +533,21 @@ public static class PiJsonEventRunner
         string? explicitError = null;
         var completionObserved = false;
         var lineNumber = 0;
+        var eventCount = 0;
+        var messageStartSeen = false;
+        var messageEndSeen = false;
+        var messageUpdateCount = 0;
+        var lastEventTypes = new List<string>();
+
+        static void TrackEvent(ref int eventCount, List<string> lastEventTypes, string type)
+        {
+            eventCount++;
+            if (lastEventTypes.Count >= 5)
+            {
+                lastEventTypes.RemoveAt(0);
+            }
+            lastEventTypes.Add(type);
+        }
 
         while (true)
         {
@@ -562,13 +583,19 @@ public static class PiJsonEventRunner
                     case "session":
                     case "agent_start":
                     case "turn_start":
-                    case "message_start":
                     case "queue_update":
                     case "auto_retry_start":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
+                        break;
+
+                    case "message_start":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
+                        messageStartSeen = true;
                         break;
 
                     case "tool_execution_start":
                         {
+                            TrackEvent(ref eventCount, lastEventTypes, type);
                             var id = GetString(root, "id");
                             var name = GetString(root, "name");
                             string? details = null;
@@ -582,11 +609,13 @@ public static class PiJsonEventRunner
                         break;
 
                     case "tool_execution_update":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
                         // ignore updates for prototype
                         break;
 
                     case "tool_execution_end":
                         {
+                            TrackEvent(ref eventCount, lastEventTypes, type);
                             var id = GetString(root, "id");
                             var name = GetString(root, "name");
                             var summary = GetString(root, "summary");
@@ -595,11 +624,15 @@ public static class PiJsonEventRunner
                         break;
 
                     case "message_update":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
+                        messageUpdateCount++;
                         CaptureAssistantMetadata(root, ref provider, ref model);
                         AppendTextDelta(root, deltaBuilder);
                         break;
 
                     case "message_end":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
+                        messageEndSeen = true;
                         CaptureAssistantMetadata(root, ref provider, ref model);
                         if (TryGetAssistantMessage(root, "message", out var assistantMessageAtEnd))
                         {
@@ -613,6 +646,7 @@ public static class PiJsonEventRunner
                         break;
 
                     case "turn_end":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
                         completionObserved = true;
                         CaptureAssistantMetadata(root, ref provider, ref model);
                         if (TryGetAssistantMessage(root, "message", out var turnMessage))
@@ -626,6 +660,7 @@ public static class PiJsonEventRunner
                         break;
 
                     case "agent_end":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
                         completionObserved = true;
                         if (TryExtractLastAssistantText(root, ref provider, ref model, out var agentEndAnswer) && !string.IsNullOrWhiteSpace(agentEndAnswer))
                         {
@@ -634,6 +669,7 @@ public static class PiJsonEventRunner
                         break;
 
                     case "compaction_end":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
                         if (root.TryGetProperty("aborted", out var abortedElement)
                             && abortedElement.ValueKind == JsonValueKind.True
                             && (!root.TryGetProperty("willRetry", out var willRetryElement) || willRetryElement.ValueKind == JsonValueKind.False))
@@ -643,6 +679,7 @@ public static class PiJsonEventRunner
                         break;
 
                     case "auto_retry_end":
+                        TrackEvent(ref eventCount, lastEventTypes, type);
                         if (root.TryGetProperty("success", out var successElement)
                             && successElement.ValueKind == JsonValueKind.False)
                         {
@@ -651,6 +688,7 @@ public static class PiJsonEventRunner
                         break;
 
                     default:
+                        TrackEvent(ref eventCount, lastEventTypes, type);
                         break;
                 }
             }
@@ -662,15 +700,43 @@ public static class PiJsonEventRunner
 
         if (string.IsNullOrWhiteSpace(answer))
         {
+            var diagnostics = BuildEventDiagnostics(eventCount, lastEventTypes, messageStartSeen, messageEndSeen, messageUpdateCount, deltaBuilder);
             var errorMessage = explicitError
                 ?? (completionObserved
-                    ? "Pi JSON stream completed without an assistant answer."
-                    : "Pi JSON stream ended before a final assistant answer was observed.");
+                    ? $"Pi JSON stream completed without an assistant answer. {diagnostics}"
+                    : $"Pi JSON stream ended before a final assistant answer was observed. {diagnostics}");
 
             return new ParsedPiJsonResult(false, errorMessage, string.Empty, provider, model);
         }
 
         return new ParsedPiJsonResult(true, null, answer, provider, model);
+    }
+
+    private static string BuildEventDiagnostics(int eventCount, List<string> lastEventTypes, bool messageStartSeen, bool messageEndSeen, int messageUpdateCount, StringBuilder deltaBuilder)
+    {
+        var parts = new List<string>();
+        parts.Add($"events={eventCount}");
+
+        if (lastEventTypes.Count > 0)
+        {
+            parts.Add($"lastTypes=[{string.Join(",", lastEventTypes)}]");
+        }
+
+        parts.Add(messageStartSeen ? "msgStart" : "noMsgStart");
+        parts.Add(messageEndSeen ? "msgEnd" : "noMsgEnd");
+
+        if (messageUpdateCount > 0)
+        {
+            parts.Add($"msgUpdates={messageUpdateCount}");
+        }
+
+        var deltaLength = deltaBuilder.Length;
+        if (deltaLength > 0)
+        {
+            parts.Add($"deltaLen={deltaLength}");
+        }
+
+        return $"[{string.Join("; ", parts)}]";
     }
 
     private static void ApplyWorkspaceModel(ProcessStartInfo startInfo, string? workspaceModel)
@@ -883,6 +949,21 @@ public static class PiJsonEventRunner
         var completionObserved = false;
         var lineNumber = 0;
         var toolEvents = new List<PiJsonToolEvent>();
+        var eventCount = 0;
+        var messageStartSeen = false;
+        var messageEndSeen = false;
+        var messageUpdateCount = 0;
+        var lastEventTypes = new List<string>();
+
+        static void TrackAgentEvent(ref int eventCount, List<string> lastEventTypes, string type)
+        {
+            eventCount++;
+            if (lastEventTypes.Count >= 5)
+            {
+                lastEventTypes.RemoveAt(0);
+            }
+            lastEventTypes.Add(type);
+        }
 
         void ReportRuntimeEvent(PiJsonStreamEvent runtimeEvent)
         {
@@ -923,14 +1004,21 @@ public static class PiJsonEventRunner
                     case "session":
                     case "agent_start":
                     case "turn_start":
-                    case "message_start":
                     case "queue_update":
                     case "auto_retry_start":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
+                        ReportRuntimeEvent(new PiJsonStreamEvent(type));
+                        break;
+
+                    case "message_start":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
+                        messageStartSeen = true;
                         ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
 
                     case "tool_execution_start":
                         {
+                            TrackAgentEvent(ref eventCount, lastEventTypes, type);
                             var id = GetString(root, "id");
                             var name = GetString(root, "name");
                             string? details = null;
@@ -945,12 +1033,14 @@ public static class PiJsonEventRunner
                         break;
 
                     case "tool_execution_update":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
                         // ignore updates for prototype
                         ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
 
                     case "tool_execution_end":
                         {
+                            TrackAgentEvent(ref eventCount, lastEventTypes, type);
                             var id = GetString(root, "id");
                             var name = GetString(root, "name");
                             var summary = GetString(root, "summary");
@@ -960,12 +1050,16 @@ public static class PiJsonEventRunner
                         break;
 
                     case "message_update":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
+                        messageUpdateCount++;
                         CaptureAssistantMetadata(root, ref provider, ref model);
                         var delta = AppendTextDelta(root, deltaBuilder);
                         ReportRuntimeEvent(new PiJsonStreamEvent(type, Text: string.IsNullOrWhiteSpace(delta) ? null : delta));
                         break;
 
                     case "message_end":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
+                        messageEndSeen = true;
                         CaptureAssistantMetadata(root, ref provider, ref model);
                         if (TryGetAssistantMessage(root, "message", out var assistantMessageAtEnd))
                         {
@@ -981,6 +1075,7 @@ public static class PiJsonEventRunner
                         break;
 
                     case "turn_end":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
                         completionObserved = true;
                         CaptureAssistantMetadata(root, ref provider, ref model);
                         if (TryGetAssistantMessage(root, "message", out var turnMessage))
@@ -996,6 +1091,7 @@ public static class PiJsonEventRunner
                         break;
 
                     case "agent_end":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
                         completionObserved = true;
                         if (TryExtractLastAssistantText(root, ref provider, ref model, out var agentEndAnswer) && !string.IsNullOrWhiteSpace(agentEndAnswer))
                         {
@@ -1006,6 +1102,7 @@ public static class PiJsonEventRunner
                         break;
 
                     case "compaction_end":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
                         if (root.TryGetProperty("aborted", out var abortedElement)
                             && abortedElement.ValueKind == JsonValueKind.True
                             && (!root.TryGetProperty("willRetry", out var willRetryElement) || willRetryElement.ValueKind == JsonValueKind.False))
@@ -1017,6 +1114,7 @@ public static class PiJsonEventRunner
                         break;
 
                     case "auto_retry_end":
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
                         if (root.TryGetProperty("success", out var successElement)
                             && successElement.ValueKind == JsonValueKind.False)
                         {
@@ -1027,6 +1125,7 @@ public static class PiJsonEventRunner
                         break;
 
                     default:
+                        TrackAgentEvent(ref eventCount, lastEventTypes, type);
                         ReportRuntimeEvent(new PiJsonStreamEvent(type));
                         break;
                 }
@@ -1039,10 +1138,11 @@ public static class PiJsonEventRunner
 
         if (string.IsNullOrWhiteSpace(answer))
         {
+            var diagnostics = BuildEventDiagnostics(eventCount, lastEventTypes, messageStartSeen, messageEndSeen, messageUpdateCount, deltaBuilder);
             var errorMessage = explicitError
                 ?? (completionObserved
-                    ? "Pi JSON stream completed without an assistant answer."
-                    : "Pi JSON stream ended before a final assistant answer was observed.");
+                    ? $"Pi JSON stream completed without an assistant answer. {diagnostics}"
+                    : $"Pi JSON stream ended before a final assistant answer was observed. {diagnostics}");
 
             return new ParsedPiJsonAgentResult(false, errorMessage, string.Empty, provider, model, toolEvents);
         }

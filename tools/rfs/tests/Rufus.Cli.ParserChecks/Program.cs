@@ -543,6 +543,36 @@ static async Task RunCoreChecksAsync(List<string> failures)
 
     await RunPiJsonRunnerRuntimeEventReportingCaseAsync(failures);
 
+    await RunCaseAsync(
+        name: "startup events without completion",
+        fixtureMode: "startup-no-completion",
+        expectedSuccess: false,
+        expectedAnswer: null,
+        expectedProvider: null,
+        expectedModel: null,
+        expectedErrorContains: "msgStart; noMsgEnd",
+        failures: failures);
+
+    await RunCaseAsync(
+        name: "message end without assistant text",
+        fixtureMode: "message-end-no-text",
+        expectedSuccess: false,
+        expectedAnswer: null,
+        expectedProvider: null,
+        expectedModel: null,
+        expectedErrorContains: "msgEnd",
+        failures: failures);
+
+    await RunCaseAsync(
+        name: "no events at all",
+        fixtureMode: "no-events",
+        expectedSuccess: false,
+        expectedAnswer: null,
+        expectedProvider: null,
+        expectedModel: null,
+        expectedErrorContains: "events=0; noMsgStart; noMsgEnd",
+        failures: failures);
+
     await RunIntentInferenceCaseAsync(
         name: "intent inference success",
         task: new AgentTask(
@@ -1699,6 +1729,19 @@ static async Task RunCaseAsync(
                  "    ;;\n" +
                  "  no-answer)\n" +
                  "    echo '{\"type\":\"session\"}'\n" +
+                 "    ;;\n" +
+                 "  startup-no-completion)\n" +
+                 "    echo '{\"type\":\"session\"}'\n" +
+                 "    echo '{\"type\":\"agent_start\"}'\n" +
+                 "    echo '{\"type\":\"turn_start\"}'\n" +
+                 "    echo '{\"type\":\"message_start\"}'\n" +
+                 "    ;;\n" +
+                 "  message-end-no-text)\n" +
+                 "    echo '{\"type\":\"session\"}'\n" +
+                 "    echo '{\"type\":\"message_start\"}'\n" +
+                 "    echo '{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[]}}'\n" +
+                 "    ;;\n" +
+                 "  no-events)\n" +
                  "    ;;\n" +
                  "  invalid)\n" +
                  "    echo 'not-json'\n" +

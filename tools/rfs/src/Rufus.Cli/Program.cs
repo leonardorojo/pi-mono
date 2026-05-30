@@ -9,6 +9,7 @@ using Rufus.Cli.Intent;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
+using Rufus.RCK.Semantic;
 
 if (args.Length == 0)
 {
@@ -1275,6 +1276,70 @@ if (args[0] == "ask")
 
     return 0;
 }
+
+if (args[0] == "semantic")
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("Usage: rfs semantic <rebuild|show>");
+        return 1;
+    }
+
+    if (args[1] == "rebuild")
+    {
+        var result = RckSemanticWorkspaceAdapter.RebuildProjection();
+
+        if (!result.Success)
+        {
+            Console.Error.WriteLine(result.ErrorMessage);
+            return 1;
+        }
+
+        Console.WriteLine("rfs semantic rebuild");
+        Console.WriteLine($"  semantic nodes: {result.NodeCount}");
+        Console.WriteLine($"  semantic deltas: {result.DeltaCount}");
+        Console.WriteLine($"  output: {result.OutputPath}");
+        return 0;
+    }
+
+    if (args[1] == "show")
+    {
+        var projection = RckSemanticWorkspaceAdapter.TryReadProjection();
+
+        if (projection is null)
+        {
+            Console.Error.WriteLine("No semantic projection found. Run rfs semantic rebuild first.");
+            return 1;
+        }
+
+        Console.WriteLine($"schemaVersion: {projection.SchemaVersion}");
+        Console.WriteLine($"builtAtUtc: {projection.BuiltAtUtc:O}");
+        Console.WriteLine($"semantic nodes: {projection.Nodes.Count}");
+        Console.WriteLine($"semantic deltas: {projection.Deltas.Count}");
+        Console.WriteLine();
+        Console.WriteLine("Nodes:");
+
+        foreach (var node in projection.Nodes)
+        {
+            var shortAnchorId = node.AnchorId.Length > 12
+                ? node.AnchorId[..12]
+                : node.AnchorId;
+            var shortStateId = node.StateId.Length > 12
+                ? node.StateId[..12]
+                : node.StateId;
+
+            Console.WriteLine(
+                $"  - {node.AnchorName} | anchor: {shortAnchorId} | state: {shortStateId}");
+        }
+
+        return 0;
+    }
+
+    Console.Error.WriteLine($"Unknown semantic subcommand: {args[1]}");
+    Console.Error.WriteLine("Usage: rfs semantic <rebuild|show>");
+    return 1;
+}
+
 Console.Error.WriteLine($"Unknown command: {args[0]}");
 return 1;
 
@@ -1305,6 +1370,8 @@ static void PrintHelp()
     Console.WriteLine("  rfs agent [--record] <task>");
     Console.WriteLine("  rfs agent-json <task>");
     Console.WriteLine("  rfs intent [--record|--llm] <prompt>");
+    Console.WriteLine("  rfs semantic rebuild");
+    Console.WriteLine("  rfs semantic show");
     Console.WriteLine();
     Console.WriteLine("Modos:");
     Console.WriteLine("  pi         = passthrough interactivo a Pi TUI");
@@ -1320,6 +1387,7 @@ static void PrintHelp()
     Console.WriteLine("  trace-slice-validate-llm = prototipo experimental Pi-backed; el LLM propone y RFS valida antes de emitir el TraceSlice final");
     Console.WriteLine("  context-pack --trace-slice = materializa un context-pack focalizado desde TraceSlice v0 sin escribir RCK");
     Console.WriteLine("  context-pack --trace-slice-validated = materializa un context-pack focalizado desde un TraceSlice validado sin escribir RCK");
+    Console.WriteLine("  semantic = proyección semántica derivada sobre RCK (experimental v0)");
 }
 
 static bool IsLegacyAskBridgeEnabled()

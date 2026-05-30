@@ -1282,6 +1282,13 @@ if (args[0] == "semantic")
     if (args.Length < 2)
     {
         Console.Error.WriteLine("Usage: rfs semantic <rebuild|show>");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("  rebuild  Build/rebuild projection from .rfs/rck anchors");
+        Console.Error.WriteLine("  show     Display current projection");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("RCK Semantic Projection is a derived, reconstructible layer.");
+        Console.Error.WriteLine("RCK Core remains the only source of truth.");
+        Console.Error.WriteLine("No LLM, no embeddings, no .rfs/rck writes.");
         return 1;
     }
 
@@ -1296,9 +1303,15 @@ if (args[0] == "semantic")
         }
 
         Console.WriteLine("rfs semantic rebuild");
+        Console.WriteLine($"  source: .rfs/rck");
+        Console.WriteLine($"  output: {result.OutputPath}");
         Console.WriteLine($"  semantic nodes: {result.NodeCount}");
         Console.WriteLine($"  semantic deltas: {result.DeltaCount}");
-        Console.WriteLine($"  output: {result.OutputPath}");
+        Console.WriteLine($"  writes RCK: no");
+        Console.WriteLine($"  mode: deterministic");
+        Console.WriteLine($"  llm: no");
+        Console.WriteLine($"  embeddings: no");
+        Console.WriteLine($"  warning: sourceDeltaIds are not populated in v0");
         return 0;
     }
 
@@ -1308,14 +1321,17 @@ if (args[0] == "semantic")
 
         if (projection is null)
         {
-            Console.Error.WriteLine("No semantic projection found. Run rfs semantic rebuild first.");
+            Console.Error.WriteLine("No semantic projection found. Run `rfs semantic rebuild` first.");
             return 1;
         }
 
-        Console.WriteLine($"schemaVersion: {projection.SchemaVersion}");
-        Console.WriteLine($"builtAtUtc: {projection.BuiltAtUtc:O}");
-        Console.WriteLine($"semantic nodes: {projection.Nodes.Count}");
-        Console.WriteLine($"semantic deltas: {projection.Deltas.Count}");
+        Console.WriteLine("rfs semantic show");
+        Console.WriteLine($"  projection: .rfs/semantic/projection.json");
+        Console.WriteLine($"  schemaVersion: {projection.SchemaVersion}");
+        Console.WriteLine($"  builtAtUtc: {projection.BuiltAtUtc:O}");
+        Console.WriteLine($"  semantic nodes: {projection.Nodes.Count}");
+        Console.WriteLine($"  semantic deltas: {projection.Deltas.Count}");
+        Console.WriteLine($"  authority: derived projection, RCK Core remains source of truth");
         Console.WriteLine();
         Console.WriteLine("Nodes:");
 

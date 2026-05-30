@@ -10,5 +10,6 @@
     <ProjectReference Include="..\..\src\Rufus.Cli\Rufus.Cli.csproj" />
     <ProjectReference Include="..\..\src\Rufus.Agenting\Rufus.Agenting.csproj" />
     <ProjectReference Include="..\..\src\Rufus.RCK.Workspace\Rufus.RCK.Workspace.csproj" />
+    <ProjectReference Include="..\..\src\Rufus.RCK.Semantic\Rufus.RCK.Semantic.csproj" />
   </ItemGroup>
 </Project>

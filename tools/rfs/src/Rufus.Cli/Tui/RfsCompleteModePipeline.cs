@@ -384,7 +384,8 @@ public static class RfsCompleteModePipeline
             ? Directory.GetCurrentDirectory()
             : currentDirectory;
 
-        return new PiIntentInferenceAgent(workingDirectory);
+        var stageModel = RckWorkspaceModelConfigStore.TryReadStageModel("intent", workingDirectory);
+        return new PiIntentInferenceAgent(workingDirectory, stageModel);
     }
 
     private static IAgent ResolveProposalAgent(string? currentDirectory)
@@ -393,7 +394,8 @@ public static class RfsCompleteModePipeline
             ? Directory.GetCurrentDirectory()
             : currentDirectory;
 
-        return new PiTraceSliceProposalAgent(workingDirectory);
+        var stageModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", workingDirectory);
+        return new PiTraceSliceProposalAgent(workingDirectory, stageModel);
     }
 
     private static PiTraceSliceProposalAgent ResolveAnchorSelectionAgent(string? currentDirectory)
@@ -402,7 +404,8 @@ public static class RfsCompleteModePipeline
             ? Directory.GetCurrentDirectory()
             : currentDirectory;
 
-        return new PiTraceSliceProposalAgent(workingDirectory);
+        var stageModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", workingDirectory);
+        return new PiTraceSliceProposalAgent(workingDirectory, stageModel);
     }
 
     private static IReadOnlyList<string> BuildAnchorSelectionPolicyHints(int maxRecentInteractions)
@@ -530,7 +533,8 @@ public static class RfsCompleteModePipeline
             return RfsCompleteConversationalMemoryResult.Failure(inputResult.ErrorMessage ?? "conversational memory input build failed.", inputWarnings);
         }
 
-        var agent = conversationalMemoryAgent ?? new PiConversationalMemoryAgent(repoRoot ?? string.Empty);
+        var stageModel = RckWorkspaceModelConfigStore.TryReadStageModel("conversationalMemory", repoRoot);
+        var agent = conversationalMemoryAgent ?? new PiConversationalMemoryAgent(repoRoot ?? string.Empty, stageModel);
         var task = new AgentTask(
             id: $"tui-cm-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}",
             kind: "build-conversational-memory",

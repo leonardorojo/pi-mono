@@ -124,6 +124,66 @@ public static class RckWorkspaceModelConfigStore
         return result.Success ? result.DefaultModel : null;
     }
 
+    /// <summary>
+    /// Reads a stage-specific model override from llm.stages.<stageName>.model.
+    /// Returns null when the stage is not configured, the model value is missing/empty,
+    /// or the config file does not exist / is malformed.
+    /// </summary>
+    public static string? TryReadStageModel(string stageName, string? startingDirectory = null)
+    {
+        if (string.IsNullOrWhiteSpace(stageName))
+        {
+            return null;
+        }
+
+        var repoRoot = FindRepoRoot(startingDirectory ?? Directory.GetCurrentDirectory());
+        if (repoRoot is null)
+        {
+            return null;
+        }
+
+        var paths = new RckWorkspacePaths(repoRoot);
+        if (!File.Exists(paths.ConfigPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var config = ReadConfig(paths.ConfigPath);
+            if (!config.TryGetPropertyValue("llm", out var llmNode) || llmNode is not JsonObject llm)
+            {
+                return null;
+            }
+
+            if (!llm.TryGetPropertyValue("stages", out var stagesNode) || stagesNode is not JsonObject stages)
+            {
+                return null;
+            }
+
+            if (!stages.TryGetPropertyValue(stageName, out var stageNode) || stageNode is not JsonObject stage)
+            {
+                return null;
+            }
+
+            if (!stage.TryGetPropertyValue("model", out var modelNode) || modelNode is not JsonValue modelValue)
+            {
+                return null;
+            }
+
+            if (!modelValue.TryGetValue<string>(out var model))
+            {
+                return null;
+            }
+
+            return string.IsNullOrWhiteSpace(model) ? null : model.Trim();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static JsonObject ReadConfig(string configPath)
     {
         var node = JsonNode.Parse(File.ReadAllText(configPath))

@@ -374,6 +374,7 @@ await RunRckTraceSliceProposalValidatorCriticalCasesAsync(failures);
 await RckAnchorExpansionServiceChecks.RunAsync(failures);
 await RckDagQuickIndexV1BuilderChecks.RunAsync(failures);
 await RckConversationalMemoryInputBuilderChecks.RunAsync(failures);
+await RckSemanticChecks.RunAsync(failures);
 
 await RunContextPackTraceSliceCliCaseAsync(
     name: "context-pack --trace-slice renders deterministic context pack JSON",

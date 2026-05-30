@@ -746,15 +746,8 @@ public static class PiJsonEventRunner
             return;
         }
 
-        var trimmedModel = workspaceModel.Trim();
-        if (trimmedModel.Contains('/', StringComparison.Ordinal))
-        {
-            startInfo.ArgumentList.Add("--model");
-            startInfo.ArgumentList.Add(trimmedModel);
-            return;
-        }
-
-        startInfo.Environment["RUFUSCHAT_LLM_MODEL"] = trimmedModel;
+        startInfo.ArgumentList.Add("--model");
+        startInfo.ArgumentList.Add(workspaceModel.Trim());
     }
 
     private static void CaptureAssistantMetadata(JsonElement element, ref string? provider, ref string? model)

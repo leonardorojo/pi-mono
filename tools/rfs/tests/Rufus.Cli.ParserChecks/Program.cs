@@ -4757,10 +4757,21 @@ static async Task RunIntentCliLlmCaseAsync(
     var scriptPath = Path.Combine(tempRoot, "pi");
     var script = "#!/usr/bin/env bash\n" +
                  "set -euo pipefail\n" +
-                 $"printf '%s' \"${{RUFUSCHAT_LLM_MODEL:-missing}}\" > \"{modelFilePath}\"\n" +
+                 "MODEL=missing\n" +
+                 "next=0\n" +
+                 "for i in \"$@\"; do\n" +
+                 "  if [ \"$next\" = 1 ]; then\n" +
+                 "    MODEL=\"$i\"\n" +
+                 "    break\n" +
+                 "  fi\n" +
+                 "  if [ \"$i\" = \"--model\" ]; then\n" +
+                 "    next=1\n" +
+                 "  fi\n" +
+                 "done\n" +
+                 $"printf '%s' \"$MODEL\" > \"{modelFilePath}\"\n" +
                  "echo '{\"type\":\"session\"}'\n" +
                  "cat <<EOF\n" +
-                 "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"${RUFUSCHAT_LLM_MODEL:-missing}\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"intent\\\":\\\"implement-reset-board\\\",\\\"summary\\\":\\\"Implement the reset board action.\\\",\\\"entities\\\":[\\\"reset board\\\"],\\\"constraints\\\":[]}\"}]}}\n" +
+                 "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"$MODEL\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"intent\\\":\\\"implement-reset-board\\\",\\\"summary\\\":\\\"Implement the reset board action.\\\",\\\"entities\\\":[\\\"reset board\\\"],\\\"constraints\\\":[]}\"}]}}\n" +
                  "EOF\n" +
                  "exit 0\n";
 
@@ -4875,9 +4886,20 @@ static async Task RunPiJsonRunnerWorkspaceModelCaseAsync(
     var scriptPath = Path.Combine(tempRoot, "pi");
     var script = "#!/usr/bin/env bash\n" +
                  "set -euo pipefail\n" +
+                 "MODEL=missing\n" +
+                 "next=0\n" +
+                 "for i in \"$@\"; do\n" +
+                 "  if [ \"$next\" = 1 ]; then\n" +
+                 "    MODEL=\"$i\"\n" +
+                 "    break\n" +
+                 "  fi\n" +
+                 "  if [ \"$i\" = \"--model\" ]; then\n" +
+                 "    next=1\n" +
+                 "  fi\n" +
+                 "done\n" +
                  "echo '{\"type\":\"session\"}'\n" +
                  "cat <<EOF\n" +
-                 "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"${RUFUSCHAT_LLM_MODEL:-missing}\",\"content\":[{\"type\":\"text\",\"text\":\"structured answer\"}]}}\n" +
+                 "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"test-provider\",\"model\":\"$MODEL\",\"content\":[{\"type\":\"text\",\"text\":\"structured answer\"}]}}\n" +
                  "EOF\n" +
                  "exit 0\n";
 

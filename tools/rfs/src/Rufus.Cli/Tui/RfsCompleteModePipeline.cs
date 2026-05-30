@@ -265,7 +265,16 @@ public static class RfsCompleteModePipeline
             input: JsonSerializer.Serialize(anchorSelectionInput, JsonOptions),
             expectedOutput: "RckAnchorSelection JSON");
 
-        var anchorSelectionResult = await anchorSelectionAgent.ExecuteAnchorSelectionAsync(anchorSelectionTask, cancellationToken).ConfigureAwait(false);
+        var anchorSelectionResult = await anchorSelectionAgent.ExecuteAnchorSelectionAsync(
+            anchorSelectionTask,
+            cancellationToken,
+            onPromptDumped: promptDumpPath =>
+            {
+                if (stageWriter is not null && !string.IsNullOrWhiteSpace(promptDumpPath))
+                {
+                    RfsTuiRenderer.WriteCompleteStageDetail("promptDump", promptDumpPath);
+                }
+            }).ConfigureAwait(false);
         if (anchorSelectionResult.Status == AgentTaskStatus.Failed || string.IsNullOrWhiteSpace(anchorSelectionResult.Output))
         {
             var firstError = anchorSelectionResult.Errors.FirstOrDefault();

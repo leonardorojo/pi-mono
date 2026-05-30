@@ -254,6 +254,7 @@ await PiPrincipalAnswerAgentChecks.RunAsync(failures);
 await PiTraceSliceProposalAgentChecks.RunAsync(failures);
 await PiConversationalMemoryAgentChecks.RunAsync(failures);
 await RfsStageModelConfigChecks.RunAsync(failures);
+await RfsPromptDumpChecks.RunAsync(failures);
 
 await RunPiIntentInferenceAgentFailureCaseAsync(
     name: "pi intent agent rejects invalid llm json",

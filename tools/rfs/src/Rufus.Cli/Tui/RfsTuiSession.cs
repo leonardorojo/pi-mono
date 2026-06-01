@@ -992,11 +992,9 @@ internal static class RfsTuiSession
 
         if (remainder.Length == 0)
         {
-            var profiles = RfsCompleteModelProfileStore.GetAvailableProfiles();
-            Console.WriteLine("Available Complete profiles:");
-            foreach (var profile in profiles)
+            foreach (var line in RfsCompleteModelProfileStore.GetCompleteProfileHelpLines())
             {
-                Console.WriteLine($"- {profile.Name}");
+                Console.WriteLine(line);
             }
 
             return true;
@@ -1010,8 +1008,10 @@ internal static class RfsTuiSession
 
         if (profileName.Length == 0 || profileName.Contains('\n') || profileName.Contains('\r'))
         {
-            Console.WriteLine("Usage:");
-            Console.WriteLine("  /complete-profile <profile>");
+            foreach (var line in RfsCompleteModelProfileStore.GetCompleteProfileHelpLines())
+            {
+                Console.WriteLine(line);
+            }
             return true;
         }
 
@@ -1026,12 +1026,9 @@ internal static class RfsTuiSession
             var message = result.ErrorMessage!;
             if (message.StartsWith("Unknown Complete profile:", StringComparison.Ordinal))
             {
-                Console.Error.WriteLine(message);
-                Console.Error.WriteLine("Available profiles:");
-                var profiles = RfsCompleteModelProfileStore.GetAvailableProfiles();
-                foreach (var profile in profiles)
+                foreach (var line in RfsCompleteModelProfileStore.GetUnknownProfileHelpLines(profileName))
                 {
-                    Console.Error.WriteLine($"- {profile.Name}");
+                    Console.Error.WriteLine(line);
                 }
 
                 return true;

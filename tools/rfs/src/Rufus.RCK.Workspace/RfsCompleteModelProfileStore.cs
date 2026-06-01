@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -17,7 +18,8 @@ public sealed record RfsCompleteModelProfile(
     string DefaultModel,
     string IntentModel,
     string TraceSliceProposalModel,
-    string ConversationalMemoryModel);
+    string ConversationalMemoryModel,
+    string Description);
 
 public static class RfsCompleteModelProfileStore
 {
@@ -31,17 +33,69 @@ public static class RfsCompleteModelProfileStore
             DefaultModel: "deepseek-chat",
             IntentModel: "deepseek-chat",
             TraceSliceProposalModel: "deepseek-chat",
-            ConversationalMemoryModel: "deepseek-chat"),
+            ConversationalMemoryModel: "deepseek-chat",
+            Description: "Cheap/local-oriented profile for testing Complete mode"),
         new(
             Name: "balanced",
             DefaultModel: "gpt-5.4-mini",
             IntentModel: "claude-haiku-4.5",
             TraceSliceProposalModel: "gpt-5.4-mini",
-            ConversationalMemoryModel: "claude-haiku-4.5"),
+            ConversationalMemoryModel: "claude-haiku-4.5",
+            Description: "Balanced profile for normal Complete mode usage"),
     ];
 
     public static IReadOnlyList<RfsCompleteModelProfile> GetAvailableProfiles()
         => Profiles;
+
+    public static string FormatProfileUsageChoices()
+        => string.Join("|", Profiles.Select(profile => profile.Name));
+
+    public static IReadOnlyList<string> GetAvailableProfileNames()
+        => Profiles.Select(profile => profile.Name).ToArray();
+
+    public static IReadOnlyList<string> GetCompleteProfileHelpLines()
+    {
+        var lines = new List<string>
+        {
+            "Usage:",
+            $"  /complete-profile <{FormatProfileUsageChoices()}>",
+            string.Empty,
+            "Available profiles:",
+        };
+
+        var nameWidth = Profiles.Max(profile => profile.Name.Length);
+        foreach (var profile in Profiles)
+        {
+            lines.Add($"  {profile.Name.PadRight(nameWidth)}  {profile.Description}");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("Examples:");
+        lines.Add("  /complete-profile test");
+        lines.Add("  /complete-profile balanced");
+        return lines;
+    }
+
+    public static IReadOnlyList<string> GetUnknownProfileHelpLines(string profileName)
+    {
+        var lines = new List<string>
+        {
+            $"Unknown Complete profile: {profileName}",
+            string.Empty,
+            "Available profiles:",
+        };
+
+        foreach (var name in GetAvailableProfileNames())
+        {
+            lines.Add($"  {name}");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("Examples:");
+        lines.Add("  /complete-profile test");
+        lines.Add("  /complete-profile balanced");
+        return lines;
+    }
 
     public static RfsCompleteModelProfile? FindProfile(string name)
         => Profiles.FirstOrDefault(profile => string.Equals(profile.Name, name, StringComparison.Ordinal));

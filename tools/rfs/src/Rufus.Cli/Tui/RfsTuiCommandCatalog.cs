@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.Tui;
 
@@ -130,7 +131,7 @@ internal static class RfsTuiCommandCatalog
         new(RfsTuiCommandKind.Context, "/context", "/context", "Show last context summary"),
         new(RfsTuiCommandKind.Trace, "/trace", "/trace", "Show last TraceSlice summary"),
         new(RfsTuiCommandKind.Anchor, "/anchor", "/anchor \"name\"", "Create milestone anchor", RfsTuiCommandMatchMode.ExactOrArguments),
-        new(RfsTuiCommandKind.CompleteProfile, "/complete-profile", "/complete-profile <profile>", "Apply a Complete model profile", RfsTuiCommandMatchMode.ExactOrArguments),
+        new(RfsTuiCommandKind.CompleteProfile, "/complete-profile", $"/complete-profile <{RfsCompleteModelProfileStore.FormatProfileUsageChoices()}>", "Apply a Complete model profile", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.Help, "/help", "/help", "Show this help"),
         new(RfsTuiCommandKind.HermesDraft, "/hermes draft", "/hermes draft", "Build Hermes handoff draft", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.HermesRun, "/hermes run", "/hermes run", "Execute Hermes once with guardrails", RfsTuiCommandMatchMode.ExactOrArguments),

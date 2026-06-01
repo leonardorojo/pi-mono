@@ -9,13 +9,13 @@ describe("getSupportedThinkingLevels", () => {
 	});
 
 	it("includes xhigh for Anthropic Opus 4.8 on anthropic-messages API", () => {
-		const model = getModel("anthropic", "claude-opus-4-8");
+		const model = getModel("cloudflare-ai-gateway", "claude-opus-4-8");
 		expect(model).toBeDefined();
 		expect(getSupportedThinkingLevels(model!)).toContain("xhigh");
 	});
 
 	it("includes xhigh for Anthropic Opus 4.8 on anthropic-messages API", () => {
-		const model = getModel("anthropic", "claude-opus-4-8");
+		const model = getModel("cloudflare-ai-gateway", "claude-opus-4-8");
 		expect(model).toBeDefined();
 		expect(getSupportedThinkingLevels(model!)).toContain("xhigh");
 	});

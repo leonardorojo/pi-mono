@@ -9,6 +9,8 @@ internal static class RfsCompleteModelProfileChecks
     {
         await RunApplyTestAsync(failures);
         await RunApplyBalancedAsync(failures);
+        RunHelpPresentationAsync(failures);
+        RunUnknownProfileHelpAsync(failures);
         await RunPreserveExistingFieldsAsync(failures);
         await RunPreserveUnknownFieldsAsync(failures);
         await RunUnknownProfileAsync(failures);
@@ -245,6 +247,40 @@ internal static class RfsCompleteModelProfileChecks
         }
 
         return Task.CompletedTask;
+    }
+
+    private static void RunHelpPresentationAsync(List<string> failures)
+    {
+        const string name = "complete profile help shows usage and examples";
+        var lines = RfsCompleteModelProfileStore.GetCompleteProfileHelpLines();
+
+        Expect(lines.Any(line => string.Equals(line, "Usage:", StringComparison.Ordinal)),
+            $"[{name}] expected Usage section.", failures);
+        Expect(lines.Any(line => line.Contains("/complete-profile <test|balanced>", StringComparison.Ordinal)),
+            $"[{name}] expected explicit profile choices in usage.", failures);
+        Expect(lines.Any(line => line.Contains("Cheap/local-oriented profile for testing Complete mode", StringComparison.Ordinal)),
+            $"[{name}] expected test profile description.", failures);
+        Expect(lines.Any(line => line.Contains("Balanced profile for normal Complete mode usage", StringComparison.Ordinal)),
+            $"[{name}] expected balanced profile description.", failures);
+        Expect(lines.Any(line => string.Equals(line.Trim(), "/complete-profile test", StringComparison.Ordinal)),
+            $"[{name}] expected test example.", failures);
+        Expect(lines.Any(line => string.Equals(line.Trim(), "/complete-profile balanced", StringComparison.Ordinal)),
+            $"[{name}] expected balanced example.", failures);
+    }
+
+    private static void RunUnknownProfileHelpAsync(List<string> failures)
+    {
+        const string name = "complete profile unknown help shows valid profiles and examples";
+        var lines = RfsCompleteModelProfileStore.GetUnknownProfileHelpLines("fast");
+
+        Expect(lines.FirstOrDefault() == "Unknown Complete profile: fast",
+            $"[{name}] expected unknown profile header.", failures);
+        Expect(lines.Any(line => line.Trim() == "test"), $"[{name}] expected test profile listing.", failures);
+        Expect(lines.Any(line => line.Trim() == "balanced"), $"[{name}] expected balanced profile listing.", failures);
+        Expect(lines.Any(line => string.Equals(line.Trim(), "/complete-profile test", StringComparison.Ordinal)),
+            $"[{name}] expected test example.", failures);
+        Expect(lines.Any(line => string.Equals(line.Trim(), "/complete-profile balanced", StringComparison.Ordinal)),
+            $"[{name}] expected balanced example.", failures);
     }
 
     private static Task RunModelGetAfterProfileAsync(List<string> failures)

@@ -865,6 +865,8 @@ internal static class RfsTuiSession
                     }
                 case RfsTuiCommandKind.Anchor:
                     return HandleAnchorCommand(input, repoRoot);
+                case RfsTuiCommandKind.CompleteProfile:
+                    return HandleCompleteProfileCommand(input, repoRoot);
                 case RfsTuiCommandKind.Help:
                     RenderHelp();
                     return true;
@@ -900,6 +902,11 @@ internal static class RfsTuiSession
         {
             RenderTrace();
             return true;
+        }
+
+        if (string.Equals(input, "/complete-profile", StringComparison.Ordinal) || input.StartsWith("/complete-profile ", StringComparison.Ordinal))
+        {
+            return HandleCompleteProfileCommand(input, repoRoot);
         }
 
         if (!TryParseAnchorCommand(input, out var anchorLabel))
@@ -974,6 +981,72 @@ internal static class RfsTuiSession
         {
             Console.WriteLine(line);
         }
+
+        return true;
+    }
+
+    private static bool HandleCompleteProfileCommand(string input, string repoRoot)
+    {
+        const string command = "/complete-profile";
+        var remainder = input[command.Length..].Trim();
+
+        if (remainder.Length == 0)
+        {
+            var profiles = RfsCompleteModelProfileStore.GetAvailableProfiles();
+            Console.WriteLine("Available Complete profiles:");
+            foreach (var profile in profiles)
+            {
+                Console.WriteLine($"- {profile.Name}");
+            }
+
+            return true;
+        }
+
+        var profileName = remainder;
+        if (profileName.StartsWith('"') && profileName.EndsWith('"'))
+        {
+            profileName = profileName[1..^1].Trim();
+        }
+
+        if (profileName.Length == 0 || profileName.Contains('\n') || profileName.Contains('\r'))
+        {
+            Console.WriteLine("Usage:");
+            Console.WriteLine("  /complete-profile <profile>");
+            return true;
+        }
+
+        var result = RfsCompleteModelProfileStore.SetCompleteProfile(profileName, repoRoot);
+        if (!result.Success)
+        {
+            if (string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                return true;
+            }
+
+            var message = result.ErrorMessage!;
+            if (message.StartsWith("Unknown Complete profile:", StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine(message);
+                Console.Error.WriteLine("Available profiles:");
+                var profiles = RfsCompleteModelProfileStore.GetAvailableProfiles();
+                foreach (var profile in profiles)
+                {
+                    Console.Error.WriteLine($"- {profile.Name}");
+                }
+
+                return true;
+            }
+
+            Console.Error.WriteLine(message);
+            return true;
+        }
+
+        var appliedProfile = result.AppliedProfile!;
+        Console.WriteLine($"Complete profile applied: {appliedProfile.Name}");
+        Console.WriteLine($"defaultModel: {appliedProfile.DefaultModel}");
+        Console.WriteLine($"intent: {appliedProfile.IntentModel}");
+        Console.WriteLine($"traceSliceProposal: {appliedProfile.TraceSliceProposalModel}");
+        Console.WriteLine($"conversationalMemory: {appliedProfile.ConversationalMemoryModel}");
 
         return true;
     }

@@ -285,7 +285,7 @@ if (args[0] == "model")
 {
     if (args.Length < 2 || args.Length > 3)
     {
-        Console.Error.WriteLine("Usage: rfs model get|set|list <model>");
+        Console.Error.WriteLine("Usage: rfs model get|set|list|profile <model>");
         return 1;
     }
 
@@ -394,6 +394,57 @@ if (args[0] == "model")
         Console.WriteLine("Current workspace model:");
         Console.WriteLine($"  {(string.IsNullOrWhiteSpace(currentWorkspaceModel) ? "(inherited)" : currentWorkspaceModel)}");
 
+        return 0;
+    }
+
+    if (args[1] == "profile")
+    {
+        if (args.Length < 2 || args.Length > 3)
+        {
+            Console.Error.WriteLine("Usage: rfs model profile <profile>");
+            return 1;
+        }
+
+        if (args.Length == 2)
+        {
+            var profiles = RfsCompleteModelProfileStore.GetAvailableProfiles();
+            Console.WriteLine("Available Complete profiles:");
+            foreach (var profile in profiles)
+            {
+                Console.WriteLine($"- {profile.Name}");
+            }
+
+            return 0;
+        }
+
+        var profileName = args[2];
+        var result = RfsCompleteModelProfileStore.SetCompleteProfile(profileName);
+        if (!result.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                Console.Error.WriteLine(result.ErrorMessage);
+            }
+
+            if (result.ErrorMessage?.StartsWith("Unknown Complete profile:", StringComparison.Ordinal) == true)
+            {
+                Console.Error.WriteLine("Available profiles:");
+                var profiles = RfsCompleteModelProfileStore.GetAvailableProfiles();
+                foreach (var profile in profiles)
+                {
+                    Console.Error.WriteLine($"- {profile.Name}");
+                }
+            }
+
+            return 1;
+        }
+
+        var appliedProfile = result.AppliedProfile!;
+        Console.WriteLine($"Complete profile applied: {appliedProfile.Name}");
+        Console.WriteLine($"defaultModel: {appliedProfile.DefaultModel}");
+        Console.WriteLine($"intent: {appliedProfile.IntentModel}");
+        Console.WriteLine($"traceSliceProposal: {appliedProfile.TraceSliceProposalModel}");
+        Console.WriteLine($"conversationalMemory: {appliedProfile.ConversationalMemoryModel}");
         return 0;
     }
 
@@ -1380,6 +1431,7 @@ static void PrintHelp()
     Console.WriteLine("  rfs model get");
     Console.WriteLine("  rfs model set <model>");
     Console.WriteLine("  rfs model list");
+    Console.WriteLine("  rfs model profile [<profile>]");
     Console.WriteLine("  rfs pi [message]");
     Console.WriteLine("  rfs ask [--record] <prompt>");
     Console.WriteLine("  rfs ask-json <prompt>");

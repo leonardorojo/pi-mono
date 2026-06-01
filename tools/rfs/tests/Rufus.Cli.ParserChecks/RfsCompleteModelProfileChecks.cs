@@ -7,8 +7,8 @@ internal static class RfsCompleteModelProfileChecks
 {
     public static async Task RunAsync(List<string> failures)
     {
-        await RunApplyDeepseekTestAsync(failures);
-        await RunApplyCopilotBalancedAsync(failures);
+        await RunApplyTestAsync(failures);
+        await RunApplyBalancedAsync(failures);
         await RunPreserveExistingFieldsAsync(failures);
         await RunPreserveUnknownFieldsAsync(failures);
         await RunUnknownProfileAsync(failures);
@@ -16,16 +16,16 @@ internal static class RfsCompleteModelProfileChecks
         await RunModelGetAfterProfileAsync(failures);
     }
 
-    private static Task RunApplyDeepseekTestAsync(List<string> failures)
+    private static Task RunApplyTestAsync(List<string> failures)
     {
-        const string name = "complete profile deepseek-test applies correct stage models";
+        const string name = "complete profile test applies correct stage models";
         var tempDir = Path.Combine(Path.GetTempPath(), $"rfs-complete-profile-check-{Guid.NewGuid():N}");
         try
         {
             Directory.CreateDirectory(tempDir);
             InitGitAndRfs(tempDir);
 
-            var result = RfsCompleteModelProfileStore.SetCompleteProfile("deepseek-test", tempDir);
+            var result = RfsCompleteModelProfileStore.SetCompleteProfile("test", tempDir);
             Expect(result.Success, $"[{name}] expected SetCompleteProfile to succeed but got: {result.ErrorMessage}.", failures);
             Expect(result.AppliedProfile is not null, $"[{name}] expected AppliedProfile to be non-null.", failures);
 
@@ -53,16 +53,16 @@ internal static class RfsCompleteModelProfileChecks
         return Task.CompletedTask;
     }
 
-    private static Task RunApplyCopilotBalancedAsync(List<string> failures)
+    private static Task RunApplyBalancedAsync(List<string> failures)
     {
-        const string name = "complete profile copilot-balanced applies correct stage models";
+        const string name = "complete profile balanced applies correct stage models";
         var tempDir = Path.Combine(Path.GetTempPath(), $"rfs-complete-profile-check-{Guid.NewGuid():N}");
         try
         {
             Directory.CreateDirectory(tempDir);
             InitGitAndRfs(tempDir);
 
-            var result = RfsCompleteModelProfileStore.SetCompleteProfile("copilot-balanced", tempDir);
+            var result = RfsCompleteModelProfileStore.SetCompleteProfile("balanced", tempDir);
             Expect(result.Success, $"[{name}] expected SetCompleteProfile to succeed but got: {result.ErrorMessage}.", failures);
             Expect(result.AppliedProfile is not null, $"[{name}] expected AppliedProfile to be non-null.", failures);
 
@@ -113,7 +113,7 @@ internal static class RfsCompleteModelProfileChecks
             };
             File.WriteAllText(Path.Combine(tempDir, ".rfs", "config.json"), JsonSerializer.Serialize(initialConfig));
 
-            var result = RfsCompleteModelProfileStore.SetCompleteProfile("deepseek-test", tempDir);
+            var result = RfsCompleteModelProfileStore.SetCompleteProfile("test", tempDir);
             Expect(result.Success, $"[{name}] expected SetCompleteProfile to succeed but got: {result.ErrorMessage}.", failures);
 
             // Read back raw JSON
@@ -170,7 +170,7 @@ internal static class RfsCompleteModelProfileChecks
             };
             File.WriteAllText(Path.Combine(tempDir, ".rfs", "config.json"), JsonSerializer.Serialize(initialConfig));
 
-            var result = RfsCompleteModelProfileStore.SetCompleteProfile("deepseek-test", tempDir);
+            var result = RfsCompleteModelProfileStore.SetCompleteProfile("test", tempDir);
             Expect(result.Success, $"[{name}] expected SetCompleteProfile to succeed but got: {result.ErrorMessage}.", failures);
 
             // Read back raw JSON
@@ -224,24 +224,24 @@ internal static class RfsCompleteModelProfileChecks
         var profiles = RfsCompleteModelProfileStore.GetAvailableProfiles();
         Expect(profiles.Count >= 1, $"[{name}] expected at least 1 profile.", failures);
 
-        var deepseek = profiles.FirstOrDefault(p => string.Equals(p.Name, "deepseek-test", StringComparison.Ordinal));
-        Expect(deepseek is not null, $"[{name}] expected 'deepseek-test' profile to exist.", failures);
-        if (deepseek is not null)
+        var testProfile = profiles.FirstOrDefault(p => string.Equals(p.Name, "test", StringComparison.Ordinal));
+        Expect(testProfile is not null, $"[{name}] expected 'test' profile to exist.", failures);
+        if (testProfile is not null)
         {
-            Expect(string.Equals(deepseek.DefaultModel, "deepseek-chat", StringComparison.Ordinal),
-                $"[{name}] expected deepseek-test defaultModel 'deepseek-chat'.", failures);
-            Expect(string.Equals(deepseek.IntentModel, "deepseek-chat", StringComparison.Ordinal),
-                $"[{name}] expected deepseek-test IntentModel 'deepseek-chat'.", failures);
+            Expect(string.Equals(testProfile.DefaultModel, "deepseek-chat", StringComparison.Ordinal),
+                $"[{name}] expected test defaultModel 'deepseek-chat'.", failures);
+            Expect(string.Equals(testProfile.IntentModel, "deepseek-chat", StringComparison.Ordinal),
+                $"[{name}] expected test IntentModel 'deepseek-chat'.", failures);
         }
 
-        var copilot = profiles.FirstOrDefault(p => string.Equals(p.Name, "copilot-balanced", StringComparison.Ordinal));
-        Expect(copilot is not null, $"[{name}] expected 'copilot-balanced' profile to exist.", failures);
-        if (copilot is not null)
+        var balancedProfile = profiles.FirstOrDefault(p => string.Equals(p.Name, "balanced", StringComparison.Ordinal));
+        Expect(balancedProfile is not null, $"[{name}] expected 'balanced' profile to exist.", failures);
+        if (balancedProfile is not null)
         {
-            Expect(string.Equals(copilot.DefaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name}] expected copilot-balanced defaultModel 'gpt-5.4-mini'.", failures);
-            Expect(string.Equals(copilot.IntentModel, "claude-haiku-4.5", StringComparison.Ordinal),
-                $"[{name}] expected copilot-balanced IntentModel 'claude-haiku-4.5'.", failures);
+            Expect(string.Equals(balancedProfile.DefaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
+                $"[{name}] expected balanced defaultModel 'gpt-5.4-mini'.", failures);
+            Expect(string.Equals(balancedProfile.IntentModel, "claude-haiku-4.5", StringComparison.Ordinal),
+                $"[{name}] expected balanced IntentModel 'claude-haiku-4.5'.", failures);
         }
 
         return Task.CompletedTask;
@@ -256,21 +256,21 @@ internal static class RfsCompleteModelProfileChecks
             Directory.CreateDirectory(tempDir);
             InitGitAndRfs(tempDir);
 
-            // Apply deepseek-test
-            var result = RfsCompleteModelProfileStore.SetCompleteProfile("deepseek-test", tempDir);
-            Expect(result.Success, $"[{name} deepseek] expected success but got: {result.ErrorMessage}.", failures);
+            // Apply test
+            var result = RfsCompleteModelProfileStore.SetCompleteProfile("test", tempDir);
+            Expect(result.Success, $"[{name} test] expected success but got: {result.ErrorMessage}.", failures);
 
             var defaultModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(tempDir);
             Expect(string.Equals(defaultModel, "deepseek-chat", StringComparison.Ordinal),
-                $"[{name} deepseek] expected 'deepseek-chat' but got '{defaultModel}'.", failures);
+                $"[{name} test] expected 'deepseek-chat' but got '{defaultModel}'.", failures);
 
-            // Apply copilot-balanced
-            result = RfsCompleteModelProfileStore.SetCompleteProfile("copilot-balanced", tempDir);
-            Expect(result.Success, $"[{name} copilot] expected success but got: {result.ErrorMessage}.", failures);
+            // Apply balanced
+            result = RfsCompleteModelProfileStore.SetCompleteProfile("balanced", tempDir);
+            Expect(result.Success, $"[{name} balanced] expected success but got: {result.ErrorMessage}.", failures);
 
             defaultModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(tempDir);
             Expect(string.Equals(defaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name} copilot] expected 'gpt-5.4-mini' but got '{defaultModel}'.", failures);
+                $"[{name} balanced] expected 'gpt-5.4-mini' but got '{defaultModel}'.", failures);
         }
         finally
         {

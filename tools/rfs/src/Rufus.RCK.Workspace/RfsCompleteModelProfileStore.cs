@@ -27,13 +27,13 @@ public static class RfsCompleteModelProfileStore
     internal static readonly RfsCompleteModelProfile[] Profiles =
     [
         new(
-            Name: "deepseek-test",
+            Name: "test",
             DefaultModel: "deepseek-chat",
             IntentModel: "deepseek-chat",
             TraceSliceProposalModel: "deepseek-chat",
             ConversationalMemoryModel: "deepseek-chat"),
         new(
-            Name: "copilot-balanced",
+            Name: "balanced",
             DefaultModel: "gpt-5.4-mini",
             IntentModel: "claude-haiku-4.5",
             TraceSliceProposalModel: "gpt-5.4-mini",

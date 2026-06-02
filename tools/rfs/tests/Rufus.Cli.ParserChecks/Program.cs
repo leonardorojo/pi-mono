@@ -5339,6 +5339,7 @@ static void RunRfsTuiModeSelectionParserCases(List<string> failures)
         ("4", RfsTuiModeSelection.Plan),
         ("/cancel", RfsTuiModeSelection.Cancel),
         ("cancel", RfsTuiModeSelection.Cancel),
+        ("/quit", RfsTuiModeSelection.Exit),
         ("/exit", RfsTuiModeSelection.Exit),
         ("x", RfsTuiModeSelection.Invalid),
     };
@@ -5398,6 +5399,22 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
             Expected = new[]
             {
                 (Usage: "/trace", Description: "Show last TraceSlice summary"),
+            },
+        },
+        new
+        {
+            Input = "/qu",
+            Expected = new[]
+            {
+                (Usage: "/quit", Description: "Alias for /exit"),
+            },
+        },
+        new
+        {
+            Input = "/cl",
+            Expected = new[]
+            {
+                (Usage: "/clear", Description: "Clear the screen"),
             },
         },
         new
@@ -5468,7 +5485,7 @@ static void RunRfsTuiCommandSuggestionCases(List<string> failures)
     }
 
     var helpCommands = RfsTuiCommandCatalog.GetHelpCommands().ToArray();
-    var requiredHelpUsages = new[] { "/help", "/model", "/model <model>", "/context" };
+    var requiredHelpUsages = new[] { "/help", "/model", "/model <model>", "/context", "/clear", "/quit" };
     foreach (var usage in requiredHelpUsages)
     {
         if (!helpCommands.Any(command => string.Equals(command.Usage, usage, StringComparison.Ordinal)))
@@ -5762,6 +5779,12 @@ static async Task RunRfsTuiInitializedSessionCaseAsync(string name, List<string>
             },
             new
             {
+                Input = "/quit\n",
+                Required = new[] { "RFS · ", "RCK:", "Git:", "Model:" },
+                Forbidden = new[] { "Workspace not initialized.", "Write a prompt, then choose:", "Unknown command: /quit" }
+            },
+            new
+            {
                 Input = "/xyz\n",
                 Required = new[] { "Unknown command: /xyz", "Type /help to show available commands." },
                 Forbidden = new[] { "Workspace not initialized.", "Write a prompt, then choose:" }
@@ -5846,7 +5869,7 @@ static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, L
 
         var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
         var configBefore = RckWorkspaceModelConfigStore.Read(tempRoot);
-        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/status\n/log\n/model\n/context\n/trace\n/model gpt-5.4-mini\n/model\n/help\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
+        var tuiResult = await RunProcessAsyncWithInput(tempRoot, "/clear\n/status\n/log\n/model\n/context\n/trace\n/model gpt-5.4-mini\n/model\n/help\n/exit\n", "dotnet", "run", "--project", cliProjectPath, "--");
         if (tuiResult.ExitCode != 0)
         {
             failures.Add($"[{name}] expected exit code 0 but got {tuiResult.ExitCode}. stderr: {tuiResult.Stderr}");
@@ -5872,7 +5895,10 @@ static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, L
             "Session model updated:",
             "Current model:",
             "Commands:",
+            "/clear             Clear the screen",
+            "/quit              Alias for /exit",
         };
+
 
         foreach (var fragment in requiredFragments)
         {
@@ -5880,6 +5906,12 @@ static async Task RunRfsTuiInternalCommandsPolishSessionCaseAsync(string name, L
             {
                 failures.Add($"[{name}] expected stdout to contain '{fragment}' but it was missing.");
             }
+        }
+
+        var headerCount = tuiResult.Stdout.Split("RFS ·", StringSplitOptions.None).Length - 1;
+        if (headerCount < 2)
+        {
+            failures.Add($"[{name}] expected /clear to redraw the RFS header, but found it only {headerCount} time(s).");
         }
 
         if (!tuiResult.Stdout.Contains("Source:", StringComparison.Ordinal))

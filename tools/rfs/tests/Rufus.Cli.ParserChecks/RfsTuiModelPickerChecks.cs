@@ -102,6 +102,8 @@ var hermesDraft = helpCommands.FirstOrDefault(command => string.Equals(command.U
 var hermesRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes run", StringComparison.Ordinal));
 var piRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/pi run", StringComparison.Ordinal));
 var paste = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.Paste);
+var clear = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.Clear);
+var quit = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/quit", StringComparison.Ordinal));
 
 if (modelShow is null || !string.Equals(modelShow.Description, "Open session model picker", StringComparison.Ordinal))
 {
@@ -128,9 +130,19 @@ if (piRun is null || !string.Equals(piRun.Description, "Execute Pi using JSON Ev
 failures.Add("[tui model picker] expected /pi run help text to describe the Pi runtime path.");
 }
 
-if (paste is null || !string.Equals(paste.Description, "Paste a long/multiline prompt and store it as a temp file", StringComparison.Ordinal))
+if (paste is null || !string.Equals(paste.Description, "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.", StringComparison.Ordinal))
 {
 failures.Add("[tui model picker] expected /paste help text to describe the long-prompt capture path.");
+}
+
+if (clear is null || !string.Equals(clear.Description, "Clear the screen", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /clear help text to describe the screen clear action.");
+}
+
+if (quit is null || !string.Equals(quit.Description, "Alias for /exit", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /quit help text to describe the exit alias.");
 }
 
 var exactModel = RfsTuiCommandCatalog.FindExactMatch("/model");
@@ -155,6 +167,18 @@ var exactPiRun = RfsTuiCommandCatalog.FindExactMatch("/pi run");
 if (exactPiRun is null || !string.Equals(exactPiRun.Usage, "/pi run", StringComparison.Ordinal))
 {
 failures.Add("[tui model picker] expected /pi run to resolve to the Pi runtime command.");
+}
+
+var exactClear = RfsTuiCommandCatalog.FindExactMatch("/clear");
+if (exactClear is null || exactClear.Kind != RfsTuiCommandKind.Clear)
+{
+failures.Add("[tui model picker] expected /clear to resolve to the clear-screen command.");
+}
+
+var exactQuit = RfsTuiCommandCatalog.FindExactMatch("/quit");
+if (exactQuit is null || exactQuit.Kind != RfsTuiCommandKind.Exit)
+{
+failures.Add("[tui model picker] expected /quit to resolve to the exit alias command.");
 }
 
 var modelSuggestions = RfsTuiCommandCatalog.GetSuggestions("/model");
@@ -219,10 +243,12 @@ failures.Add("[tui model picker] expected the header to include a Model line.");
 }
 
 if (!headerText.Contains("/paste", StringComparison.Ordinal) ||
-    !headerText.Contains("Paste a long/multiline prompt and store it as a temp file", StringComparison.Ordinal) ||
-    !headerText.Contains("capture a long/multiline prompt", StringComparison.Ordinal))
+    !headerText.Contains("Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.", StringComparison.Ordinal) ||
+    !headerText.Contains("/clear", StringComparison.Ordinal) ||
+    !headerText.Contains("/quit", StringComparison.Ordinal) ||
+    !headerText.Contains("/exit", StringComparison.Ordinal))
 {
-failures.Add("[tui model picker] expected help and mode selection copy to expose /paste discoverability.");
+failures.Add("[tui model picker] expected help and mode selection copy to expose /paste, /clear, and /quit discoverability.");
 }
 
 var executionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel("claude-sonnet-4.5");

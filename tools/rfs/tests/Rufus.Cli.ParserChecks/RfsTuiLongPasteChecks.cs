@@ -11,6 +11,8 @@ internal static class RfsTuiLongPasteChecks
 
         await RunShortPromptCaseAsync(failures);
         await RunManualPasteCaptureCaseAsync(failures);
+        await RunPasteModeExitCaseAsync(failures);
+        await RunEmptyLinePasteCaptureCaseAsync(failures);
         await RunManualPasteCancelCaseAsync(failures);
         await RunPasteBurstDuringModeSelectionCaseAsync(failures);
         await RunShortPasteLikeSelectionCaseAsync(failures);
@@ -39,7 +41,7 @@ internal static class RfsTuiLongPasteChecks
             ExpectContains(result.Stdout, name, failures,
                 "¿Cómo querés procesarlo?",
                 "Direct",
-                "Elegí 1-4, /paste, o /cancel:");
+                "Elegí 1-4, /paste, /clear, /quit, o /cancel:");
         }
         finally
         {
@@ -66,7 +68,7 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
+                "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.",
                 "Captured long paste:",
                 "[paste:",
                 "lines:",
@@ -126,12 +128,100 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
+                "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.",
                 "Paste discarded.");
 
             if (result.Stdout.Contains("Captured long paste:", StringComparison.Ordinal))
             {
                 failures.Add($"[{name}] expected cancel to discard the captured paste.");
+            }
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static async Task RunPasteModeExitCaseAsync(List<string> failures)
+    {
+        const string name = "long paste /paste mode selection /quit exits session";
+        var tempRoot = CreateTempRoot("rfs-long-paste-exit-checks");
+        try
+        {
+            if (!await InitializeRepoAsync(tempRoot, failures, name))
+            {
+                return;
+            }
+
+            var result = await RunScriptedTuiAsync("/paste\npaste line 1\npaste line 2\n/end\n/quit\n", tempRoot);
+            if (result.ExitCode != 0)
+            {
+                failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+                return;
+            }
+
+            ExpectContains(result.Stdout, name, failures,
+                "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.",
+                "Captured long paste:");
+
+            if (result.Stdout.Contains("Unknown command: /quit", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected /quit to exit from paste mode selection rather than be treated as unknown.");
+            }
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static async Task RunEmptyLinePasteCaptureCaseAsync(List<string> failures)
+    {
+        const string name = "long paste /paste empty line ends capture";
+        var tempRoot = CreateTempRoot("rfs-long-paste-empty-line-checks");
+        try
+        {
+            if (!await InitializeRepoAsync(tempRoot, failures, name))
+            {
+                return;
+            }
+
+            var result = await RunScriptedTuiAsync("/paste\npaste line 1\npaste line 2\n\n1\n/exit\n", tempRoot);
+            if (result.ExitCode != 0)
+            {
+                failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+                return;
+            }
+
+            ExpectContains(result.Stdout, name, failures,
+                "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.",
+                "Captured long paste:",
+                "[paste:",
+                "lines:",
+                "chars:",
+                "estimated tokens:");
+
+            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected empty-line termination to avoid Invalid mode spam.");
+            }
+
+            var pasteDirectory = Path.Combine(tempRoot, ".rfs", "tmp", "pastes");
+            var files = Directory.Exists(pasteDirectory)
+                ? Directory.GetFiles(pasteDirectory, "*_paste.md", SearchOption.TopDirectoryOnly)
+                : Array.Empty<string>();
+
+            if (files.Length != 1)
+            {
+                failures.Add($"[{name}] expected exactly one temp paste file but found {files.Length}.");
+            }
+            else
+            {
+                var content = await File.ReadAllTextAsync(files[0]);
+                if (!content.Contains("paste line 1", StringComparison.Ordinal) || !content.Contains("paste line 2", StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected paste file to contain captured lines.");
+                }
             }
         }
         finally

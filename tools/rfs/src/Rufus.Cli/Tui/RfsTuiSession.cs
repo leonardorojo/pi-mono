@@ -112,7 +112,11 @@ internal static class RfsTuiSession
 
                 if (string.Equals(input, "/paste", StringComparison.Ordinal))
                 {
-                    await HandlePasteCommandAsync(repoRoot);
+                    if (await HandlePasteCommandAsync(repoRoot, status))
+                    {
+                        break;
+                    }
+
                     continue;
                 }
 
@@ -123,7 +127,7 @@ internal static class RfsTuiSession
                 }
 
                 var promptDraft = RfsTuiPromptDraft.CreateTyped(input);
-                if (await RunPromptModeSelectionAsync(promptDraft, repoRoot))
+                if (await RunPromptModeSelectionAsync(promptDraft, repoRoot, status))
                 {
                     break;
                 }
@@ -135,7 +139,7 @@ internal static class RfsTuiSession
         }
     }
 
-    private static async Task<bool> RunPromptModeSelectionAsync(RfsTuiPromptDraft promptDraft, string repoRoot)
+    private static async Task<bool> RunPromptModeSelectionAsync(RfsTuiPromptDraft promptDraft, string repoRoot, RckWorkspaceStatus status)
     {
         RenderModeSelectionMenu();
         var pasteRecoveryMode = false;
@@ -176,6 +180,14 @@ internal static class RfsTuiSession
                 RenderModeSelectionMenu();
                 pasteRecoveryMode = false;
                 pasteRecoveryWarningShown = false;
+                continue;
+            }
+
+            if (string.Equals(selectionInput, "/clear", StringComparison.Ordinal))
+            {
+                RfsTuiTerminal.ClearIfInteractive();
+                RenderHeader(status, SessionState);
+                RenderModeSelectionMenu();
                 continue;
             }
 
@@ -226,16 +238,16 @@ internal static class RfsTuiSession
     private static bool LooksLikePaste(string input)
         => input.Length >= 24 || input.Contains(' ') || input.Contains('\t');
 
-    private static async Task HandlePasteCommandAsync(string repoRoot)
+    private static async Task<bool> HandlePasteCommandAsync(string repoRoot, RckWorkspaceStatus status)
     {
         var capturedDraft = await CapturePasteDraftAsync(repoRoot);
         if (capturedDraft is null)
         {
-            return;
+            return false;
         }
 
         RenderCapturedPasteReference(capturedDraft);
-        await RunPromptModeSelectionAsync(capturedDraft, repoRoot);
+        return await RunPromptModeSelectionAsync(capturedDraft, repoRoot, status);
     }
 
     private static async Task<RfsTuiPromptDraft?> CapturePasteDraftAsync(string repoRoot)
@@ -870,6 +882,10 @@ internal static class RfsTuiSession
                 case RfsTuiCommandKind.Help:
                     RenderHelp();
                     return true;
+                case RfsTuiCommandKind.Clear:
+                    RfsTuiTerminal.ClearIfInteractive();
+                    RenderHeader(status, SessionState);
+                    return true;
                 case RfsTuiCommandKind.Exit:
                     SessionState.ResetSessionModel();
                     return true;
@@ -1225,6 +1241,6 @@ internal static class RfsTuiSession
 
     private static bool IsExitCommand(string input)
     {
-        return string.Equals(input, "/exit", StringComparison.Ordinal) || string.Equals(input, "exit", StringComparison.Ordinal);
+        return string.Equals(input, "/exit", StringComparison.Ordinal) || string.Equals(input, "exit", StringComparison.Ordinal) || string.Equals(input, "/quit", StringComparison.Ordinal);
     }
 }

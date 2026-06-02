@@ -68,6 +68,17 @@ internal static class RfsTuiPasteCapture
                 return FinalizeCapture(repoRoot, lines);
             }
 
+            if (line.Length == 0)
+            {
+                if (lines.Count == 0)
+                {
+                    RfsTuiRenderer.WriteWarningLine("Paste capture is empty.");
+                    continue;
+                }
+
+                return FinalizeCapture(repoRoot, lines);
+            }
+
             lines.Add(line);
         }
     }
@@ -81,6 +92,7 @@ internal static class RfsTuiPasteCapture
             return null;
         }
 
+        Console.WriteLine();
         return RfsTuiPromptDraft.CreatePaste(content, attachmentPath);
     }
 

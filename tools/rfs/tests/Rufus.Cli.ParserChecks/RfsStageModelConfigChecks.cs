@@ -104,6 +104,7 @@ internal static class RfsStageModelConfigChecks
                         ["intent"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
                         ["traceSliceProposal"] = new Dictionary<string, object?> { ["model"] = "deepseek-v4-pro" },
                         ["conversationalMemory"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
+                        ["principalAnswer"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
                     },
                 },
             };
@@ -148,6 +149,8 @@ internal static class RfsStageModelConfigChecks
                     ["stages"] = new Dictionary<string, object?>
                     {
                         ["intent"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
+                        ["traceSliceProposal"] = new Dictionary<string, object?> { ["model"] = "deepseek-v4-pro" },
+                        ["principalAnswer"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
                     },
                 },
             };
@@ -263,6 +266,8 @@ internal static class RfsStageModelConfigChecks
                     ["stages"] = new Dictionary<string, object?>
                     {
                         ["intent"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
+                        ["traceSliceProposal"] = new Dictionary<string, object?> { ["model"] = "deepseek-v4-pro" },
+                        ["principalAnswer"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
                     },
                 },
             };
@@ -310,6 +315,8 @@ internal static class RfsStageModelConfigChecks
                     {
                         ["intent"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
                         ["traceSliceProposal"] = new Dictionary<string, object?> { ["model"] = "deepseek-v4-pro" },
+                        ["conversationalMemory"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
+                        ["principalAnswer"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
                     },
                 },
             };

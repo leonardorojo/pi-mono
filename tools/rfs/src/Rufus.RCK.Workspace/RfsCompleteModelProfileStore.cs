@@ -19,6 +19,7 @@ public sealed record RfsCompleteModelProfile(
     string IntentModel,
     string TraceSliceProposalModel,
     string ConversationalMemoryModel,
+    string PrincipalAnswerModel,
     string Description);
 
 public static class RfsCompleteModelProfileStore
@@ -34,6 +35,7 @@ public static class RfsCompleteModelProfileStore
             IntentModel: "deepseek-chat",
             TraceSliceProposalModel: "deepseek-chat",
             ConversationalMemoryModel: "deepseek-chat",
+            PrincipalAnswerModel: "deepseek-chat",
             Description: "Cheap/local-oriented profile for testing Complete mode"),
         new(
             Name: "balanced",
@@ -41,6 +43,7 @@ public static class RfsCompleteModelProfileStore
             IntentModel: "claude-haiku-4.5",
             TraceSliceProposalModel: "gpt-5.4-mini",
             ConversationalMemoryModel: "claude-haiku-4.5",
+            PrincipalAnswerModel: "deepseek-chat",
             Description: "Balanced profile for normal Complete mode usage"),
     ];
 
@@ -152,6 +155,7 @@ public static class RfsCompleteModelProfileStore
                 ["intent"] = new JsonObject { ["model"] = profile.IntentModel },
                 ["traceSliceProposal"] = new JsonObject { ["model"] = profile.TraceSliceProposalModel },
                 ["conversationalMemory"] = new JsonObject { ["model"] = profile.ConversationalMemoryModel },
+                ["principalAnswer"] = new JsonObject { ["model"] = profile.PrincipalAnswerModel },
             };
             llm["stages"] = stages;
 

@@ -445,6 +445,7 @@ if (args[0] == "model")
         Console.WriteLine($"intent: {appliedProfile.IntentModel}");
         Console.WriteLine($"traceSliceProposal: {appliedProfile.TraceSliceProposalModel}");
         Console.WriteLine($"conversationalMemory: {appliedProfile.ConversationalMemoryModel}");
+        Console.WriteLine($"principalAnswer: {appliedProfile.PrincipalAnswerModel}");
         return 0;
     }
 

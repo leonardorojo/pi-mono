@@ -46,6 +46,10 @@ internal static class RfsCompleteModelProfileChecks
             var memoryModel = RckWorkspaceModelConfigStore.TryReadStageModel("conversationalMemory", tempDir);
             Expect(string.Equals(memoryModel, "deepseek-chat", StringComparison.Ordinal),
                 $"[{name}] expected conversationalMemory 'deepseek-chat' but got '{memoryModel}'.", failures);
+
+            var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", tempDir);
+            Expect(string.Equals(principalAnswerModel, "deepseek-chat", StringComparison.Ordinal),
+                $"[{name}] expected principalAnswer 'deepseek-chat' but got '{principalAnswerModel}'.", failures);
         }
         finally
         {
@@ -83,6 +87,10 @@ internal static class RfsCompleteModelProfileChecks
             var memoryModel = RckWorkspaceModelConfigStore.TryReadStageModel("conversationalMemory", tempDir);
             Expect(string.Equals(memoryModel, "claude-haiku-4.5", StringComparison.Ordinal),
                 $"[{name}] expected conversationalMemory 'claude-haiku-4.5' but got '{memoryModel}'.", failures);
+
+            var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", tempDir);
+            Expect(string.Equals(principalAnswerModel, "deepseek-chat", StringComparison.Ordinal),
+                $"[{name}] expected principalAnswer 'deepseek-chat' but got '{principalAnswerModel}'.", failures);
         }
         finally
         {

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Rufus.RCK.Core.Model;
 
 namespace Rufus.RCK.Workspace;
@@ -11,36 +12,43 @@ public static class RckWorkspaceInitializer
 
     public static RckWorkspaceInitResult Initialize(string? startingDirectory = null)
     {
-        var repoRoot = FindRepoRoot(startingDirectory ?? Directory.GetCurrentDirectory());
-        if (repoRoot is null)
+        try
         {
-            return RckWorkspaceInitResult.Failure("rfs init: repository root not found.");
+            var repoRoot = FindRepoRoot(startingDirectory ?? Directory.GetCurrentDirectory());
+            if (repoRoot is null)
+            {
+                return RckWorkspaceInitResult.Failure("rfs init: repository root not found.");
+            }
+
+            var paths = new RckWorkspacePaths(repoRoot);
+
+            var configCreated = EnsureConfig(paths);
+            var rckDirectoriesCreated = EnsureRckDirectories(paths);
+
+            var gitContext = GitWorkspaceContext.Capture(repoRoot);
+            var workspaceName = Path.GetFileName(Path.TrimEndingDirectorySeparator(repoRoot));
+            var state = BuildGenesisState(repoRoot, workspaceName, gitContext);
+            var stateCreated = EnsureGenesisState(paths, state);
+            var headCreated = EnsureHead(paths, state.Id);
+
+            var anchor = BuildGenesisAnchor(state);
+            var anchorCreated = RckWorkspaceAnchorWriter.EnsureAnchor(paths, anchor);
+
+            return RckWorkspaceInitResult.SuccessResult(
+                repoRoot,
+                paths,
+                configCreated,
+                rckDirectoriesCreated,
+                headCreated,
+                stateCreated,
+                anchorCreated,
+                state.Id,
+                anchor.Id);
         }
-
-        var paths = new RckWorkspacePaths(repoRoot);
-
-        var configCreated = EnsureConfig(paths);
-        var rckDirectoriesCreated = EnsureRckDirectories(paths);
-
-        var gitContext = GitWorkspaceContext.Capture(repoRoot);
-        var workspaceName = Path.GetFileName(Path.TrimEndingDirectorySeparator(repoRoot));
-        var state = BuildGenesisState(repoRoot, workspaceName, gitContext);
-        var stateCreated = EnsureGenesisState(paths, state);
-        var headCreated = EnsureHead(paths, state.Id);
-
-        var anchor = BuildGenesisAnchor(state);
-        var anchorCreated = RckWorkspaceAnchorWriter.EnsureAnchor(paths, anchor);
-
-        return RckWorkspaceInitResult.SuccessResult(
-            repoRoot,
-            paths,
-            configCreated,
-            rckDirectoriesCreated,
-            headCreated,
-            stateCreated,
-            anchorCreated,
-            state.Id,
-            anchor.Id);
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+        {
+            return RckWorkspaceInitResult.Failure($"rfs init: failed to initialize workspace: {ex.Message}");
+        }
     }
 
     private static bool EnsureConfig(RckWorkspacePaths paths)
@@ -51,8 +59,29 @@ public static class RckWorkspaceInitializer
         }
 
         Directory.CreateDirectory(paths.WorkspaceDirectory);
-        var configContent = "{\n  \"schemaVersion\": 1,\n  \"type\": \"rufus.workspace\",\n  \"createdBy\": \"rfs init\"\n}\n";
-        File.WriteAllText(paths.ConfigPath, configContent, Utf8NoBom);
+
+        var balancedProfile = RfsCompleteModelProfileStore.FindProfile("balanced")
+            ?? throw new InvalidOperationException("Unknown default Complete profile: balanced.");
+
+        var config = new JsonObject
+        {
+            ["schemaVersion"] = 1,
+            ["type"] = "rufus.workspace",
+            ["createdBy"] = "rfs init",
+            ["llm"] = new JsonObject
+            {
+                ["defaultModel"] = balancedProfile.DefaultModel,
+                ["stages"] = new JsonObject
+                {
+                    ["intent"] = new JsonObject { ["model"] = balancedProfile.IntentModel },
+                    ["traceSliceProposal"] = new JsonObject { ["model"] = balancedProfile.TraceSliceProposalModel },
+                    ["conversationalMemory"] = new JsonObject { ["model"] = balancedProfile.ConversationalMemoryModel },
+                    ["principalAnswer"] = new JsonObject { ["model"] = balancedProfile.PrincipalAnswerModel },
+                },
+            },
+        };
+
+        File.WriteAllText(paths.ConfigPath, JsonSerializer.Serialize(config, IndentedJsonOptions) + Environment.NewLine, Utf8NoBom);
         return true;
     }
 

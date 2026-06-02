@@ -420,7 +420,7 @@ internal static class RfsTuiSession
             return false;
         }
 
-        var principalAnswerExecutionModel = CreatePrincipalAnswerExecutionModel(SessionState.ResolveMainModel());
+        var principalAnswerExecutionModel = CreatePrincipalAnswerExecutionModel(repoRoot, SessionState.ResolveMainModel());
         var principalAnswerAgent = new PiPrincipalAnswerAgent(repoRoot, principalAnswerExecutionModel);
 
         RfsTuiRenderer.WriteCompleteStage("[5/5] Asking main LLM...");
@@ -1044,6 +1044,7 @@ internal static class RfsTuiSession
         Console.WriteLine($"intent: {appliedProfile.IntentModel}");
         Console.WriteLine($"traceSliceProposal: {appliedProfile.TraceSliceProposalModel}");
         Console.WriteLine($"conversationalMemory: {appliedProfile.ConversationalMemoryModel}");
+        Console.WriteLine($"principalAnswer: {appliedProfile.PrincipalAnswerModel}");
 
         return true;
     }
@@ -1135,6 +1136,16 @@ internal static class RfsTuiSession
         Console.WriteLine();
         Console.WriteLine("Source:");
         Console.WriteLine($"  {GetModelSourceLabel(readResult)}");
+    }
+
+    internal static AgentExecutionModel CreatePrincipalAnswerExecutionModel(string repoRoot, string sessionModel)
+    {
+        var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", repoRoot);
+        var effectiveModel = string.IsNullOrWhiteSpace(principalAnswerModel)
+            ? sessionModel
+            : principalAnswerModel;
+
+        return new("pi", string.IsNullOrWhiteSpace(effectiveModel) ? RfsTuiSessionState.DefaultSessionModel : effectiveModel.Trim());
     }
 
     internal static AgentExecutionModel CreatePrincipalAnswerExecutionModel(string sessionModel)

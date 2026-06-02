@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Rufus.Agenting;
 using Rufus.Agenting.TraceSlice;
+using Rufus.Cli.Json;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
@@ -328,7 +329,7 @@ public sealed class PiTraceSliceProposalAgent : IAgent
 
         try
         {
-            using var document = JsonDocument.Parse(selectionJson);
+            using var document = JsonDocument.Parse(LlmJsonOutputNormalizer.Normalize(selectionJson));
             var root = document.RootElement;
 
             var type = GetRequiredString(root, "type");
@@ -525,7 +526,7 @@ public sealed class PiTraceSliceProposalAgent : IAgent
 
         try
         {
-            using var document = JsonDocument.Parse(proposalJson);
+            using var document = JsonDocument.Parse(LlmJsonOutputNormalizer.Normalize(proposalJson));
             var root = document.RootElement;
 
             var type = GetRequiredString(root, "type");

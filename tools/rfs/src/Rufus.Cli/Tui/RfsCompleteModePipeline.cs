@@ -518,11 +518,10 @@ public static class RfsCompleteModePipeline
 
         try
         {
-            using var document = JsonDocument.Parse(intentOutputJson);
-            var root = document.RootElement;
+            var promptIntent = PromptIntentJsonCodec.Parse(intentOutputJson);
             intentProjection = new RckTraceSliceProposalIntentProjection(
-                Kind: GetRequiredString(root, "Intent"),
-                Summary: GetRequiredString(root, "Summary"),
+                Kind: promptIntent.Intent,
+                Summary: promptIntent.Summary,
                 Source: intentSource);
             return true;
         }

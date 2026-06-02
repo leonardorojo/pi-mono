@@ -127,6 +127,13 @@ await RunPromptIntentJsonCodecCaseAsync(
     expectedSummary: "Implement the reset board action.",
     failures: failures);
 
+await RunPromptIntentJsonCodecCaseAsync(
+    name: "prompt intent codec accepts markdown fenced llm json",
+    json: "```json\n{\"intent\":\"planning\",\"summary\":\"Plan the next coverage phase.\",\"entities\":[\"coverage\"],\"constraints\":[\"stay read-only\"]}\n```",
+    expectedIntent: "planning",
+    expectedSummary: "Plan the next coverage phase.",
+    failures: failures);
+
 await RunPromptIntentJsonCodecFailureCaseAsync(
     name: "prompt intent codec rejects invalid json",
     json: "{\"intent\":\"implement-reset-board\",\"summary\":\"missing brace\"",
@@ -143,6 +150,18 @@ await RunPiIntentInferenceAgentCaseAsync(
         expectedOutput: "PromptIntent JSON"),
     llmAnswerJson: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\"],\"constraints\":[]}",
     expectedIntent: "implement-reset-board",
+    failures: failures);
+
+await RunPiIntentInferenceAgentCaseAsync(
+    name: "pi intent agent accepts markdown fenced llm json",
+    task: new AgentTask(
+        id: "task-llm-1-fenced",
+        kind: "infer-intent",
+        goal: "Infer the operational intent from this prompt.",
+        input: "Implement reset board action",
+        expectedOutput: "PromptIntent JSON"),
+    llmAnswerJson: "```json\n{\"intent\":\"planning\",\"summary\":\"Plan the next coverage phase.\",\"entities\":[\"coverage\"],\"constraints\":[\"stay read-only\"]}\n```",
+    expectedIntent: "planning",
     failures: failures);
 
 await RunPiIntentInferenceAgentCaseAsync(
@@ -274,6 +293,13 @@ await RunCompleteModePipelineWithAnchorSelectionLlmCaseAsync(
     repoRoot: "/home/rufus/DEV/leonardorojo/ChessBoardApp",
     prompt: "Implement reset board action",
     llmAnswerJson: "{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\"],\"constraints\":[\"do not write RCK\"]}",
+    failures: failures);
+
+await RunCompleteModePipelineWithAnchorSelectionLlmCaseAsync(
+    name: "complete mode accepts markdown fenced intent json",
+    repoRoot: "/home/rufus/DEV/leonardorojo/ChessBoardApp",
+    prompt: "Implement reset board action",
+    llmAnswerJson: "```json\n{\"intent\":\"implement-reset-board\",\"summary\":\"Implement the reset board action.\",\"entities\":[\"reset board\"],\"constraints\":[\"do not write RCK\"]}\n```",
     failures: failures);
 
 await RunCompleteModePipelineWithAnchorSelectionFallbackCaseAsync(

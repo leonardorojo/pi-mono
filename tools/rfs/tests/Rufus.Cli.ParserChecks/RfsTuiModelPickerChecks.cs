@@ -101,6 +101,7 @@ var modelSet = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiComm
 var hermesDraft = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes draft", StringComparison.Ordinal));
 var hermesRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/hermes run", StringComparison.Ordinal));
 var piRun = helpCommands.FirstOrDefault(command => string.Equals(command.Usage, "/pi run", StringComparison.Ordinal));
+var paste = helpCommands.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.Paste);
 
 if (modelShow is null || !string.Equals(modelShow.Description, "Open session model picker", StringComparison.Ordinal))
 {
@@ -125,6 +126,11 @@ failures.Add("[tui model picker] expected /hermes run help text to describe the 
 if (piRun is null || !string.Equals(piRun.Description, "Execute Pi using JSON Event Stream", StringComparison.Ordinal))
 {
 failures.Add("[tui model picker] expected /pi run help text to describe the Pi runtime path.");
+}
+
+if (paste is null || !string.Equals(paste.Description, "Paste a long/multiline prompt and store it as a temp file", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected /paste help text to describe the long-prompt capture path.");
 }
 
 var exactModel = RfsTuiCommandCatalog.FindExactMatch("/model");
@@ -156,6 +162,18 @@ if (modelSuggestions.Count == 0)
 {
 failures.Add("[tui model picker] expected /model suggestions to be populated.");
 }
+
+var exactPaste = RfsTuiCommandCatalog.FindExactMatch("/paste");
+if (exactPaste is null || exactPaste.Kind != RfsTuiCommandKind.Paste)
+{
+failures.Add("[tui model picker] expected /paste to resolve to the paste capture command.");
+}
+
+var pasteSuggestions = RfsTuiCommandCatalog.GetSuggestions("/pa");
+if (pasteSuggestions.FirstOrDefault(command => command.Kind == RfsTuiCommandKind.Paste) is null)
+{
+failures.Add("[tui model picker] expected /pa suggestions to include /paste.");
+}
 }
 
 private static void RunRendererAndPrincipalModelCases(List<string> failures)
@@ -181,6 +199,8 @@ Console.SetOut(stdout);
 var sessionState = new RfsTuiSessionState();
 sessionState.SetSessionModel("claude-sonnet-4.5");
 RfsTuiRenderer.WriteHeader(status, "pi-mono", sessionState, leadingBlankLine: false);
+RfsTuiRenderer.WriteHelp(RfsTuiCommandCatalog.GetHelpCommands());
+RfsTuiRenderer.WriteModeSelectionHelp();
 }
 finally
 {
@@ -196,6 +216,13 @@ failures.Add("[tui model picker] expected the header to mark non-default session
 if (!headerText.Contains("Model:", StringComparison.Ordinal))
 {
 failures.Add("[tui model picker] expected the header to include a Model line.");
+}
+
+if (!headerText.Contains("/paste", StringComparison.Ordinal) ||
+    !headerText.Contains("Paste a long/multiline prompt and store it as a temp file", StringComparison.Ordinal) ||
+    !headerText.Contains("capture a long/multiline prompt", StringComparison.Ordinal))
+{
+failures.Add("[tui model picker] expected help and mode selection copy to expose /paste discoverability.");
 }
 
 var executionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel("claude-sonnet-4.5");

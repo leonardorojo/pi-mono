@@ -205,7 +205,7 @@ internal static class RfsTuiSession
                         }
                         else
                         {
-                            RfsTuiRenderer.WriteWarningLine("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.");
+                            RfsTuiRenderer.WriteWarningLine("Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.");
                         }
 
                         pasteRecoveryMode = true;

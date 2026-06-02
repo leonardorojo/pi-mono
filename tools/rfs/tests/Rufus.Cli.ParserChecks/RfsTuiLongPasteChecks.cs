@@ -13,6 +13,7 @@ internal static class RfsTuiLongPasteChecks
         await RunManualPasteCaptureCaseAsync(failures);
         await RunManualPasteCancelCaseAsync(failures);
         await RunPasteBurstDuringModeSelectionCaseAsync(failures);
+        await RunShortPasteLikeSelectionCaseAsync(failures);
         await RunRedirectedMultilineBurstCaseAsync(failures);
         await RunRedirectedLongLineCaseAsync(failures);
     }
@@ -38,7 +39,7 @@ internal static class RfsTuiLongPasteChecks
             ExpectContains(result.Stdout, name, failures,
                 "¿Cómo querés procesarlo?",
                 "Direct",
-                "Elegí 1-4, o /cancel:");
+                "Elegí 1-4, /paste, o /cancel:");
         }
         finally
         {
@@ -65,7 +66,7 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Paste multiline prompt. Finish with /end. Use /cancel to discard.",
+                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
                 "Captured long paste:",
                 "[paste:",
                 "lines:",
@@ -73,7 +74,7 @@ internal static class RfsTuiLongPasteChecks
                 "estimated tokens:",
                 "¿Cómo querés procesarlo?");
 
-            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.", StringComparison.Ordinal))
+            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.", StringComparison.Ordinal))
             {
                 failures.Add($"[{name}] expected no Invalid mode spam after /paste capture.");
             }
@@ -125,7 +126,7 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Paste multiline prompt. Finish with /end. Use /cancel to discard.",
+                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
                 "Paste discarded.");
 
             if (result.Stdout.Contains("Captured long paste:", StringComparison.Ordinal))
@@ -158,13 +159,49 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Multiline input detected while choosing processing mode.",
-                "Use /cancel and then /paste for long text.",
+                "This looks like pasted text while choosing a mode.",
+                "Type /paste to enter a long prompt, then choose 1-4.",
+                "Or type /cancel to discard the current prompt.",
                 "Prompt cancelled.");
 
-            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.", StringComparison.Ordinal))
+            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.", StringComparison.Ordinal))
             {
                 failures.Add($"[{name}] expected paste burst recovery to avoid Invalid mode spam.");
+            }
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static async Task RunShortPasteLikeSelectionCaseAsync(List<string> failures)
+    {
+        const string name = "long paste short first line during mode selection points to /paste";
+        var tempRoot = CreateTempRoot("rfs-long-paste-short-first-line-checks");
+        try
+        {
+            if (!await InitializeRepoAsync(tempRoot, failures, name))
+            {
+                return;
+            }
+
+            var result = await RunScriptedTuiAsync("fix\nabc\nsecond line\n/cancel\n/exit\n", tempRoot);
+            if (result.ExitCode != 0)
+            {
+                failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+                return;
+            }
+
+            ExpectContains(result.Stdout, name, failures,
+                "Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.",
+                "/paste",
+                "Prompt cancelled.");
+
+            var invalidModeCount = CountOccurrences(result.Stdout, "Invalid mode.");
+            if (invalidModeCount != 1)
+            {
+                failures.Add($"[{name}] expected a single Invalid mode warning, but saw {invalidModeCount}.");
             }
         }
         finally
@@ -195,7 +232,7 @@ internal static class RfsTuiLongPasteChecks
             {
                 failures.Add($"[{name}] expected mode menu to appear for redirected multiline burst.");
             }
-            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.", StringComparison.Ordinal))
+            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.", StringComparison.Ordinal))
             {
                 failures.Add($"[{name}] expected redirected multiline burst to avoid Invalid mode spam.");
             }
@@ -229,7 +266,7 @@ internal static class RfsTuiLongPasteChecks
             {
                 failures.Add($"[{name}] expected mode menu to appear for long redirected input.");
             }
-            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, or /exit.", StringComparison.Ordinal))
+            if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.", StringComparison.Ordinal))
             {
                 failures.Add($"[{name}] expected long redirected line to avoid Invalid mode spam.");
             }
@@ -238,6 +275,25 @@ internal static class RfsTuiLongPasteChecks
         {
             TryDeleteDirectory(tempRoot);
         }
+    }
+
+    private static int CountOccurrences(string text, string fragment)
+    {
+        var count = 0;
+        var index = 0;
+        while (true)
+        {
+            index = text.IndexOf(fragment, index, StringComparison.Ordinal);
+            if (index < 0)
+            {
+                break;
+            }
+
+            count++;
+            index += fragment.Length == 0 ? 1 : fragment.Length;
+        }
+
+        return count;
     }
 
     private static void ExpectContains(string text, string name, List<string> failures, params string[] fragments)

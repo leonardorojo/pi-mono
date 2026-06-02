@@ -71,12 +71,12 @@ internal static class RfsTuiRenderer
         WriteModeOption("3", "Complete", "TraceSlice + ContextPack validado");
         WriteModeOption("4", "Plan", "plan textual sin modificar código");
         Console.WriteLine();
-        WriteMutedLine("Elegí 1-4, o /cancel:");
+        WriteMutedLine("Elegí 1-4, /paste, o /cancel:");
     }
 
     internal static void WritePasteCaptureIntro()
     {
-        WriteMutedLine("Paste multiline prompt. Finish with /end. Use /cancel to discard.");
+        WriteMutedLine("Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.");
     }
 
     internal static void WritePasteCapturePrompt()
@@ -84,8 +84,9 @@ internal static class RfsTuiRenderer
 
     internal static void WritePasteSelectionWarning()
     {
-        WriteWarningLine("Multiline input detected while choosing processing mode.");
-        WriteMutedLine("Use /cancel and then /paste for long text.");
+        WriteWarningLine("This looks like pasted text while choosing a mode.");
+        WriteMutedLine("Type /paste to enter a long prompt, then choose 1-4.");
+        WriteMutedLine("Or type /cancel to discard the current prompt.");
     }
 
     internal static void WriteCapturedPasteReference(RfsTuiPromptDraft draft)
@@ -106,6 +107,7 @@ internal static class RfsTuiRenderer
         WriteModeOption("2", "Simple", "recent memory");
         WriteModeOption("3", "Complete", "governed context");
         WriteModeOption("4", "Plan", "plan only");
+        WriteCommandLine("/paste", "capture a long/multiline prompt");
         WriteCommandLine("/cancel", "return to prompt");
         WriteCommandLine("/exit", "exit RFS");
     }

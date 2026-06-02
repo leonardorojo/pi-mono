@@ -16,6 +16,8 @@ public static class PiTraceSliceProposalAgentChecks
     public static async Task RunAsync(List<string> failures)
     {
         await RunSuccessCaseAsync(failures);
+        await RunMarkdownFencedJsonCaseAsync(failures);
+        await RunMarkdownFencedNoLanguageCaseAsync(failures);
         await RunInvalidJsonCaseAsync(failures);
         await RunInvalidShapeCaseAsync(failures);
         await RunWrongTaskKindCaseAsync(failures);
@@ -147,6 +149,116 @@ public static class PiTraceSliceProposalAgentChecks
         if (proposal.Warnings.Count != 0)
         {
             failures.Add($"[trace-slice-proposal agent success] expected empty warnings but got {proposal.Warnings.Count}.");
+        }
+    }
+
+    private static async Task RunMarkdownFencedJsonCaseAsync(List<string> failures)
+    {
+        const string name = "trace-slice-proposal agent markdown fenced json";
+        var prompt = "PLT1 Complete TraceSlice LLM proposal smoke: explain one safe next step for this repository.";
+        var intent = new RckTraceSliceProposalIntentProjection(
+            Kind: "build-trace-slice",
+            Summary: "Prepare a focused slice for the next safe repository step.",
+            Source: "pi-intent-inference");
+        var dagQuickIndex = CreateDagQuickIndex();
+        var answerJson = "```json\n" + BuildTraceSliceProposalAnswer(prompt, intent, dagQuickIndex, includeInvalidShape: false, includeUnsafePolicy: false, includeBadKind: false) + "\n```";
+        var transport = new FakeTraceSliceProposalLlmTransport(success: true, answerJson: answerJson);
+        var agent = new PiTraceSliceProposalAgent("/tmp/trace-slice-proposal-agent-check", transport: transport);
+        var task = new AgentTask(
+            id: "trace-slice-proposal-agent-markdown-fenced-json",
+            kind: "propose-trace-slice",
+            goal: "build an LLM-backed trace slice proposal",
+            input: JsonSerializer.Serialize(new TraceSliceProposalAgentInput(
+                prompt,
+                intent,
+                dagQuickIndex,
+                new TraceSliceProposalAgentLimits(MaxStates: 5, MaxDeltas: 5),
+                new[]
+                {
+                    "Select only ids available in dagQuickIndex.",
+                    "Respect maxStates/maxDeltas = 5.",
+                    "includeArtifactContents=false.",
+                    "includeGitDiffs=false.",
+                    "includeStdoutStderr=false.",
+                    "includeJsonl=false.",
+                    "Return JSON only.",
+                    "No markdown fences or extra prose.",
+                }), JsonOptions),
+            expectedOutput: "TraceSliceProposal JSON");
+
+        var result = await agent.ExecuteAsync(task);
+
+        if (result.Status != AgentTaskStatus.Succeeded)
+        {
+            failures.Add($"[{name}] expected Succeeded but got {result.Status}. Errors: {string.Join(" | ", result.Errors)}");
+            return;
+        }
+
+        var proposal = JsonSerializer.Deserialize<TraceSliceProposal>(result.Output!, JsonOptions);
+        if (proposal is null)
+        {
+            failures.Add($"[{name}] expected output to deserialize to TraceSliceProposal.");
+            return;
+        }
+
+        if (!string.Equals(proposal.Type, "rufus.trace-slice-proposal", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected type 'rufus.trace-slice-proposal' but got '{proposal.Type}'.");
+        }
+    }
+
+    private static async Task RunMarkdownFencedNoLanguageCaseAsync(List<string> failures)
+    {
+        const string name = "trace-slice-proposal agent markdown fenced without language";
+        var prompt = "PLT1 Complete TraceSlice LLM proposal smoke: explain one safe next step for this repository.";
+        var intent = new RckTraceSliceProposalIntentProjection(
+            Kind: "build-trace-slice",
+            Summary: "Prepare a focused slice for the next safe repository step.",
+            Source: "pi-intent-inference");
+        var dagQuickIndex = CreateDagQuickIndex();
+        var answerJson = "```\n" + BuildTraceSliceProposalAnswer(prompt, intent, dagQuickIndex, includeInvalidShape: false, includeUnsafePolicy: false, includeBadKind: false) + "\n```";
+        var transport = new FakeTraceSliceProposalLlmTransport(success: true, answerJson: answerJson);
+        var agent = new PiTraceSliceProposalAgent("/tmp/trace-slice-proposal-agent-check", transport: transport);
+        var task = new AgentTask(
+            id: "trace-slice-proposal-agent-markdown-fenced-no-language",
+            kind: "propose-trace-slice",
+            goal: "build an LLM-backed trace slice proposal",
+            input: JsonSerializer.Serialize(new TraceSliceProposalAgentInput(
+                prompt,
+                intent,
+                dagQuickIndex,
+                new TraceSliceProposalAgentLimits(MaxStates: 5, MaxDeltas: 5),
+                new[]
+                {
+                    "Select only ids available in dagQuickIndex.",
+                    "Respect maxStates/maxDeltas = 5.",
+                    "includeArtifactContents=false.",
+                    "includeGitDiffs=false.",
+                    "includeStdoutStderr=false.",
+                    "includeJsonl=false.",
+                    "Return JSON only.",
+                    "No markdown fences or extra prose.",
+                }), JsonOptions),
+            expectedOutput: "TraceSliceProposal JSON");
+
+        var result = await agent.ExecuteAsync(task);
+
+        if (result.Status != AgentTaskStatus.Succeeded)
+        {
+            failures.Add($"[{name}] expected Succeeded but got {result.Status}. Errors: {string.Join(" | ", result.Errors)}");
+            return;
+        }
+
+        var proposal = JsonSerializer.Deserialize<TraceSliceProposal>(result.Output!, JsonOptions);
+        if (proposal is null)
+        {
+            failures.Add($"[{name}] expected output to deserialize to TraceSliceProposal.");
+            return;
+        }
+
+        if (!string.Equals(proposal.Type, "rufus.trace-slice-proposal", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected type 'rufus.trace-slice-proposal' but got '{proposal.Type}'.");
         }
     }
 

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
+using Rufus.Cli.Json;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
@@ -145,7 +146,7 @@ public static class TraceSliceProposalLlmRunner
 
         try
         {
-            using var document = JsonDocument.Parse(intentOutputJson);
+            using var document = JsonDocument.Parse(LlmJsonOutputNormalizer.Normalize(intentOutputJson));
             var root = document.RootElement;
             intentProjection = new RckTraceSliceProposalIntentProjection(
                 Kind: GetRequiredString(root, "Intent"),
@@ -167,7 +168,7 @@ public static class TraceSliceProposalLlmRunner
 
         try
         {
-            using var document = JsonDocument.Parse(proposalJson);
+            using var document = JsonDocument.Parse(LlmJsonOutputNormalizer.Normalize(proposalJson));
             var root = document.RootElement;
 
             if (!string.Equals(GetRequiredString(root, "type"), "rufus.trace-slice-proposal", StringComparison.Ordinal))

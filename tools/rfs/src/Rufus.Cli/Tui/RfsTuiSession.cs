@@ -112,7 +112,11 @@ internal static class RfsTuiSession
 
                 if (string.Equals(input, "/paste", StringComparison.Ordinal))
                 {
-                    await HandlePasteCommandAsync(repoRoot, status);
+                    if (await HandlePasteCommandAsync(repoRoot, status))
+                    {
+                        break;
+                    }
+
                     continue;
                 }
 
@@ -234,16 +238,16 @@ internal static class RfsTuiSession
     private static bool LooksLikePaste(string input)
         => input.Length >= 24 || input.Contains(' ') || input.Contains('\t');
 
-    private static async Task HandlePasteCommandAsync(string repoRoot, RckWorkspaceStatus status)
+    private static async Task<bool> HandlePasteCommandAsync(string repoRoot, RckWorkspaceStatus status)
     {
         var capturedDraft = await CapturePasteDraftAsync(repoRoot);
         if (capturedDraft is null)
         {
-            return;
+            return false;
         }
 
         RenderCapturedPasteReference(capturedDraft);
-        await RunPromptModeSelectionAsync(capturedDraft, repoRoot, status);
+        return await RunPromptModeSelectionAsync(capturedDraft, repoRoot, status);
     }
 
     private static async Task<RfsTuiPromptDraft?> CapturePasteDraftAsync(string repoRoot)

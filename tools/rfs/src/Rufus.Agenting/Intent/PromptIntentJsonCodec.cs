@@ -28,9 +28,11 @@ public static class PromptIntentJsonCodec
             return false;
         }
 
+        var normalizedJson = NormalizeJson(json);
+
         try
         {
-            using var document = JsonDocument.Parse(json);
+            using var document = JsonDocument.Parse(normalizedJson);
             promptIntent = ReadPromptIntent(document.RootElement);
             return true;
         }
@@ -138,5 +140,22 @@ public static class PromptIntentJsonCodec
 
         property = default;
         return false;
+    }
+
+    private static string NormalizeJson(string json)
+    {
+        var trimmed = json.Trim();
+        if (!trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        var lines = trimmed.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+        if (lines.Length < 3 || !lines[0].StartsWith("```", StringComparison.Ordinal) || !string.Equals(lines[^1].Trim(), "```", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        return string.Join(Environment.NewLine, lines[1..^1]).Trim();
     }
 }

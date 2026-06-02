@@ -19,6 +19,7 @@ internal enum RfsTuiCommandKind
     Anchor,
     CompleteProfile,
     Help,
+    Paste,
     Exit,
 }
 
@@ -133,6 +134,7 @@ internal static class RfsTuiCommandCatalog
         new(RfsTuiCommandKind.Anchor, "/anchor", "/anchor \"name\"", "Create milestone anchor", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.CompleteProfile, "/complete-profile", $"/complete-profile <{RfsCompleteModelProfileStore.FormatProfileUsageChoices()}>", "Apply a Complete model profile", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.Help, "/help", "/help", "Show this help"),
+        new(RfsTuiCommandKind.Paste, "/paste", "/paste", "Paste a long/multiline prompt and store it as a temp file"),
         new(RfsTuiCommandKind.HermesDraft, "/hermes draft", "/hermes draft", "Build Hermes handoff draft", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.HermesRun, "/hermes run", "/hermes run", "Execute Hermes once with guardrails", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.PiRun, "/pi run", "/pi run", "Execute Pi using JSON Event Stream", RfsTuiCommandMatchMode.ExactOrArguments),

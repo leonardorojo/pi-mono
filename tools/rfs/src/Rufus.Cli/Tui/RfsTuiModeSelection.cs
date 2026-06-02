@@ -46,7 +46,7 @@ public static class RfsTuiModeSelectionParser
             return RfsTuiModeSelection.Cancel;
         }
 
-        if (string.Equals(normalized, "/exit", StringComparison.Ordinal) || string.Equals(normalized, "exit", StringComparison.Ordinal))
+        if (string.Equals(normalized, "/quit", StringComparison.Ordinal) || string.Equals(normalized, "/exit", StringComparison.Ordinal) || string.Equals(normalized, "exit", StringComparison.Ordinal))
         {
             return RfsTuiModeSelection.Exit;
         }

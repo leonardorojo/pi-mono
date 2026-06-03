@@ -75,24 +75,24 @@ internal static class RfsCompleteModelProfileChecks
             Expect(result.AppliedProfile is not null, $"[{name}] expected AppliedProfile to be non-null.", failures);
 
             var defaultModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(tempDir);
-            Expect(string.Equals(defaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name}] expected defaultModel 'gpt-5.4-mini' but got '{defaultModel}'.", failures);
+            Expect(string.Equals(defaultModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected defaultModel 'claude-sonnet-4.5' but got '{defaultModel}'.", failures);
 
             var intentModel = RckWorkspaceModelConfigStore.TryReadStageModel("intent", tempDir);
             Expect(string.Equals(intentModel, "claude-haiku-4.5", StringComparison.Ordinal),
                 $"[{name}] expected intent 'claude-haiku-4.5' but got '{intentModel}'.", failures);
 
             var proposalModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", tempDir);
-            Expect(string.Equals(proposalModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name}] expected traceSliceProposal 'gpt-5.4-mini' but got '{proposalModel}'.", failures);
+            Expect(string.Equals(proposalModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected traceSliceProposal 'claude-sonnet-4.5' but got '{proposalModel}'.", failures);
 
             var memoryModel = RckWorkspaceModelConfigStore.TryReadStageModel("conversationalMemory", tempDir);
             Expect(string.Equals(memoryModel, "claude-haiku-4.5", StringComparison.Ordinal),
                 $"[{name}] expected conversationalMemory 'claude-haiku-4.5' but got '{memoryModel}'.", failures);
 
             var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", tempDir);
-            Expect(string.Equals(principalAnswerModel, "deepseek-chat", StringComparison.Ordinal),
-                $"[{name}] expected principalAnswer 'deepseek-chat' but got '{principalAnswerModel}'.", failures);
+            Expect(string.Equals(principalAnswerModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected principalAnswer 'claude-sonnet-4.5' but got '{principalAnswerModel}'.", failures);
         }
         finally
         {
@@ -112,24 +112,24 @@ internal static class RfsCompleteModelProfileChecks
             InitGitAndRfs(tempDir);
 
             var defaultModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(tempDir);
-            Expect(string.Equals(defaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name}] expected defaultModel 'gpt-5.4-mini' but got '{defaultModel}'.", failures);
+            Expect(string.Equals(defaultModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected defaultModel 'claude-sonnet-4.5' but got '{defaultModel}'.", failures);
 
             var intentModel = RckWorkspaceModelConfigStore.TryReadStageModel("intent", tempDir);
             Expect(string.Equals(intentModel, "claude-haiku-4.5", StringComparison.Ordinal),
                 $"[{name}] expected intent 'claude-haiku-4.5' but got '{intentModel}'.", failures);
 
             var proposalModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", tempDir);
-            Expect(string.Equals(proposalModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name}] expected traceSliceProposal 'gpt-5.4-mini' but got '{proposalModel}'.", failures);
+            Expect(string.Equals(proposalModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected traceSliceProposal 'claude-sonnet-4.5' but got '{proposalModel}'.", failures);
 
             var memoryModel = RckWorkspaceModelConfigStore.TryReadStageModel("conversationalMemory", tempDir);
             Expect(string.Equals(memoryModel, "claude-haiku-4.5", StringComparison.Ordinal),
                 $"[{name}] expected conversationalMemory 'claude-haiku-4.5' but got '{memoryModel}'.", failures);
 
             var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", tempDir);
-            Expect(string.Equals(principalAnswerModel, "deepseek-chat", StringComparison.Ordinal),
-                $"[{name}] expected principalAnswer 'deepseek-chat' but got '{principalAnswerModel}'.", failures);
+            Expect(string.Equals(principalAnswerModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected principalAnswer 'claude-sonnet-4.5' but got '{principalAnswerModel}'.", failures);
         }
         finally
         {
@@ -160,20 +160,20 @@ internal static class RfsCompleteModelProfileChecks
             Expect(result.Success, $"[{name}] expected Initialize to succeed but got: {result.ErrorMessage}.", failures);
 
             var defaultModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(tempDir);
-            Expect(string.Equals(defaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name}] expected defaultModel 'gpt-5.4-mini' after upgrade but got '{defaultModel}'.", failures);
+            Expect(string.Equals(defaultModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected defaultModel 'claude-sonnet-4.5' after upgrade but got '{defaultModel}'.", failures);
 
             var intentModel = RckWorkspaceModelConfigStore.TryReadStageModel("intent", tempDir);
             Expect(string.Equals(intentModel, "claude-haiku-4.5", StringComparison.Ordinal),
                 $"[{name}] expected intent 'claude-haiku-4.5' after upgrade but got '{intentModel}'.", failures);
 
             var traceSliceProposalModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", tempDir);
-            Expect(string.Equals(traceSliceProposalModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name}] expected traceSliceProposal 'gpt-5.4-mini' after upgrade but got '{traceSliceProposalModel}'.", failures);
+            Expect(string.Equals(traceSliceProposalModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected traceSliceProposal 'claude-sonnet-4.5' after upgrade but got '{traceSliceProposalModel}'.", failures);
 
             var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", tempDir);
-            Expect(string.Equals(principalAnswerModel, "deepseek-chat", StringComparison.Ordinal),
-                $"[{name}] expected principalAnswer 'deepseek-chat' after upgrade but got '{principalAnswerModel}'.", failures);
+            Expect(string.Equals(principalAnswerModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected principalAnswer 'claude-sonnet-4.5' after upgrade but got '{principalAnswerModel}'.", failures);
         }
         finally
         {
@@ -331,10 +331,16 @@ internal static class RfsCompleteModelProfileChecks
         Expect(balancedProfile is not null, $"[{name}] expected 'balanced' profile to exist.", failures);
         if (balancedProfile is not null)
         {
-            Expect(string.Equals(balancedProfile.DefaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name}] expected balanced defaultModel 'gpt-5.4-mini'.", failures);
+            Expect(string.Equals(balancedProfile.DefaultModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected balanced defaultModel 'claude-sonnet-4.5'.", failures);
             Expect(string.Equals(balancedProfile.IntentModel, "claude-haiku-4.5", StringComparison.Ordinal),
                 $"[{name}] expected balanced IntentModel 'claude-haiku-4.5'.", failures);
+            Expect(string.Equals(balancedProfile.TraceSliceProposalModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected balanced TraceSliceProposalModel 'claude-sonnet-4.5'.", failures);
+            Expect(string.Equals(balancedProfile.ConversationalMemoryModel, "claude-haiku-4.5", StringComparison.Ordinal),
+                $"[{name}] expected balanced ConversationalMemoryModel 'claude-haiku-4.5'.", failures);
+            Expect(string.Equals(balancedProfile.PrincipalAnswerModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name}] expected balanced PrincipalAnswerModel 'claude-sonnet-4.5'.", failures);
         }
 
         return Task.CompletedTask;
@@ -396,8 +402,8 @@ internal static class RfsCompleteModelProfileChecks
             Expect(result.Success, $"[{name} balanced] expected success but got: {result.ErrorMessage}.", failures);
 
             defaultModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(tempDir);
-            Expect(string.Equals(defaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
-                $"[{name} balanced] expected 'gpt-5.4-mini' but got '{defaultModel}'.", failures);
+            Expect(string.Equals(defaultModel, "claude-sonnet-4.5", StringComparison.Ordinal),
+                $"[{name} balanced] expected 'claude-sonnet-4.5' but got '{defaultModel}'.", failures);
         }
         finally
         {

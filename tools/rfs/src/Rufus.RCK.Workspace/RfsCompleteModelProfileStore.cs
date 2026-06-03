@@ -39,11 +39,11 @@ public static class RfsCompleteModelProfileStore
             Description: "Cheap/local-oriented profile for testing Complete mode"),
         new(
             Name: "balanced",
-            DefaultModel: "gpt-5.4-mini",
+            DefaultModel: "claude-sonnet-4.5",
             IntentModel: "claude-haiku-4.5",
-            TraceSliceProposalModel: "gpt-5.4-mini",
+            TraceSliceProposalModel: "claude-sonnet-4.5",
             ConversationalMemoryModel: "claude-haiku-4.5",
-            PrincipalAnswerModel: "deepseek-chat",
+            PrincipalAnswerModel: "claude-sonnet-4.5",
             Description: "Balanced profile for normal Complete mode usage"),
     ];
 

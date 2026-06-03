@@ -3,6 +3,7 @@ using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
 using System.Text;
 using System.Globalization;
+using System.Text.Json;
 
 internal static class RfsTuiModelPickerChecks
 {
@@ -11,6 +12,7 @@ internal static void Run(List<string> failures)
 RunSessionModelStateCases(failures);
 RunModelSelectionStateCases(failures);
 RunRendererAndPrincipalModelCases(failures);
+RunTuiPrincipalAnswerResolutionCases(failures);
 RunHermesDraftCases(failures);
 RunHermesRunCases(failures);
 RunHermesHealthCases(failures);
@@ -261,6 +263,61 @@ var defaultExecutionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(st
 if (!string.Equals(defaultExecutionModel.Model, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
 {
 failures.Add($"[tui model picker] expected empty session model to fall back to '{RfsTuiSessionState.DefaultSessionModel}' but got '{defaultExecutionModel.Model}'.");
+}
+}
+
+private static void RunTuiPrincipalAnswerResolutionCases(List<string> failures)
+{
+var tempDir = Path.Combine(Path.GetTempPath(), $"rfs-tui-principal-answer-check-{Guid.NewGuid():N}");
+try
+{
+Directory.CreateDirectory(tempDir);
+Directory.CreateDirectory(Path.Combine(tempDir, ".git"));
+Directory.CreateDirectory(Path.Combine(tempDir, ".rfs"));
+
+var config = new Dictionary<string, object?>
+{
+    ["schemaVersion"] = 1,
+    ["type"] = "rufus.workspace",
+    ["createdBy"] = "rfs init",
+    ["llm"] = new Dictionary<string, object?>
+    {
+        ["defaultModel"] = "gpt-5.4-mini",
+        ["stages"] = new Dictionary<string, object?>
+        {
+            ["principalAnswer"] = new Dictionary<string, object?> { ["model"] = "deepseek-chat" },
+        },
+    },
+};
+File.WriteAllText(Path.Combine(tempDir, ".rfs", "config.json"), JsonSerializer.Serialize(config));
+
+var resolvedModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(tempDir, "gpt-5.4-mini");
+if (!string.Equals(resolvedModel.Model, "deepseek-chat", StringComparison.Ordinal))
+{
+    failures.Add($"[tui model picker] expected repo-root principalAnswer resolution to use the configured stage model but got '{resolvedModel.Model}'.");
+}
+
+var fallbackConfig = new Dictionary<string, object?>
+{
+    ["schemaVersion"] = 1,
+    ["type"] = "rufus.workspace",
+    ["createdBy"] = "rfs init",
+    ["llm"] = new Dictionary<string, object?>
+    {
+        ["defaultModel"] = "gpt-5.4-mini",
+    },
+};
+File.WriteAllText(Path.Combine(tempDir, ".rfs", "config.json"), JsonSerializer.Serialize(fallbackConfig));
+
+var fallbackModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(tempDir, "gpt-5.4-mini");
+if (!string.Equals(fallbackModel.Model, "gpt-5.4-mini", StringComparison.Ordinal))
+{
+    failures.Add($"[tui model picker] expected missing principalAnswer to fall back to the session/default model but got '{fallbackModel.Model}'.");
+}
+}
+finally
+{
+    SafeDeleteDirectory(tempDir);
 }
 }
 
@@ -781,6 +838,21 @@ foreach (var fragment in new[]
         failures.Add($"[tui model picker] expected failed-start Hermes output to include '{fragment}'.");
     }
 }
+}
+
+private static void SafeDeleteDirectory(string path)
+{
+    try
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+    }
+    catch
+    {
+        // best-effort cleanup
+    }
 }
 
 private sealed class FakeHermesRunner : IRfsTuiHermesRunner

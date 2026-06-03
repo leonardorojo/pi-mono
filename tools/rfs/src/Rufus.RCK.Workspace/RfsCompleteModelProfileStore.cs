@@ -103,6 +103,21 @@ public static class RfsCompleteModelProfileStore
     public static RfsCompleteModelProfile? FindProfile(string name)
         => Profiles.FirstOrDefault(profile => string.Equals(profile.Name, name, StringComparison.Ordinal));
 
+    internal static JsonObject BuildLlmConfig(RfsCompleteModelProfile profile)
+    {
+        return new JsonObject
+        {
+            ["defaultModel"] = profile.DefaultModel,
+            ["stages"] = new JsonObject
+            {
+                ["intent"] = new JsonObject { ["model"] = profile.IntentModel },
+                ["traceSliceProposal"] = new JsonObject { ["model"] = profile.TraceSliceProposalModel },
+                ["conversationalMemory"] = new JsonObject { ["model"] = profile.ConversationalMemoryModel },
+                ["principalAnswer"] = new JsonObject { ["model"] = profile.PrincipalAnswerModel },
+            },
+        };
+    }
+
     public static RfsCompleteModelProfileResult SetCompleteProfile(string profileName, string? startingDirectory = null)
     {
         var trimmedName = profileName.Trim();
@@ -144,22 +159,7 @@ public static class RfsCompleteModelProfileStore
                 config["schemaVersion"] = 1;
             }
 
-            var llm = config["llm"] as JsonObject ?? new JsonObject();
-
-            // Set defaultModel
-            llm["defaultModel"] = profile.DefaultModel;
-
-            // Set stages
-            var stages = new JsonObject
-            {
-                ["intent"] = new JsonObject { ["model"] = profile.IntentModel },
-                ["traceSliceProposal"] = new JsonObject { ["model"] = profile.TraceSliceProposalModel },
-                ["conversationalMemory"] = new JsonObject { ["model"] = profile.ConversationalMemoryModel },
-                ["principalAnswer"] = new JsonObject { ["model"] = profile.PrincipalAnswerModel },
-            };
-            llm["stages"] = stages;
-
-            config["llm"] = llm;
+            config["llm"] = BuildLlmConfig(profile);
 
             File.WriteAllText(paths.ConfigPath, JsonSerializer.Serialize(config, IndentedJsonOptions) + Environment.NewLine, Utf8NoBom);
 

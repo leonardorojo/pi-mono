@@ -53,36 +53,100 @@ public static class RckWorkspaceInitializer
 
     private static bool EnsureConfig(RckWorkspacePaths paths)
     {
-        if (File.Exists(paths.ConfigPath))
-        {
-            return false;
-        }
-
         Directory.CreateDirectory(paths.WorkspaceDirectory);
 
         var balancedProfile = RfsCompleteModelProfileStore.FindProfile("balanced")
             ?? throw new InvalidOperationException("Unknown default Complete profile: balanced.");
 
-        var config = new JsonObject
+        if (!File.Exists(paths.ConfigPath))
+        {
+            WriteCompleteProfileConfig(paths.ConfigPath, BuildWorkspaceConfig(balancedProfile));
+            return true;
+        }
+
+        var config = ReadConfig(paths.ConfigPath);
+        if (!TryUpgradeLegacyInitConfig(config, balancedProfile))
+        {
+            return false;
+        }
+
+        WriteCompleteProfileConfig(paths.ConfigPath, config);
+        return true;
+    }
+
+    private static JsonObject BuildWorkspaceConfig(RfsCompleteModelProfile profile)
+    {
+        return new JsonObject
         {
             ["schemaVersion"] = 1,
             ["type"] = "rufus.workspace",
             ["createdBy"] = "rfs init",
-            ["llm"] = new JsonObject
-            {
-                ["defaultModel"] = balancedProfile.DefaultModel,
-                ["stages"] = new JsonObject
-                {
-                    ["intent"] = new JsonObject { ["model"] = balancedProfile.IntentModel },
-                    ["traceSliceProposal"] = new JsonObject { ["model"] = balancedProfile.TraceSliceProposalModel },
-                    ["conversationalMemory"] = new JsonObject { ["model"] = balancedProfile.ConversationalMemoryModel },
-                    ["principalAnswer"] = new JsonObject { ["model"] = balancedProfile.PrincipalAnswerModel },
-                },
-            },
+            ["llm"] = RfsCompleteModelProfileStore.BuildLlmConfig(profile),
         };
+    }
 
-        File.WriteAllText(paths.ConfigPath, JsonSerializer.Serialize(config, IndentedJsonOptions) + Environment.NewLine, Utf8NoBom);
+    private static bool TryUpgradeLegacyInitConfig(JsonObject config, RfsCompleteModelProfile balancedProfile)
+    {
+        if (!IsLegacyInitGeneratedConfig(config))
+        {
+            return false;
+        }
+
+        var existingLlm = config["llm"] as JsonObject;
+        var balancedLlm = RfsCompleteModelProfileStore.BuildLlmConfig(balancedProfile);
+
+        if (existingLlm is null)
+        {
+            config["llm"] = balancedLlm;
+            return true;
+        }
+
+        if (!existingLlm.ContainsKey("defaultModel") && balancedLlm["defaultModel"] is not null)
+        {
+            existingLlm["defaultModel"] = balancedLlm["defaultModel"]!.DeepClone();
+        }
+
+        if (!existingLlm.ContainsKey("stages") && balancedLlm["stages"] is not null)
+        {
+            existingLlm["stages"] = balancedLlm["stages"]!.DeepClone();
+        }
+
         return true;
+    }
+
+    private static bool IsLegacyInitGeneratedConfig(JsonObject config)
+    {
+        return string.Equals(ReadStringProperty(config, "type"), "rufus.workspace", StringComparison.Ordinal)
+            && string.Equals(ReadStringProperty(config, "createdBy"), "rfs init", StringComparison.Ordinal)
+            && (!config.TryGetPropertyValue("llm", out var llmNode) || llmNode is not JsonObject llm || !llm.ContainsKey("stages"));
+    }
+
+    private static string? ReadStringProperty(JsonObject config, string propertyName)
+    {
+        if (!config.TryGetPropertyValue(propertyName, out var propertyNode) || propertyNode is not JsonValue propertyValue)
+        {
+            return null;
+        }
+
+        return propertyValue.TryGetValue<string>(out var value) ? value?.Trim() : null;
+    }
+
+    private static void WriteCompleteProfileConfig(string configPath, JsonObject config)
+    {
+        File.WriteAllText(configPath, JsonSerializer.Serialize(config, IndentedJsonOptions) + Environment.NewLine, Utf8NoBom);
+    }
+
+    private static JsonObject ReadConfig(string configPath)
+    {
+        var node = JsonNode.Parse(File.ReadAllText(configPath))
+            ?? throw new JsonException("Config file is empty.");
+
+        if (node is not JsonObject config)
+        {
+            throw new JsonException("Config file must contain a JSON object.");
+        }
+
+        return config;
     }
 
     private static bool EnsureRckDirectories(RckWorkspacePaths paths)

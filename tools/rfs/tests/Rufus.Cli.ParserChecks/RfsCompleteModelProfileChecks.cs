@@ -9,6 +9,8 @@ internal static class RfsCompleteModelProfileChecks
     {
         await RunApplyTestAsync(failures);
         await RunApplyBalancedAsync(failures);
+        await RunInitializerSeedsBalancedProfileAsync(failures);
+        await RunInitializerUpgradesLegacyConfigAsync(failures);
         RunHelpPresentationAsync(failures);
         RunUnknownProfileHelpAsync(failures);
         await RunPreserveExistingFieldsAsync(failures);
@@ -91,6 +93,87 @@ internal static class RfsCompleteModelProfileChecks
             var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", tempDir);
             Expect(string.Equals(principalAnswerModel, "deepseek-chat", StringComparison.Ordinal),
                 $"[{name}] expected principalAnswer 'deepseek-chat' but got '{principalAnswerModel}'.", failures);
+        }
+        finally
+        {
+            SafeDeleteDirectory(tempDir);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static Task RunInitializerSeedsBalancedProfileAsync(List<string> failures)
+    {
+        const string name = "initializer seeds balanced profile with principalAnswer";
+        var tempDir = Path.Combine(Path.GetTempPath(), $"rfs-complete-profile-check-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(tempDir);
+            InitGitAndRfs(tempDir);
+
+            var defaultModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(tempDir);
+            Expect(string.Equals(defaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
+                $"[{name}] expected defaultModel 'gpt-5.4-mini' but got '{defaultModel}'.", failures);
+
+            var intentModel = RckWorkspaceModelConfigStore.TryReadStageModel("intent", tempDir);
+            Expect(string.Equals(intentModel, "claude-haiku-4.5", StringComparison.Ordinal),
+                $"[{name}] expected intent 'claude-haiku-4.5' but got '{intentModel}'.", failures);
+
+            var proposalModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", tempDir);
+            Expect(string.Equals(proposalModel, "gpt-5.4-mini", StringComparison.Ordinal),
+                $"[{name}] expected traceSliceProposal 'gpt-5.4-mini' but got '{proposalModel}'.", failures);
+
+            var memoryModel = RckWorkspaceModelConfigStore.TryReadStageModel("conversationalMemory", tempDir);
+            Expect(string.Equals(memoryModel, "claude-haiku-4.5", StringComparison.Ordinal),
+                $"[{name}] expected conversationalMemory 'claude-haiku-4.5' but got '{memoryModel}'.", failures);
+
+            var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", tempDir);
+            Expect(string.Equals(principalAnswerModel, "deepseek-chat", StringComparison.Ordinal),
+                $"[{name}] expected principalAnswer 'deepseek-chat' but got '{principalAnswerModel}'.", failures);
+        }
+        finally
+        {
+            SafeDeleteDirectory(tempDir);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static Task RunInitializerUpgradesLegacyConfigAsync(List<string> failures)
+    {
+        const string name = "initializer upgrades legacy init config with principalAnswer";
+        var tempDir = Path.Combine(Path.GetTempPath(), $"rfs-complete-profile-check-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(tempDir);
+            InitGitAndRfs(tempDir);
+
+            var legacyConfig = new Dictionary<string, object?>
+            {
+                ["schemaVersion"] = 1,
+                ["type"] = "rufus.workspace",
+                ["createdBy"] = "rfs init",
+            };
+            File.WriteAllText(Path.Combine(tempDir, ".rfs", "config.json"), JsonSerializer.Serialize(legacyConfig));
+
+            var result = RckWorkspaceInitializer.Initialize(tempDir);
+            Expect(result.Success, $"[{name}] expected Initialize to succeed but got: {result.ErrorMessage}.", failures);
+
+            var defaultModel = RckWorkspaceModelConfigStore.TryReadDefaultModel(tempDir);
+            Expect(string.Equals(defaultModel, "gpt-5.4-mini", StringComparison.Ordinal),
+                $"[{name}] expected defaultModel 'gpt-5.4-mini' after upgrade but got '{defaultModel}'.", failures);
+
+            var intentModel = RckWorkspaceModelConfigStore.TryReadStageModel("intent", tempDir);
+            Expect(string.Equals(intentModel, "claude-haiku-4.5", StringComparison.Ordinal),
+                $"[{name}] expected intent 'claude-haiku-4.5' after upgrade but got '{intentModel}'.", failures);
+
+            var traceSliceProposalModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", tempDir);
+            Expect(string.Equals(traceSliceProposalModel, "gpt-5.4-mini", StringComparison.Ordinal),
+                $"[{name}] expected traceSliceProposal 'gpt-5.4-mini' after upgrade but got '{traceSliceProposalModel}'.", failures);
+
+            var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", tempDir);
+            Expect(string.Equals(principalAnswerModel, "deepseek-chat", StringComparison.Ordinal),
+                $"[{name}] expected principalAnswer 'deepseek-chat' after upgrade but got '{principalAnswerModel}'.", failures);
         }
         finally
         {

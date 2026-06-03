@@ -45,6 +45,49 @@ internal static class RfsTuiPiRunCommand
             cancellationToken).ConfigureAwait(false);
 
         RfsTuiRenderer.WritePiRunResult(result);
+        if (!ShouldOfferRecording(result))
+        {
+            return true;
+        }
+
+        if (!TryReadRecordingDecision())
+        {
+            Console.WriteLine("Pi response was not recorded.");
+            return true;
+        }
+
+        var recordResult = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(
+                draft.PromptText,
+                result.Stdout.TrimEnd(),
+                result.Provider,
+                result.Model,
+                mode: "tui-direct"),
+            status.RepoRoot);
+
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return true;
+        }
+
+        Console.WriteLine("Recorded Pi run State + Delta:");
+        Console.WriteLine($"  state: {recordResult.StateId}");
+        Console.WriteLine($"  delta: {recordResult.DeltaId}");
         return true;
+    }
+
+    private static bool ShouldOfferRecording(RfsTuiPiRunResult result)
+        => result.Health == RfsTuiPiRunHealth.Completed && !string.IsNullOrWhiteSpace(result.Stdout);
+
+    private static bool TryReadRecordingDecision()
+    {
+        Console.Write("Record Pi response into RCK? [y/N]: ");
+        var answer = Console.ReadLine();
+        return string.Equals(answer?.Trim(), "y", StringComparison.OrdinalIgnoreCase);
     }
 }

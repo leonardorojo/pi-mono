@@ -76,7 +76,7 @@ internal static class RfsTuiRenderer
 
     internal static void WritePasteCaptureIntro()
     {
-        WriteMutedLine("Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.");
+        WriteMutedLine("Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.");
     }
 
     internal static void WritePasteCapturePrompt()
@@ -107,7 +107,7 @@ internal static class RfsTuiRenderer
         WriteModeOption("2", "Simple", "recent memory");
         WriteModeOption("3", "Complete", "governed context");
         WriteModeOption("4", "Plan", "plan only");
-        WriteCommandLine("/paste", "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.");
+        WriteCommandLine("/paste", "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.");
         WriteCommandLine("/clear", "Clear the screen");
         WriteCommandLine("/cancel", "return to prompt");
         WriteCommandLine("/quit", "Alias for /exit");

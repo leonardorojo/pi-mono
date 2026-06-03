@@ -130,7 +130,7 @@ if (piRun is null || !string.Equals(piRun.Description, "Execute Pi using JSON Ev
 failures.Add("[tui model picker] expected /pi run help text to describe the Pi runtime path.");
 }
 
-if (paste is null || !string.Equals(paste.Description, "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.", StringComparison.Ordinal))
+if (paste is null || !string.Equals(paste.Description, "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.", StringComparison.Ordinal))
 {
 failures.Add("[tui model picker] expected /paste help text to describe the long-prompt capture path.");
 }
@@ -243,7 +243,7 @@ failures.Add("[tui model picker] expected the header to include a Model line.");
 }
 
 if (!headerText.Contains("/paste", StringComparison.Ordinal) ||
-    !headerText.Contains("Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.", StringComparison.Ordinal) ||
+    !headerText.Contains("Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.", StringComparison.Ordinal) ||
     !headerText.Contains("/clear", StringComparison.Ordinal) ||
     !headerText.Contains("/quit", StringComparison.Ordinal) ||
     !headerText.Contains("/exit", StringComparison.Ordinal))

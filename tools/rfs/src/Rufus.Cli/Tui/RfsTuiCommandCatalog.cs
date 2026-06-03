@@ -135,7 +135,7 @@ internal static class RfsTuiCommandCatalog
         new(RfsTuiCommandKind.Anchor, "/anchor", "/anchor \"name\"", "Create milestone anchor", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.CompleteProfile, "/complete-profile", $"/complete-profile <{RfsCompleteModelProfileStore.FormatProfileUsageChoices()}>", "Apply a Complete model profile", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.Help, "/help", "/help", "Show this help"),
-        new(RfsTuiCommandKind.Paste, "/paste", "/paste", "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard."),
+        new(RfsTuiCommandKind.Paste, "/paste", "/paste", "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard."),
         new(RfsTuiCommandKind.Clear, "/clear", "/clear", "Clear the screen"),
         new(RfsTuiCommandKind.HermesDraft, "/hermes draft", "/hermes draft", "Build Hermes handoff draft", RfsTuiCommandMatchMode.ExactOrArguments),
         new(RfsTuiCommandKind.HermesRun, "/hermes run", "/hermes run", "Execute Hermes once with guardrails", RfsTuiCommandMatchMode.ExactOrArguments),

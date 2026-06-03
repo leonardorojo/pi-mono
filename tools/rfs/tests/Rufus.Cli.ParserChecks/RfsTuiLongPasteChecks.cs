@@ -12,7 +12,9 @@ internal static class RfsTuiLongPasteChecks
         await RunShortPromptCaseAsync(failures);
         await RunManualPasteCaptureCaseAsync(failures);
         await RunPasteModeExitCaseAsync(failures);
-        await RunEmptyLinePasteCaptureCaseAsync(failures);
+        await RunBlankLinePasteCaptureCaseAsync(failures);
+        await RunPasteLiteralQuitCaseAsync(failures);
+        await RunPasteLiteralClearCaseAsync(failures);
         await RunManualPasteCancelCaseAsync(failures);
         await RunPasteBurstDuringModeSelectionCaseAsync(failures);
         await RunShortPasteLikeSelectionCaseAsync(failures);
@@ -31,7 +33,7 @@ internal static class RfsTuiLongPasteChecks
                 return;
             }
 
-            var result = await RunScriptedTuiAsync("hola\n/exit\n", tempRoot);
+            var result = await RunScriptedTuiAsync("hola\n/quit\n", tempRoot);
             if (result.ExitCode != 0)
             {
                 failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
@@ -68,7 +70,7 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.",
+                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
                 "Captured long paste:",
                 "[paste:",
                 "lines:",
@@ -109,10 +111,10 @@ internal static class RfsTuiLongPasteChecks
         }
     }
 
-    private static async Task RunManualPasteCancelCaseAsync(List<string> failures)
+    private static async Task RunPasteLiteralQuitCaseAsync(List<string> failures)
     {
-        const string name = "long paste /paste cancel returns to prompt";
-        var tempRoot = CreateTempRoot("rfs-long-paste-cancel-checks");
+        const string name = "long paste /paste keeps literal /quit as content";
+        var tempRoot = CreateTempRoot("rfs-long-paste-literal-quit-checks");
         try
         {
             if (!await InitializeRepoAsync(tempRoot, failures, name))
@@ -120,7 +122,7 @@ internal static class RfsTuiLongPasteChecks
                 return;
             }
 
-            var result = await RunScriptedTuiAsync("/paste\npaste line 1\n/cancel\n/exit\n", tempRoot);
+            var result = await RunScriptedTuiAsync("/paste\nline 1\n/quit\nline 3\n/end\n/exit\n", tempRoot);
             if (result.ExitCode != 0)
             {
                 failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
@@ -128,12 +130,25 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.",
-                "Paste discarded.");
+                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
+                "Captured long paste:");
 
-            if (result.Stdout.Contains("Captured long paste:", StringComparison.Ordinal))
+            var pasteDirectory = Path.Combine(tempRoot, ".rfs", "tmp", "pastes");
+            var files = Directory.Exists(pasteDirectory)
+                ? Directory.GetFiles(pasteDirectory, "*_paste.md", SearchOption.TopDirectoryOnly)
+                : Array.Empty<string>();
+
+            if (files.Length != 1)
             {
-                failures.Add($"[{name}] expected cancel to discard the captured paste.");
+                failures.Add($"[{name}] expected exactly one temp paste file but found {files.Length}.");
+            }
+            else
+            {
+                var content = await File.ReadAllTextAsync(files[0]);
+                if (!content.Contains("/quit", StringComparison.Ordinal) || !content.Contains("line 1", StringComparison.Ordinal) || !content.Contains("line 3", StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected paste file to keep /quit as literal text.");
+                }
             }
         }
         finally
@@ -161,7 +176,7 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.",
+                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
                 "Captured long paste:");
 
             if (result.Stdout.Contains("Unknown command: /quit", StringComparison.Ordinal))
@@ -175,10 +190,10 @@ internal static class RfsTuiLongPasteChecks
         }
     }
 
-    private static async Task RunEmptyLinePasteCaptureCaseAsync(List<string> failures)
+    private static async Task RunBlankLinePasteCaptureCaseAsync(List<string> failures)
     {
-        const string name = "long paste /paste empty line ends capture";
-        var tempRoot = CreateTempRoot("rfs-long-paste-empty-line-checks");
+        const string name = "long paste /paste preserves blank lines inside content";
+        var tempRoot = CreateTempRoot("rfs-long-paste-blank-line-checks");
         try
         {
             if (!await InitializeRepoAsync(tempRoot, failures, name))
@@ -186,7 +201,7 @@ internal static class RfsTuiLongPasteChecks
                 return;
             }
 
-            var result = await RunScriptedTuiAsync("/paste\npaste line 1\npaste line 2\n\n1\n/exit\n", tempRoot);
+            var result = await RunScriptedTuiAsync("/paste\nline 1\n\nline 3\n/end\n/exit\n", tempRoot);
             if (result.ExitCode != 0)
             {
                 failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
@@ -194,7 +209,7 @@ internal static class RfsTuiLongPasteChecks
             }
 
             ExpectContains(result.Stdout, name, failures,
-                "Paste a long/multiline prompt. Finish with /end or an empty line. Use /cancel to discard.",
+                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
                 "Captured long paste:",
                 "[paste:",
                 "lines:",
@@ -203,7 +218,7 @@ internal static class RfsTuiLongPasteChecks
 
             if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.", StringComparison.Ordinal))
             {
-                failures.Add($"[{name}] expected empty-line termination to avoid Invalid mode spam.");
+                failures.Add($"[{name}] expected blank lines inside paste to avoid Invalid mode spam.");
             }
 
             var pasteDirectory = Path.Combine(tempRoot, ".rfs", "tmp", "pastes");
@@ -218,10 +233,90 @@ internal static class RfsTuiLongPasteChecks
             else
             {
                 var content = await File.ReadAllTextAsync(files[0]);
-                if (!content.Contains("paste line 1", StringComparison.Ordinal) || !content.Contains("paste line 2", StringComparison.Ordinal))
+                var expected = string.Join(Environment.NewLine, new[] { "line 1", string.Empty, "line 3" });
+                if (!string.Equals(content, expected, StringComparison.Ordinal))
                 {
-                    failures.Add($"[{name}] expected paste file to contain captured lines.");
+                    failures.Add($"[{name}] expected paste file to preserve the blank line, but got '{content.Replace("\r", "\\r").Replace("\n", "\\n")}'.");
                 }
+            }
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static async Task RunPasteLiteralClearCaseAsync(List<string> failures)
+    {
+        const string name = "long paste /paste keeps literal /clear as content";
+        var tempRoot = CreateTempRoot("rfs-long-paste-literal-clear-checks");
+        try
+        {
+            if (!await InitializeRepoAsync(tempRoot, failures, name))
+            {
+                return;
+            }
+
+            var result = await RunScriptedTuiAsync("/paste\nline 1\n/clear\nline 3\n/end\n/exit\n", tempRoot);
+            if (result.ExitCode != 0)
+            {
+                failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+                return;
+            }
+
+            ExpectContains(result.Stdout, name, failures,
+                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
+                "Captured long paste:");
+
+            var pasteDirectory = Path.Combine(tempRoot, ".rfs", "tmp", "pastes");
+            var files = Directory.Exists(pasteDirectory)
+                ? Directory.GetFiles(pasteDirectory, "*_paste.md", SearchOption.TopDirectoryOnly)
+                : Array.Empty<string>();
+
+            if (files.Length != 1)
+            {
+                failures.Add($"[{name}] expected exactly one temp paste file but found {files.Length}.");
+            }
+            else
+            {
+                var content = await File.ReadAllTextAsync(files[0]);
+                if (!content.Contains("/clear", StringComparison.Ordinal) || !content.Contains("line 1", StringComparison.Ordinal) || !content.Contains("line 3", StringComparison.Ordinal))
+                {
+                    failures.Add($"[{name}] expected paste file to keep /clear as literal text.");
+                }
+            }
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static async Task RunManualPasteCancelCaseAsync(List<string> failures)
+    {
+        const string name = "long paste /paste cancel returns to prompt";
+        var tempRoot = CreateTempRoot("rfs-long-paste-cancel-checks");
+        try
+        {
+            if (!await InitializeRepoAsync(tempRoot, failures, name))
+            {
+                return;
+            }
+
+            var result = await RunScriptedTuiAsync("/paste\npaste line 1\n/cancel\n/exit\n", tempRoot);
+            if (result.ExitCode != 0)
+            {
+                failures.Add($"[{name}] expected exit code 0 but got {result.ExitCode}. stderr: {result.Stderr}");
+                return;
+            }
+
+            ExpectContains(result.Stdout, name, failures,
+                "Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.",
+                "Paste discarded.");
+
+            if (result.Stdout.Contains("Captured long paste:", StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected cancel to discard the captured paste.");
             }
         }
         finally

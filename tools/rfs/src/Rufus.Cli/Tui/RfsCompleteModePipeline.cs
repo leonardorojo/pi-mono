@@ -23,6 +23,7 @@ public static class RfsCompleteModePipeline
         string prompt,
         string? currentDirectory = null,
         int maxRecentInteractions = 5,
+        string? preferredProvider = null,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
         => await BuildProposalAsync(
@@ -31,6 +32,7 @@ public static class RfsCompleteModePipeline
             maxRecentInteractions,
             intentAgent: null,
             proposalAgent: null,
+            preferredProvider: preferredProvider,
             cancellationToken: cancellationToken,
             stageWriter: stageWriter).ConfigureAwait(false);
 
@@ -40,6 +42,7 @@ public static class RfsCompleteModePipeline
         int maxRecentInteractions,
         IAgent? intentAgent,
         IAgent? proposalAgent,
+        string? preferredProvider = null,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
     {
@@ -56,8 +59,8 @@ public static class RfsCompleteModePipeline
                 quickIndexResult.ErrorMessage ?? "rfs trace-slice-proposal: failed to read TraceSliceProposal input.");
         }
 
-        intentAgent ??= ResolveIntentAgent(currentDirectory);
-        proposalAgent ??= ResolveProposalAgent(currentDirectory);
+        intentAgent ??= ResolveIntentAgent(currentDirectory, preferredProvider);
+        proposalAgent ??= ResolveProposalAgent(currentDirectory, preferredProvider);
 
         stageWriter?.Invoke("[1/5] Inferring intent...");
 
@@ -167,15 +170,17 @@ public static class RfsCompleteModePipeline
         string prompt,
         string? currentDirectory = null,
         int maxRecentInteractions = 5,
+        string? preferredProvider = null,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
-        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, proposalAgent: null, conversationalMemoryAgent: null, cancellationToken: cancellationToken, stageWriter: stageWriter).ConfigureAwait(false);
+        => await BuildAsync(prompt, currentDirectory, maxRecentInteractions, intentAgent: null, proposalAgent: null, conversationalMemoryAgent: null, preferredProvider: preferredProvider, cancellationToken: cancellationToken, stageWriter: stageWriter).ConfigureAwait(false);
 
     public static Task<RfsCompleteModeBuildResult> BuildAsync(
         string prompt,
         string? currentDirectory = null,
         int maxRecentInteractions = 5,
         IAgent? intentAgent = null,
+        string? preferredProvider = null,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
         => BuildAsync(
@@ -185,6 +190,7 @@ public static class RfsCompleteModePipeline
             intentAgent,
             proposalAgent: null,
             conversationalMemoryAgent: null,
+            preferredProvider,
             cancellationToken,
             stageWriter);
 
@@ -195,6 +201,7 @@ public static class RfsCompleteModePipeline
         IAgent? intentAgent,
         IAgent? proposalAgent,
         IAgent? conversationalMemoryAgent = null,
+        string? preferredProvider = null,
         CancellationToken cancellationToken = default,
         Action<string>? stageWriter = null)
     {
@@ -211,8 +218,8 @@ public static class RfsCompleteModePipeline
                 quickIndexResult.ErrorMessage ?? "rfs complete mode: failed to build DagQuickIndexV1.");
         }
 
-        intentAgent ??= ResolveIntentAgent(currentDirectory);
-        var anchorSelectionAgent = proposalAgent as PiTraceSliceProposalAgent ?? ResolveAnchorSelectionAgent(currentDirectory);
+        intentAgent ??= ResolveIntentAgent(currentDirectory, preferredProvider);
+        var anchorSelectionAgent = proposalAgent as PiTraceSliceProposalAgent ?? ResolveAnchorSelectionAgent(currentDirectory, preferredProvider);
 
         stageWriter?.Invoke("[1/5] Inferring intent...");
 
@@ -345,7 +352,7 @@ public static class RfsCompleteModePipeline
         }
 
         stageWriter?.Invoke("[4/5] Building ContextPack + ConversationalMemory...");
-        var conversationalMemoryResult = await BuildConversationalMemoryAsync(currentDirectory, normalizedPrompt, conversationalMemoryAgent, cancellationToken).ConfigureAwait(false);
+        var conversationalMemoryResult = await BuildConversationalMemoryAsync(currentDirectory, normalizedPrompt, conversationalMemoryAgent, preferredProvider, cancellationToken).ConfigureAwait(false);
 
         var contextPackResult = RckTraceSliceContextPackBuilder.BuildFromValidatedTraceSlice(validationResult.Json, currentDirectory);
         if (!contextPackResult.Success || string.IsNullOrWhiteSpace(contextPackResult.Json))
@@ -394,34 +401,43 @@ public static class RfsCompleteModePipeline
             ? "Complete mode failed while inferring intent."
             : $"Complete mode failed while inferring intent. {detail.Trim()}";
 
-    private static IAgent ResolveIntentAgent(string? currentDirectory)
+    private static IAgent ResolveIntentAgent(string? currentDirectory, string? preferredProvider = null)
     {
         var workingDirectory = string.IsNullOrWhiteSpace(currentDirectory)
             ? Directory.GetCurrentDirectory()
             : currentDirectory;
 
         var stageModel = RckWorkspaceModelConfigStore.TryReadStageModel("intent", workingDirectory);
-        return new PiIntentInferenceAgent(workingDirectory, stageModel);
+        var resolvedModel = string.IsNullOrWhiteSpace(stageModel)
+            ? stageModel
+            : RfsTuiModelPicker.ResolveExecutionModelAsync(workingDirectory, stageModel, preferredProvider).GetAwaiter().GetResult();
+        return new PiIntentInferenceAgent(workingDirectory, resolvedModel);
     }
 
-    private static IAgent ResolveProposalAgent(string? currentDirectory)
+    private static IAgent ResolveProposalAgent(string? currentDirectory, string? preferredProvider = null)
     {
         var workingDirectory = string.IsNullOrWhiteSpace(currentDirectory)
             ? Directory.GetCurrentDirectory()
             : currentDirectory;
 
         var stageModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", workingDirectory);
-        return new PiTraceSliceProposalAgent(workingDirectory, stageModel);
+        var resolvedModel = string.IsNullOrWhiteSpace(stageModel)
+            ? stageModel
+            : RfsTuiModelPicker.ResolveExecutionModelAsync(workingDirectory, stageModel, preferredProvider).GetAwaiter().GetResult();
+        return new PiTraceSliceProposalAgent(workingDirectory, resolvedModel);
     }
 
-    private static PiTraceSliceProposalAgent ResolveAnchorSelectionAgent(string? currentDirectory)
+    private static PiTraceSliceProposalAgent ResolveAnchorSelectionAgent(string? currentDirectory, string? preferredProvider = null)
     {
         var workingDirectory = string.IsNullOrWhiteSpace(currentDirectory)
             ? Directory.GetCurrentDirectory()
             : currentDirectory;
 
         var stageModel = RckWorkspaceModelConfigStore.TryReadStageModel("traceSliceProposal", workingDirectory);
-        return new PiTraceSliceProposalAgent(workingDirectory, stageModel);
+        var resolvedModel = string.IsNullOrWhiteSpace(stageModel)
+            ? stageModel
+            : RfsTuiModelPicker.ResolveExecutionModelAsync(workingDirectory, stageModel, preferredProvider).GetAwaiter().GetResult();
+        return new PiTraceSliceProposalAgent(workingDirectory, resolvedModel);
     }
 
     private static IReadOnlyList<string> BuildAnchorSelectionPolicyHints(int maxRecentInteractions)
@@ -536,6 +552,7 @@ public static class RfsCompleteModePipeline
         string? repoRoot,
         string normalizedPrompt,
         IAgent? conversationalMemoryAgent,
+        string? preferredProvider,
         CancellationToken cancellationToken)
     {
         var limits = new RckConversationalMemoryLimits(5, 1500, 6000);
@@ -549,7 +566,10 @@ public static class RfsCompleteModePipeline
         }
 
         var stageModel = RckWorkspaceModelConfigStore.TryReadStageModel("conversationalMemory", repoRoot);
-        var agent = conversationalMemoryAgent ?? new PiConversationalMemoryAgent(repoRoot ?? string.Empty, stageModel);
+        var resolvedModel = string.IsNullOrWhiteSpace(stageModel)
+            ? stageModel
+            : RfsTuiModelPicker.ResolveExecutionModelAsync(repoRoot ?? string.Empty, stageModel, preferredProvider).GetAwaiter().GetResult();
+        var agent = conversationalMemoryAgent ?? new PiConversationalMemoryAgent(repoRoot ?? string.Empty, resolvedModel);
         var task = new AgentTask(
             id: $"tui-cm-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}",
             kind: "build-conversational-memory",

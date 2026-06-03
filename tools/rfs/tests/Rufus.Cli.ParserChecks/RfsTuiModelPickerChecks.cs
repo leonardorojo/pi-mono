@@ -30,13 +30,25 @@ failures.Add($"[tui model picker] expected a fresh session to start on '{RfsTuiS
 sessionState.SetSessionModel("claude-sonnet-4.5");
 if (!string.Equals(sessionState.CurrentSessionModel, "claude-sonnet-4.5", StringComparison.Ordinal))
 {
-failures.Add($"[tui model picker] expected session model to update to 'claude-sonnet-4.5' but got '{sessionState.CurrentSessionModel}'.");
+    failures.Add($"[tui model picker] expected session model to update to 'claude-sonnet-4.5' but got '{sessionState.CurrentSessionModel}'.");
+}
+
+sessionState.SetSessionModel("gpt-5.4-mini", "github-copilot");
+if (!string.Equals(sessionState.ResolveMainModel(), "github-copilot/gpt-5.4-mini", StringComparison.Ordinal))
+{
+    failures.Add($"[tui model picker] expected session model/provider to resolve to 'github-copilot/gpt-5.4-mini' but got '{sessionState.ResolveMainModel()}'.");
+}
+
+sessionState.SetSessionModel("github-copilot/gpt-5.4-mini");
+if (!string.Equals(sessionState.ResolveMainModel(), "github-copilot/gpt-5.4-mini", StringComparison.Ordinal))
+{
+    failures.Add($"[tui model picker] expected qualified session model to remain qualified but got '{sessionState.ResolveMainModel()}'.");
 }
 
 sessionState.ResetSessionModel();
 if (!string.Equals(sessionState.CurrentSessionModel, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
 {
-failures.Add($"[tui model picker] expected session reset to restore '{RfsTuiSessionState.DefaultSessionModel}' but got '{sessionState.CurrentSessionModel}'.");
+    failures.Add($"[tui model picker] expected session reset to restore '{RfsTuiSessionState.DefaultSessionModel}' but got '{sessionState.CurrentSessionModel}'.");
 }
 }
 
@@ -47,13 +59,20 @@ var models = new[]
 new PiRpcAvailableModel("claude-haiku-4.5", "github-copilot", "Claude Haiku 4.5"),
 new PiRpcAvailableModel("claude-sonnet-4.5", "github-copilot", "Claude Sonnet 4.5"),
 new PiRpcAvailableModel("gpt-5.4-mini", "github-copilot", "GPT-5.4 Mini"),
+new PiRpcAvailableModel("gpt-5.4-mini", "openai-codex", "GPT-5.4 Mini"),
+new PiRpcAvailableModel("gpt-5.4-mini", "azure-openai-responses", "GPT-5.4 Mini"),
 new PiRpcAvailableModel("gpt-5.4", "github-copilot", "GPT-5.4"),
 };
 
-var state = new RfsTuiModelSelectionState(models, "gpt-5.4-mini");
+var state = new RfsTuiModelSelectionState(models, "github-copilot/gpt-5.4-mini");
 if (state.SelectedIndex != 2)
 {
-failures.Add($"[tui model picker] expected the current session model to be selected initially, but got index {state.SelectedIndex}.");
+    failures.Add($"[tui model picker] expected the current session model to be selected initially, but got index {state.SelectedIndex}.");
+}
+
+if (!string.Equals(state.SelectedProvider, "github-copilot", StringComparison.Ordinal) || !string.Equals(state.SelectedQualifiedModel, "github-copilot/gpt-5.4-mini", StringComparison.Ordinal))
+{
+    failures.Add($"[tui model picker] expected selected provider/model to be github-copilot/gpt-5.4-mini but got '{state.SelectedQualifiedModel ?? "(null)"}'.");
 }
 
 var moveDownResult = state.HandleKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
@@ -204,66 +223,67 @@ failures.Add("[tui model picker] expected /pa suggestions to include /paste.");
 
 private static void RunRendererAndPrincipalModelCases(List<string> failures)
 {
-var status = new RckWorkspaceStatus(
-RepoRoot: "/tmp/rfs",
-WorkspaceExists: true,
-ConfigExists: true,
-RckExists: true,
-HeadExists: true,
-Head: "abcdef1234567890",
-StateCount: 3,
-DeltaCount: 2,
-AnchorCount: 1,
-GitContext: new GitWorkspaceContext("main", "abcdef1234567890", Dirty: false, Array.Empty<GitWorkspaceArtifactChange>()));
+    var status = new RckWorkspaceStatus(
+        RepoRoot: "/tmp/rfs",
+        WorkspaceExists: true,
+        ConfigExists: true,
+        RckExists: true,
+        HeadExists: true,
+        Head: "abcdef1234567890",
+        StateCount: 3,
+        DeltaCount: 2,
+        AnchorCount: 1,
+        GitContext: new GitWorkspaceContext("main", "abcdef1234567890", Dirty: false, Array.Empty<GitWorkspaceArtifactChange>()));
 
-var originalOut = Console.Out;
-using var stdout = new StringWriter();
+    var originalOut = Console.Out;
+    using var stdout = new StringWriter();
 
-try
-{
-Console.SetOut(stdout);
-var sessionState = new RfsTuiSessionState();
-sessionState.SetSessionModel("claude-sonnet-4.5");
-RfsTuiRenderer.WriteHeader(status, "pi-mono", sessionState, leadingBlankLine: false);
-RfsTuiRenderer.WriteHelp(RfsTuiCommandCatalog.GetHelpCommands());
-RfsTuiRenderer.WriteModeSelectionHelp();
-}
-finally
-{
-Console.SetOut(originalOut);
-}
+    RfsTuiSessionState sessionState;
+    try
+    {
+        Console.SetOut(stdout);
+        sessionState = new RfsTuiSessionState();
+        sessionState.SetSessionModel("claude-sonnet-4.5");
+        RfsTuiRenderer.WriteHeader(status, "pi-mono", sessionState, leadingBlankLine: false);
+        RfsTuiRenderer.WriteHelp(RfsTuiCommandCatalog.GetHelpCommands());
+        RfsTuiRenderer.WriteModeSelectionHelp();
+    }
+    finally
+    {
+        Console.SetOut(originalOut);
+    }
 
-var headerText = stdout.ToString();
-if (!headerText.Contains("claude-sonnet-4.5 · session", StringComparison.Ordinal))
-{
-failures.Add("[tui model picker] expected the header to mark non-default session models as session-scoped.");
-}
+    var headerText = stdout.ToString();
+    if (!headerText.Contains("claude-sonnet-4.5 · session", StringComparison.Ordinal))
+    {
+        failures.Add("[tui model picker] expected the header to mark non-default session models as session-scoped.");
+    }
 
-if (!headerText.Contains("Model:", StringComparison.Ordinal))
-{
-failures.Add("[tui model picker] expected the header to include a Model line.");
-}
+    if (!headerText.Contains("Model:", StringComparison.Ordinal))
+    {
+        failures.Add("[tui model picker] expected the header to include a Model line.");
+    }
 
-if (!headerText.Contains("/paste", StringComparison.Ordinal) ||
-    !headerText.Contains("Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.", StringComparison.Ordinal) ||
-    !headerText.Contains("/clear", StringComparison.Ordinal) ||
-    !headerText.Contains("/quit", StringComparison.Ordinal) ||
-    !headerText.Contains("/exit", StringComparison.Ordinal))
-{
-failures.Add("[tui model picker] expected help and mode selection copy to expose /paste, /clear, and /quit discoverability.");
-}
+    if (!headerText.Contains("/paste", StringComparison.Ordinal) ||
+        !headerText.Contains("Paste a long/multiline prompt. Finish with /end. Use /cancel to discard.", StringComparison.Ordinal) ||
+        !headerText.Contains("/clear", StringComparison.Ordinal) ||
+        !headerText.Contains("/quit", StringComparison.Ordinal) ||
+        !headerText.Contains("/exit", StringComparison.Ordinal))
+    {
+        failures.Add("[tui model picker] expected help and mode selection copy to expose /paste, /clear, and /quit discoverability.");
+    }
 
-var executionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel("claude-sonnet-4.5");
-if (!string.Equals(executionModel.Model, "claude-sonnet-4.5", StringComparison.Ordinal))
-{
-failures.Add($"[tui model picker] expected the principal answer execution model to use the session model but got '{executionModel.Model}'.");
-}
+    var executionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel("claude-sonnet-4.5");
+    if (!string.Equals(executionModel.Model, "claude-sonnet-4.5", StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected the principal answer execution model to use the session model but got '{executionModel.Model}'.");
+    }
 
-var defaultExecutionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(string.Empty);
-if (!string.Equals(defaultExecutionModel.Model, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
-{
-failures.Add($"[tui model picker] expected empty session model to fall back to '{RfsTuiSessionState.DefaultSessionModel}' but got '{defaultExecutionModel.Model}'.");
-}
+    var defaultExecutionModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(string.Empty);
+    if (!string.Equals(defaultExecutionModel.Model, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected empty session model to fall back to '{RfsTuiSessionState.DefaultSessionModel}' but got '{defaultExecutionModel.Model}'.");
+    }
 }
 
 private static void RunTuiPrincipalAnswerResolutionCases(List<string> failures)
@@ -292,7 +312,7 @@ var config = new Dictionary<string, object?>
 File.WriteAllText(Path.Combine(tempDir, ".rfs", "config.json"), JsonSerializer.Serialize(config));
 
 var resolvedModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(tempDir, "gpt-5.4-mini");
-if (!string.Equals(resolvedModel.Model, "deepseek-chat", StringComparison.Ordinal))
+if (!string.Equals(resolvedModel.Model, "deepseek/deepseek-chat", StringComparison.Ordinal))
 {
     failures.Add($"[tui model picker] expected repo-root principalAnswer resolution to use the configured stage model but got '{resolvedModel.Model}'.");
 }
@@ -310,7 +330,7 @@ var fallbackConfig = new Dictionary<string, object?>
 File.WriteAllText(Path.Combine(tempDir, ".rfs", "config.json"), JsonSerializer.Serialize(fallbackConfig));
 
 var fallbackModel = RfsTuiSession.CreatePrincipalAnswerExecutionModel(tempDir, "gpt-5.4-mini");
-if (!string.Equals(fallbackModel.Model, "gpt-5.4-mini", StringComparison.Ordinal))
+if (!string.Equals(fallbackModel.Model, "github-copilot/gpt-5.4-mini", StringComparison.Ordinal))
 {
     failures.Add($"[tui model picker] expected missing principalAnswer to fall back to the session/default model but got '{fallbackModel.Model}'.");
 }

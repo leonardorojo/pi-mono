@@ -25,9 +25,9 @@ internal static class RfsTuiRenderer
 
     internal static void WriteHeader(RckWorkspaceStatus status, string repoName, RfsTuiSessionState sessionState, bool leadingBlankLine = false)
     {
-        var effectiveModel = string.IsNullOrWhiteSpace(sessionState.CurrentSessionModel)
+        var effectiveModel = string.IsNullOrWhiteSpace(sessionState.ResolveMainModel())
             ? RfsTuiSessionState.DefaultSessionModel
-            : sessionState.CurrentSessionModel.Trim();
+            : sessionState.ResolveMainModel().Trim();
         var baselineModel = sessionState.ResolveModelBaseline();
 
         var modelLabel = string.Equals(effectiveModel, baselineModel, StringComparison.Ordinal)
@@ -1040,7 +1040,7 @@ internal static class RfsTuiRenderer
         lineCount++;
         WriteKeyValue("Current", currentSessionModel);
         lineCount++;
-        WriteKeyValue("Selected", selectionState.SelectedModelId ?? "(none)");
+        WriteKeyValue("Selected", selectionState.SelectedQualifiedModel ?? "(none)");
         lineCount++;
 
         return lineCount;

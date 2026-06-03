@@ -6,6 +6,8 @@ internal sealed class RfsTuiSessionState
 
     public string CurrentSessionModel { get; private set; } = DefaultSessionModel;
 
+    public string? CurrentSessionModelProvider { get; private set; }
+
     /// <summary>
     /// The workspace-persisted default model (read from .rfs/config.json llm.defaultModel).
     /// Null when no workspace default is configured — the hardcoded <see cref="DefaultSessionModel"/> applies.
@@ -34,6 +36,7 @@ internal sealed class RfsTuiSessionState
     public void ResetSessionModel()
     {
         CurrentSessionModel = WorkspaceDefaultModel ?? DefaultSessionModel;
+        CurrentSessionModelProvider = null;
     }
 
     public void ResetInteraction()
@@ -46,17 +49,31 @@ internal sealed class RfsTuiSessionState
         LastTrace = null;
     }
 
-    public void SetSessionModel(string model)
+    public void SetSessionModel(string model, string? provider = null)
     {
         var trimmedModel = string.IsNullOrWhiteSpace(model)
             ? throw new ArgumentException("model cannot be empty.", nameof(model))
             : model.Trim();
 
+        if (string.IsNullOrWhiteSpace(provider) && trimmedModel.Contains('/'))
+        {
+            var slashIndex = trimmedModel.IndexOf('/');
+            provider = slashIndex > 0 && slashIndex < trimmedModel.Length - 1
+                ? trimmedModel[..slashIndex].Trim()
+                : null;
+            trimmedModel = slashIndex > 0 && slashIndex < trimmedModel.Length - 1
+                ? trimmedModel[(slashIndex + 1)..].Trim()
+                : trimmedModel;
+        }
+
         CurrentSessionModel = trimmedModel;
+        CurrentSessionModelProvider = string.IsNullOrWhiteSpace(provider) ? null : provider.Trim();
     }
 
     public string ResolveMainModel()
-        => CurrentSessionModel;
+        => string.IsNullOrWhiteSpace(CurrentSessionModelProvider)
+            ? CurrentSessionModel
+            : $"{CurrentSessionModelProvider}/{CurrentSessionModel}";
 
     public void RecordDirect(string prompt, string answer)
     {

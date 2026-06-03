@@ -39,7 +39,7 @@ internal static class RfsTuiPiRunRecordingChecks
             AssertPromptVisibility(name, output.Stdout, expectPromptVisible, failures);
             AssertRecordedPromptOutcome(name, output.Stdout, expectRecorded: false, failures);
             AssertCountsUnchanged(name, statusBefore, RckWorkspaceStatusReader.Read(tempRoot), failures);
-            AssertRunnerInputs(name, runner, tempRoot, sessionState, failures);
+            AssertRunnerInputs(name, runner, tempRoot, sessionState, "github-copilot/gpt-5.4-mini", failures);
         }
         finally
         {
@@ -66,7 +66,7 @@ internal static class RfsTuiPiRunRecordingChecks
             AssertPromptVisibility(name, output.Stdout, expectPromptVisible: true, failures: failures);
             AssertRecordedPromptOutcome(name, output.Stdout, expectRecorded: true, failures);
             AssertCountsIncreasedByOne(name, statusBefore, RckWorkspaceStatusReader.Read(tempRoot), failures);
-            AssertRunnerInputs(name, runner, tempRoot, sessionState, failures);
+            AssertRunnerInputs(name, runner, tempRoot, sessionState, "github-copilot/gpt-5.4-mini", failures);
 
             var stateId = ExtractRequiredToken(output.Stdout, "state:", name, failures);
             var deltaId = ExtractRequiredToken(output.Stdout, "delta:", name, failures);
@@ -111,7 +111,7 @@ internal static class RfsTuiPiRunRecordingChecks
             }
 
             AssertCountsUnchanged(name, statusBefore, RckWorkspaceStatusReader.Read(tempRoot), failures);
-            AssertRunnerInputs(name, runner, tempRoot, sessionState, failures);
+            AssertRunnerInputs(name, runner, tempRoot, sessionState, "github-copilot/gpt-5.4-mini", failures);
         }
         finally
         {
@@ -222,16 +222,16 @@ internal static class RfsTuiPiRunRecordingChecks
         }
     }
 
-    private static void AssertRunnerInputs(string name, FakePiRunner runner, string tempRoot, RfsTuiSessionState sessionState, List<string> failures)
+    private static void AssertRunnerInputs(string name, FakePiRunner runner, string tempRoot, RfsTuiSessionState sessionState, string expectedWorkspaceModel, List<string> failures)
     {
         if (!string.Equals(runner.WorkingDirectory, tempRoot, StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected runner working directory to be '{tempRoot}' but got '{runner.WorkingDirectory}'.");
         }
 
-        if (!string.Equals(runner.WorkspaceModel, sessionState.ResolveMainModel(), StringComparison.Ordinal))
+        if (!string.Equals(runner.WorkspaceModel, expectedWorkspaceModel, StringComparison.Ordinal))
         {
-            failures.Add($"[{name}] expected runner workspace model to match the session model.");
+            failures.Add($"[{name}] expected runner workspace model to be '{expectedWorkspaceModel}' but got '{runner.WorkspaceModel}'.");
         }
 
         if (string.IsNullOrWhiteSpace(runner.LastPrompt))

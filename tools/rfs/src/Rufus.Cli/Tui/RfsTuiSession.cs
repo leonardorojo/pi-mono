@@ -57,7 +57,19 @@ internal static class RfsTuiSession
         var workspaceModelConfig = RckWorkspaceModelConfigStore.Read(inputDirectory);
         if (workspaceModelConfig.Success && workspaceModelConfig.HasConfiguredDefaultModel)
         {
-            SessionState.SetSessionModel(workspaceModelConfig.DefaultModel!);
+            var resolvedDefaultModel = await RfsTuiModelPicker.ResolveRequestedModelAsync(
+                inputDirectory,
+                workspaceModelConfig.DefaultModel!).ConfigureAwait(false);
+
+            if (resolvedDefaultModel.Success && !string.IsNullOrWhiteSpace(resolvedDefaultModel.SelectedModel))
+            {
+                SessionState.SetSessionModel(resolvedDefaultModel.SelectedModel, resolvedDefaultModel.SelectedProvider);
+            }
+            else
+            {
+                SessionState.SetSessionModel(workspaceModelConfig.DefaultModel!);
+            }
+
             SessionState.WorkspaceDefaultModel = workspaceModelConfig.DefaultModel!;
         }
 
@@ -413,6 +425,7 @@ internal static class RfsTuiSession
             prompt,
             repoRoot,
             5,
+            preferredProvider: SessionState.CurrentSessionModelProvider,
             intentAgent: null,
             stageWriter: RfsTuiRenderer.WriteCompleteStage);
         var completeContextUsageReport = BuildContextUsageReport(
@@ -432,7 +445,7 @@ internal static class RfsTuiSession
             return false;
         }
 
-        var principalAnswerExecutionModel = CreatePrincipalAnswerExecutionModel(repoRoot, SessionState.ResolveMainModel());
+        var principalAnswerExecutionModel = await CreatePrincipalAnswerExecutionModelAsync(repoRoot, SessionState.ResolveMainModel(), SessionState.CurrentSessionModelProvider);
         var principalAnswerAgent = new PiPrincipalAnswerAgent(repoRoot, principalAnswerExecutionModel);
 
         RfsTuiRenderer.WriteCompleteStage("[5/5] Asking main LLM...");
@@ -1093,8 +1106,8 @@ internal static class RfsTuiSession
             return true;
         }
 
-        SessionState.SetSessionModel(pickerResult.SelectedModel);
-        Console.WriteLine($"Session model updated: {SessionState.CurrentSessionModel}");
+        SessionState.SetSessionModel(pickerResult.SelectedModel!, pickerResult.SelectedProvider);
+        Console.WriteLine($"Session model updated: {SessionState.ResolveMainModel()}");
         Console.WriteLine();
         RenderHeader(status, SessionState);
         return true;
@@ -1131,8 +1144,8 @@ internal static class RfsTuiSession
             return true;
         }
 
-        SessionState.SetSessionModel(validationResult.SelectedModel!);
-        Console.WriteLine($"Session model updated: {SessionState.CurrentSessionModel}");
+        SessionState.SetSessionModel(validationResult.SelectedModel!, validationResult.SelectedProvider);
+        Console.WriteLine($"Session model updated: {SessionState.ResolveMainModel()}");
         Console.WriteLine();
         RenderHeader(status, SessionState);
         return true;
@@ -1154,15 +1167,23 @@ internal static class RfsTuiSession
         Console.WriteLine($"  {GetModelSourceLabel(readResult)}");
     }
 
-    internal static AgentExecutionModel CreatePrincipalAnswerExecutionModel(string repoRoot, string sessionModel)
+    internal static async Task<AgentExecutionModel> CreatePrincipalAnswerExecutionModelAsync(string repoRoot, string sessionModel, string? preferredProvider = null)
     {
         var principalAnswerModel = RckWorkspaceModelConfigStore.TryReadStageModel("principalAnswer", repoRoot);
         var effectiveModel = string.IsNullOrWhiteSpace(principalAnswerModel)
             ? sessionModel
             : principalAnswerModel;
 
-        return new("pi", string.IsNullOrWhiteSpace(effectiveModel) ? RfsTuiSessionState.DefaultSessionModel : effectiveModel.Trim());
+        var qualifiedModel = await RfsTuiModelPicker.ResolveExecutionModelAsync(
+            repoRoot,
+            string.IsNullOrWhiteSpace(effectiveModel) ? RfsTuiSessionState.DefaultSessionModel : effectiveModel.Trim(),
+            preferredProvider).ConfigureAwait(false);
+
+        return new("pi", qualifiedModel);
     }
+
+    internal static AgentExecutionModel CreatePrincipalAnswerExecutionModel(string repoRoot, string sessionModel)
+        => CreatePrincipalAnswerExecutionModelAsync(repoRoot, sessionModel).GetAwaiter().GetResult();
 
     internal static AgentExecutionModel CreatePrincipalAnswerExecutionModel(string sessionModel)
         => new("pi", string.IsNullOrWhiteSpace(sessionModel) ? RfsTuiSessionState.DefaultSessionModel : sessionModel.Trim());

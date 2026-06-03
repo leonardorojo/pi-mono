@@ -4,6 +4,7 @@ using Rufus.Cli.ConversationalMemory;
 using Rufus.Cli.Intent;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.TraceSlice;
+using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
 
 namespace Rufus.Cli.ParserChecks;
@@ -22,6 +23,7 @@ internal static class RfsStageModelConfigChecks
         await RunProposalAgentDefaultModelCaseAsync(failures);
         await RunPartialStageConfigPreservesDefaultsCaseAsync(failures);
         await RunSetDefaultModelPreservesStagesCaseAsync(failures);
+        RunProviderQualificationPreferenceCase(failures);
     }
 
     /// <summary>
@@ -343,6 +345,32 @@ internal static class RfsStageModelConfigChecks
         }
 
         return Task.CompletedTask;
+    }
+
+    private static void RunProviderQualificationPreferenceCase(List<string> failures)
+    {
+        var models = new[]
+        {
+            new PiRpcAvailableModel("gpt-5.4-mini", "github-copilot", "GPT-5.4 Mini"),
+            new PiRpcAvailableModel("gpt-5.4-mini", "openai-codex", "GPT-5.4 Mini"),
+            new PiRpcAvailableModel("gpt-5.4-mini", "azure-openai-responses", "GPT-5.4 Mini"),
+            new PiRpcAvailableModel("deepseek-chat", "deepseek", "DeepSeek Chat"),
+        };
+
+        var resolvedGpt = RfsTuiModelPicker.ResolveModel(models, "gpt-5.4-mini");
+        Expect(resolvedGpt is not null && string.Equals(resolvedGpt.Provider, "github-copilot", StringComparison.Ordinal) && string.Equals(resolvedGpt.QualifiedModel, "github-copilot/gpt-5.4-mini", StringComparison.Ordinal),
+            $"[stage model config] expected ambiguous gpt-5.4-mini to resolve to github-copilot/gpt-5.4-mini but got '{resolvedGpt?.QualifiedModel ?? "(null)"}'.",
+            failures);
+
+        var resolvedQualified = RfsTuiModelPicker.ResolveModel(models, "github-copilot/gpt-5.4-mini");
+        Expect(resolvedQualified is not null && string.Equals(resolvedQualified.QualifiedModel, "github-copilot/gpt-5.4-mini", StringComparison.Ordinal),
+            $"[stage model config] expected qualified model strings to remain qualified but got '{resolvedQualified?.QualifiedModel ?? "(null)"}'.",
+            failures);
+
+        var resolvedDeepSeek = RfsTuiModelPicker.ResolveModel(models, "deepseek-chat");
+        Expect(resolvedDeepSeek is not null && string.Equals(resolvedDeepSeek.QualifiedModel, "deepseek/deepseek-chat", StringComparison.Ordinal),
+            $"[stage model config] expected deepseek-chat to preserve its provider but got '{resolvedDeepSeek?.QualifiedModel ?? "(null)"}'.",
+            failures);
     }
 
     private static void InitGitAndRfs(string repoRoot)

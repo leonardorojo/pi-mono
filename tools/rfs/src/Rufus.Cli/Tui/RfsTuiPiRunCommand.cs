@@ -30,7 +30,11 @@ internal static class RfsTuiPiRunCommand
         }
 
         var draft = draftResult.Draft;
-        var workspaceModel = sessionState.ResolveMainModel();
+        var workspaceModel = await RfsTuiModelPicker.ResolveExecutionModelAsync(
+            status.RepoRoot,
+            sessionState.ResolveMainModel(),
+            sessionState.CurrentSessionModelProvider,
+            cancellationToken).ConfigureAwait(false);
 
         RfsTuiRenderer.WriteModeBanner("Pi run", "Executing Pi JSON event stream...");
         RfsTuiRenderer.WritePiRunPromptSummary(draft, workspaceModel);

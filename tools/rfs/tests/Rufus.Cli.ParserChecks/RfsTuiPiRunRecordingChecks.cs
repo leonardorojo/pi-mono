@@ -26,6 +26,7 @@ internal static class RfsTuiPiRunRecordingChecks
 
             var sessionState = CreateSessionState();
             var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
+            var deltaIdsBefore = GetDeltaIds(tempRoot);
             var runner = new FakePiRunner(CreateRunnerResult(RfsTuiPiRunHealth.Completed));
 
             var output = await RunCommandAsync(tempRoot, string.Empty, statusBefore, sessionState, runner, failures, name);
@@ -33,17 +34,18 @@ internal static class RfsTuiPiRunRecordingChecks
             AssertPromptVisibility(name, output.Stdout, expectPromptVisible: false, failures);
             AssertCompactPromptSummary(name, output.Stdout, tempRoot, string.IsNullOrWhiteSpace(statusBefore.GitContext.Branch) ? "(detached)" : statusBefore.GitContext.Branch, statusBefore.GitContext.Dirty ? "dirty" : "clean", failures);
             AssertRecordedPromptOutcome(name, output.Stdout, expectRecorded: true, failures);
-            AssertCountsIncreasedByOne(name, statusBefore, RckWorkspaceStatusReader.Read(tempRoot), failures);
+            AssertRecordedStateDeltaRendering(name, output.Stdout, failures);
+            var statusAfter = RckWorkspaceStatusReader.Read(tempRoot);
+            AssertCountsIncreasedByOne(name, statusBefore, statusAfter, failures);
             AssertRunnerInputs(name, runner, tempRoot, sessionState, "github-copilot/gpt-5.4-mini", failures);
 
-            var stateId = ExtractRequiredToken(output.Stdout, "state:", name, failures);
-            var deltaId = ExtractRequiredToken(output.Stdout, "delta:", name, failures);
-            if (stateId is null || deltaId is null)
+            var deltaId = GetNewDeltaId(tempRoot, deltaIdsBefore, name, failures);
+            if (deltaId is null)
             {
                 return;
             }
 
-            AssertRecordedPayload(name, tempRoot, stateId, deltaId, runner.LastPrompt, runner.Result, failures);
+            AssertRecordedPayload(name, tempRoot, statusAfter.Head ?? string.Empty, deltaId, runner.LastPrompt, runner.Result, failures);
         }
         finally
         {
@@ -137,7 +139,7 @@ internal static class RfsTuiPiRunRecordingChecks
 
     private static void AssertRecordedPromptOutcome(string name, string stdout, bool expectRecorded, List<string> failures)
     {
-        var recordedMessage = stdout.Contains("Recorded Pi run State + Delta:", StringComparison.Ordinal);
+        var recordedMessage = stdout.Contains("Recorded State + Delta:", StringComparison.Ordinal);
         var skippedMessage = stdout.Contains("Pi run did not produce a recordable final answer; State + Delta not recorded.", StringComparison.Ordinal);
 
         if (expectRecorded)
@@ -164,6 +166,91 @@ internal static class RfsTuiPiRunRecordingChecks
                 failures.Add($"[{name}] expected the skipped-recording warning when the run was not recordable.");
             }
         }
+    }
+
+    private static void AssertRecordedStateDeltaRendering(string name, string stdout, List<string> failures)
+    {
+        var lines = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.TrimEnd('\r'))
+            .ToArray();
+        var headerIndex = Array.FindIndex(lines, line => string.Equals(line, "Recorded State + Delta:", StringComparison.Ordinal));
+        if (headerIndex < 0)
+        {
+            failures.Add($"[{name}] expected stdout to contain 'Recorded State + Delta:'.");
+            return;
+        }
+
+        if (headerIndex + 2 >= lines.Length)
+        {
+            failures.Add($"[{name}] expected recorded State + Delta block to contain state and delta lines.");
+            return;
+        }
+
+        AssertShortIdLine(name, "state", lines[headerIndex + 1], failures);
+        AssertShortIdLine(name, "delta", lines[headerIndex + 2], failures);
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(stdout, "\\b[0-9a-fA-F]{64}\\b"))
+        {
+            failures.Add($"[{name}] expected UI not to print 64-character hashes in the recorded State + Delta block.");
+        }
+    }
+
+    private static void AssertShortIdLine(string name, string label, string line, List<string> failures)
+    {
+        if (!line.StartsWith($"  {label}:", StringComparison.Ordinal))
+        {
+            failures.Add($"[{name}] expected recorded block to contain a '{label}:' line but got '{line}'.");
+            return;
+        }
+
+        var value = line[(label.Length + 3)..].Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            failures.Add($"[{name}] expected recorded block '{label}' value to be populated.");
+            return;
+        }
+
+        if (value.Length > 8)
+        {
+            failures.Add($"[{name}] expected recorded block '{label}' value to be short but got '{value}'.");
+        }
+    }
+
+    private static HashSet<string> GetDeltaIds(string tempRoot)
+    {
+        var deltaDirectory = Path.Combine(tempRoot, ".rfs", "rck", "deltas");
+        if (!Directory.Exists(deltaDirectory))
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        return Directory.GetFiles(deltaDirectory, "*.json", SearchOption.TopDirectoryOnly)
+            .Select(path => Path.GetFileNameWithoutExtension(path) ?? string.Empty)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static string? GetNewDeltaId(string tempRoot, HashSet<string> beforeDeltaIds, string name, List<string> failures)
+    {
+        var deltaDirectory = Path.Combine(tempRoot, ".rfs", "rck", "deltas");
+        if (!Directory.Exists(deltaDirectory))
+        {
+            failures.Add($"[{name}] expected delta directory '{deltaDirectory}' to exist after recording.");
+            return null;
+        }
+
+        var candidateIds = Directory.GetFiles(deltaDirectory, "*.json", SearchOption.TopDirectoryOnly)
+            .Select(path => Path.GetFileNameWithoutExtension(path) ?? string.Empty)
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !beforeDeltaIds.Contains(id))
+            .ToArray();
+
+        if (candidateIds.Length != 1)
+        {
+            failures.Add($"[{name}] expected exactly one new delta id after recording but found {candidateIds.Length}.");
+            return null;
+        }
+
+        return candidateIds[0];
     }
 
     private static void AssertCountsUnchanged(string name, RckWorkspaceStatus before, RckWorkspaceStatus after, List<string> failures)

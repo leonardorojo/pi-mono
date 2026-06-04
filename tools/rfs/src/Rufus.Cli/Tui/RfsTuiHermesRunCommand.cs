@@ -92,9 +92,7 @@ internal static class RfsTuiHermesRunCommand
             return true;
         }
 
-        Console.WriteLine("Recorded Hermes run State + Delta:");
-        Console.WriteLine($"  state: {recordResult.StateId}");
-        Console.WriteLine($"  delta: {recordResult.DeltaId}");
+        RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
         return true;
     }
 

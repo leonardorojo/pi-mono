@@ -66,6 +66,37 @@ internal static class RfsTuiHermesRunCommand
             cancellationToken).ConfigureAwait(false);
 
         RfsTuiRenderer.WriteHermesRunResult(result);
+        if (!ShouldAutoRecord(result))
+        {
+            RfsTuiRenderer.WriteWarningLine("Hermes run did not produce a recordable final answer; State + Delta not recorded.");
+            return true;
+        }
+
+        var recordResult = RckInteractionRecorder.RecordTui(
+            new RckTuiInteractionRecordInput(
+                prompt,
+                result.Stdout.TrimEnd(),
+                sessionState.CurrentSessionModelProvider,
+                sessionState.CurrentSessionModel,
+                mode: "tui-hermes-run"),
+            status.RepoRoot);
+
+        if (!recordResult.Success)
+        {
+            if (!string.IsNullOrWhiteSpace(recordResult.ErrorMessage))
+            {
+                Console.Error.WriteLine(recordResult.ErrorMessage);
+            }
+
+            return true;
+        }
+
+        Console.WriteLine("Recorded Hermes run State + Delta:");
+        Console.WriteLine($"  state: {recordResult.StateId}");
+        Console.WriteLine($"  delta: {recordResult.DeltaId}");
         return true;
     }
+
+    private static bool ShouldAutoRecord(RfsTuiHermesRunResult result)
+        => result.Health == RfsTuiHermesRunHealth.Completed && !string.IsNullOrWhiteSpace(result.Stdout);
 }

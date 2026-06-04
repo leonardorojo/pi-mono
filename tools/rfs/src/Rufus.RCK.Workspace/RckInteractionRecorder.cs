@@ -71,7 +71,7 @@ public static class RckInteractionRecorder
             return Record(RckInteractionRecord.CreateTuiComplete(input.Prompt, input.Answer, completePipelineSummary, input.Provider, input.Model), startingDirectory);
         }
 
-        return Record(RckInteractionRecord.CreateTuiDirect(input.Prompt, input.Answer, input.Provider, input.Model, input.PipelineSummary), startingDirectory);
+        return Record(RckInteractionRecord.CreateTuiRun(input.Mode, input.Prompt, input.Answer, input.Provider, input.Model, input.PipelineSummary), startingDirectory);
     }
 
     public static RckInteractionRecordResult Record(RckInteractionRecord record, string? startingDirectory = null)

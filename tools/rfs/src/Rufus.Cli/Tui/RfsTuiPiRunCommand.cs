@@ -49,14 +49,9 @@ internal static class RfsTuiPiRunCommand
             cancellationToken).ConfigureAwait(false);
 
         RfsTuiRenderer.WritePiRunResult(result);
-        if (!ShouldOfferRecording(result))
+        if (!ShouldAutoRecord(result))
         {
-            return true;
-        }
-
-        if (!TryReadRecordingDecision())
-        {
-            Console.WriteLine("Pi response was not recorded.");
+            RfsTuiRenderer.WriteWarningLine("Pi run did not produce a recordable final answer; State + Delta not recorded.");
             return true;
         }
 
@@ -64,9 +59,9 @@ internal static class RfsTuiPiRunCommand
             new RckTuiInteractionRecordInput(
                 draft.PromptText,
                 result.Stdout.TrimEnd(),
-                result.Provider,
-                result.Model,
-                mode: "tui-direct"),
+                result.Provider ?? sessionState.CurrentSessionModelProvider,
+                result.Model ?? sessionState.CurrentSessionModel,
+                mode: "tui-pi-run"),
             status.RepoRoot);
 
         if (!recordResult.Success)
@@ -85,13 +80,6 @@ internal static class RfsTuiPiRunCommand
         return true;
     }
 
-    private static bool ShouldOfferRecording(RfsTuiPiRunResult result)
+    private static bool ShouldAutoRecord(RfsTuiPiRunResult result)
         => result.Health == RfsTuiPiRunHealth.Completed && !string.IsNullOrWhiteSpace(result.Stdout);
-
-    private static bool TryReadRecordingDecision()
-    {
-        Console.Write("Record Pi response into RCK? [y/N]: ");
-        var answer = Console.ReadLine();
-        return string.Equals(answer?.Trim(), "y", StringComparison.OrdinalIgnoreCase);
-    }
 }

@@ -1,20 +1,17 @@
 using System.Diagnostics;
 using System.Text.Json;
-using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
 
-internal static class RfsTuiPiRunRecordingChecks
+internal static class RfsTuiHermesRunRecordingChecks
 {
     internal static async Task RunAsync(List<string> failures)
     {
-        await RunRecordingSuccessCaseAsync("pi run auto-record success", failures);
-        await RunFailedRunCaseAsync("pi run failure skips record prompt", "y\n", failures);
+        await RunRecordingSuccessCaseAsync("hermes run auto-record success", failures);
+        await RunFailedRunCaseAsync("hermes run failure skips record", failures);
     }
 
-    private static async Task RunRecordingSuccessCaseAsync(
-        string name,
-        List<string> failures)
+    private static async Task RunRecordingSuccessCaseAsync(string name, List<string> failures)
     {
         var tempRoot = CreateTempRoot(name);
         try
@@ -26,14 +23,14 @@ internal static class RfsTuiPiRunRecordingChecks
 
             var sessionState = CreateSessionState();
             var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
-            var runner = new FakePiRunner(CreateRunnerResult(RfsTuiPiRunHealth.Completed));
+            var runner = new FakeHermesRunner(CreateRunnerResult(RfsTuiHermesRunHealth.Completed));
 
-            var output = await RunCommandAsync(tempRoot, string.Empty, statusBefore, sessionState, runner, failures, name);
+            var output = await RunCommandAsync(statusBefore, sessionState, runner, failures, name);
             AssertNoStderr(name, output.Stderr, failures);
-            AssertPromptVisibility(name, output.Stdout, expectPromptVisible: false, failures);
+            AssertNoRecordingPrompt(name, output.Stdout, failures);
             AssertRecordedPromptOutcome(name, output.Stdout, expectRecorded: true, failures);
             AssertCountsIncreasedByOne(name, statusBefore, RckWorkspaceStatusReader.Read(tempRoot), failures);
-            AssertRunnerInputs(name, runner, tempRoot, sessionState, "github-copilot/gpt-5.4-mini", failures);
+            AssertRunnerInputs(name, runner, tempRoot, failures);
 
             var stateId = ExtractRequiredToken(output.Stdout, "state:", name, failures);
             var deltaId = ExtractRequiredToken(output.Stdout, "delta:", name, failures);
@@ -50,7 +47,7 @@ internal static class RfsTuiPiRunRecordingChecks
         }
     }
 
-    private static async Task RunFailedRunCaseAsync(string name, string input, List<string> failures)
+    private static async Task RunFailedRunCaseAsync(string name, List<string> failures)
     {
         var tempRoot = CreateTempRoot(name);
         try
@@ -62,14 +59,14 @@ internal static class RfsTuiPiRunRecordingChecks
 
             var sessionState = CreateSessionState();
             var statusBefore = RckWorkspaceStatusReader.Read(tempRoot);
-            var runner = new FakePiRunner(CreateRunnerResult(RfsTuiPiRunHealth.ExitedWithError));
+            var runner = new FakeHermesRunner(CreateRunnerResult(RfsTuiHermesRunHealth.ExitedWithError));
 
-            var output = await RunCommandAsync(tempRoot, input, statusBefore, sessionState, runner, failures, name);
+            var output = await RunCommandAsync(statusBefore, sessionState, runner, failures, name);
             AssertNoStderr(name, output.Stderr, failures);
-            AssertPromptVisibility(name, output.Stdout, expectPromptVisible: false, failures);
+            AssertNoRecordingPrompt(name, output.Stdout, failures);
             AssertRecordedPromptOutcome(name, output.Stdout, expectRecorded: false, failures);
             AssertCountsUnchanged(name, statusBefore, RckWorkspaceStatusReader.Read(tempRoot), failures);
-            AssertRunnerInputs(name, runner, tempRoot, sessionState, "github-copilot/gpt-5.4-mini", failures);
+            AssertRunnerInputs(name, runner, tempRoot, failures);
         }
         finally
         {
@@ -78,18 +75,16 @@ internal static class RfsTuiPiRunRecordingChecks
     }
 
     private static async Task<(string Stdout, string Stderr)> RunCommandAsync(
-        string tempRoot,
-        string input,
         RckWorkspaceStatus status,
         RfsTuiSessionState sessionState,
-        FakePiRunner runner,
+        FakeHermesRunner runner,
         List<string> failures,
         string name)
     {
         var originalIn = Console.In;
         var originalOut = Console.Out;
         var originalErr = Console.Error;
-        using var stdin = new StringReader(input);
+        using var stdin = new StringReader(string.Empty);
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
 
@@ -99,10 +94,10 @@ internal static class RfsTuiPiRunRecordingChecks
             Console.SetOut(stdout);
             Console.SetError(stderr);
 
-            var handled = await RfsTuiPiRunCommand.ExecuteAsync(status, sessionState, runner);
+            var handled = await RfsTuiHermesRunCommand.ExecuteAsync(status, sessionState, runner);
             if (!handled)
             {
-                failures.Add($"[{name}] expected /pi run command to report handled=true.");
+                failures.Add($"[{name}] expected /hermes run command to report handled=true.");
                 return (string.Empty, string.Empty);
             }
         }
@@ -116,12 +111,11 @@ internal static class RfsTuiPiRunRecordingChecks
         return (stdout.ToString(), stderr.ToString());
     }
 
-    private static void AssertPromptVisibility(string name, string stdout, bool expectPromptVisible, List<string> failures)
+    private static void AssertNoRecordingPrompt(string name, string stdout, List<string> failures)
     {
-        var promptVisible = stdout.Contains("Record Pi response into RCK? [y/N]:", StringComparison.Ordinal);
-        if (promptVisible != expectPromptVisible)
+        if (stdout.Contains("Record Hermes response into RCK?", StringComparison.Ordinal))
         {
-            failures.Add($"[{name}] expected record prompt visibility to be {expectPromptVisible} but got {promptVisible}.");
+            failures.Add($"[{name}] expected /hermes run to avoid any recording prompt.");
         }
     }
 
@@ -135,8 +129,8 @@ internal static class RfsTuiPiRunRecordingChecks
 
     private static void AssertRecordedPromptOutcome(string name, string stdout, bool expectRecorded, List<string> failures)
     {
-        var recordedMessage = stdout.Contains("Recorded Pi run State + Delta:", StringComparison.Ordinal);
-        var skippedMessage = stdout.Contains("Pi run did not produce a recordable final answer; State + Delta not recorded.", StringComparison.Ordinal);
+        var recordedMessage = stdout.Contains("Recorded Hermes run State + Delta:", StringComparison.Ordinal);
+        var skippedMessage = stdout.Contains("Hermes run did not produce a recordable final answer; State + Delta not recorded.", StringComparison.Ordinal);
 
         if (expectRecorded)
         {
@@ -180,21 +174,21 @@ internal static class RfsTuiPiRunRecordingChecks
         }
     }
 
-    private static void AssertRunnerInputs(string name, FakePiRunner runner, string tempRoot, RfsTuiSessionState sessionState, string expectedWorkspaceModel, List<string> failures)
+    private static void AssertRunnerInputs(string name, FakeHermesRunner runner, string tempRoot, List<string> failures)
     {
         if (!string.Equals(runner.WorkingDirectory, tempRoot, StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected runner working directory to be '{tempRoot}' but got '{runner.WorkingDirectory}'.");
         }
 
-        if (!string.Equals(runner.WorkspaceModel, expectedWorkspaceModel, StringComparison.Ordinal))
-        {
-            failures.Add($"[{name}] expected runner workspace model to be '{expectedWorkspaceModel}' but got '{runner.WorkspaceModel}'.");
-        }
-
         if (string.IsNullOrWhiteSpace(runner.LastPrompt))
         {
-            failures.Add($"[{name}] expected runner to receive an operational Pi prompt.");
+            failures.Add($"[{name}] expected runner to receive an operational Hermes prompt.");
+        }
+
+        if (runner.GitStatusBefore is null)
+        {
+            failures.Add($"[{name}] expected runner to receive captured git status before the run.");
         }
     }
 
@@ -204,7 +198,7 @@ internal static class RfsTuiPiRunRecordingChecks
         string stateId,
         string deltaId,
         string prompt,
-        RfsTuiPiRunResult result,
+        RfsTuiHermesRunResult result,
         List<string> failures)
     {
         var statePath = Path.Combine(tempRoot, ".rfs", "rck", "states", $"{stateId}.json");
@@ -227,11 +221,11 @@ internal static class RfsTuiPiRunRecordingChecks
         var statePayload = statePayloadDocument.RootElement;
 
         var recordedAnswer = result.Stdout.Trim();
-        AssertJsonString(name, statePayload.GetProperty("interaction"), "mode", "tui-pi-run", failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "mode", "tui-hermes-run", failures);
         AssertJsonString(name, statePayload.GetProperty("interaction"), "prompt", prompt, failures);
         AssertJsonStringNormalizedWhitespace(name, statePayload.GetProperty("interaction"), "answer", recordedAnswer, failures);
-        AssertJsonString(name, statePayload.GetProperty("interaction"), "provider", result.Provider ?? string.Empty, failures);
-        AssertJsonString(name, statePayload.GetProperty("interaction"), "model", result.Model ?? string.Empty, failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "provider", "github-copilot", failures);
+        AssertJsonString(name, statePayload.GetProperty("interaction"), "model", "gpt-5.4-mini", failures);
 
         using var deltaDocument = JsonDocument.Parse(File.ReadAllText(deltaPath));
         var deltaValueJson = deltaDocument.RootElement.GetProperty("ops")[0].GetProperty("valueJson").GetString() ?? string.Empty;
@@ -239,7 +233,7 @@ internal static class RfsTuiPiRunRecordingChecks
         var deltaPayload = deltaPayloadDocument.RootElement;
 
         AssertJsonString(name, deltaPayload.GetProperty("cause"), "type", "llm-interaction", failures);
-        AssertJsonString(name, deltaPayload.GetProperty("cause"), "mode", "tui-pi-run", failures);
+        AssertJsonString(name, deltaPayload.GetProperty("cause"), "mode", "tui-hermes-run", failures);
         AssertJsonString(name, deltaPayload.GetProperty("cause"), "prompt", prompt, failures);
         AssertJsonStringNormalizedWhitespace(name, deltaPayload.GetProperty("cause"), "answer", recordedAnswer, failures);
     }
@@ -300,6 +294,7 @@ internal static class RfsTuiPiRunRecordingChecks
     private static RfsTuiSessionState CreateSessionState()
     {
         var sessionState = new RfsTuiSessionState();
+        sessionState.SetSessionModel("gpt-5.4-mini", "github-copilot");
         sessionState.RecordComplete(
             new RfsTuiCompleteContextSummary(
                 SelectionStrategy: "recent-chain-fallback",
@@ -320,26 +315,24 @@ internal static class RfsTuiPiRunRecordingChecks
         return sessionState;
     }
 
-    private static RfsTuiPiRunResult CreateRunnerResult(RfsTuiPiRunHealth health)
+    private static RfsTuiHermesRunResult CreateRunnerResult(RfsTuiHermesRunHealth health)
         => new(
-            Stdout: "Repo Snapshot:\n- tree clean\n- no anchors",
-            Stderr: health == RfsTuiPiRunHealth.ExitedWithError ? "Pi exited with error." : string.Empty,
-            ExitCode: health == RfsTuiPiRunHealth.Completed ? 0 : 1,
+            Stdout: "Hermes output",
+            Stderr: health == RfsTuiHermesRunHealth.ExitedWithError ? "Hermes exited with error." : string.Empty,
+            ExitCode: health == RfsTuiHermesRunHealth.Completed ? 0 : 1,
             StartedAt: DateTimeOffset.UtcNow.AddSeconds(-2),
             FinishedAt: DateTimeOffset.UtcNow,
             DurationMs: 200,
-            TimedOut: health == RfsTuiPiRunHealth.TimedOut,
-            Cancelled: health == RfsTuiPiRunHealth.Cancelled,
-            FailedToStart: health == RfsTuiPiRunHealth.FailedToStart,
+            TimedOut: health == RfsTuiHermesRunHealth.TimedOut,
             WorkingDirectory: string.Empty,
+            GitStatusBefore: string.Empty,
+            GitStatusAfter: string.Empty,
+            DirtyStateChanged: false,
             PromptBytes: 1234,
-            Provider: "test-provider",
-            Model: "test-model",
-            ToolEvents: Array.Empty<PiJsonEventRunner.PiJsonToolEvent>(),
             Health: health);
 
     private static string CreateTempRoot(string name)
-        => Path.Combine(Path.GetTempPath(), "rfs-pi-run-record-checks", name.Replace(' ', '-'), Guid.NewGuid().ToString("N"));
+        => Path.Combine(Path.GetTempPath(), "rfs-hermes-run-record-checks", name.Replace(' ', '-'), Guid.NewGuid().ToString("N"));
 
     private static async Task<bool> InitializeTempGitRepoAndRckAsync(string name, string tempRoot, List<string> failures)
     {
@@ -389,29 +382,41 @@ internal static class RfsTuiPiRunRecordingChecks
         }
     }
 
-    private sealed class FakePiRunner : IRfsTuiPiRunner
+    private sealed class FakeHermesRunner : IRfsTuiHermesRunner
     {
-        public FakePiRunner(RfsTuiPiRunResult result)
+        public FakeHermesRunner(RfsTuiHermesRunResult result)
         {
             Result = result;
         }
 
-        public RfsTuiPiRunResult Result { get; }
+        public RfsTuiHermesRunResult Result { get; }
         public string WorkingDirectory { get; private set; } = string.Empty;
         public string Prompt { get; private set; } = string.Empty;
-        public string? WorkspaceModel { get; private set; }
+        public string? GitStatusBefore { get; private set; }
+        public string? GitStatusAfter { get; private set; }
+        public RfsTuiHermesRunOptions? Options { get; private set; }
         public string LastPrompt => Prompt;
 
-        public Task<RfsTuiPiRunResult> RunAsync(
+        public Task<string> CaptureGitStatusAsync(string workingDirectory, CancellationToken cancellationToken = default)
+        {
+            WorkingDirectory = workingDirectory;
+            GitStatusBefore = string.Empty;
+            return Task.FromResult(string.Empty);
+        }
+
+        public Task<RfsTuiHermesRunResult> RunAsync(
             string workingDirectory,
             string prompt,
-            string? workspaceModel = null,
-            Action<PiJsonStreamEvent>? eventReporter = null,
+            string? gitStatusBefore = null,
+            RfsTuiHermesRunOptions? options = null,
+            RfsTuiHermesRunProgressReporter? progressReporter = null,
             CancellationToken cancellationToken = default)
         {
             WorkingDirectory = workingDirectory;
             Prompt = prompt;
-            WorkspaceModel = workspaceModel;
+            GitStatusBefore = gitStatusBefore;
+            GitStatusAfter = gitStatusBefore;
+            Options = options;
             return Task.FromResult(Result);
         }
     }

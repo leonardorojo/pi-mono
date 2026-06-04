@@ -57,10 +57,19 @@ public sealed record RckInteractionRecord
     }
 
     public static RckInteractionRecord CreateTuiDirect(string prompt, string answer, string? provider = null, string? model = null, RckInteractionPipelineSummary? pipelineSummary = null)
+        => CreateTuiRun("tui-direct", prompt, answer, provider, model, pipelineSummary);
+
+    public static RckInteractionRecord CreateTuiRun(
+        string mode,
+        string prompt,
+        string answer,
+        string? provider = null,
+        string? model = null,
+        RckInteractionPipelineSummary? pipelineSummary = null)
     {
         var summary = CreateAnswerSummary(answer);
         var effectivePipelineSummary = pipelineSummary ?? new RckInteractionPipelineSummary("direct", usesRckContext: false, usesTraceSlice: false, usesContextPack: false, validationStatus: null);
-        return new RckInteractionRecord("tui-direct", prompt, answer, summary, effectivePipelineSummary, provider, model, Array.Empty<RckInteractionTool>());
+        return new RckInteractionRecord(mode, prompt, answer, summary, effectivePipelineSummary, provider, model, Array.Empty<RckInteractionTool>());
     }
 
     public static RckInteractionRecord CreateTuiSimple(

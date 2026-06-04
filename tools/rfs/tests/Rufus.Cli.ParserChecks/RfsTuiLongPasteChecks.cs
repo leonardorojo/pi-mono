@@ -76,7 +76,11 @@ internal static class RfsTuiLongPasteChecks
                 "lines:",
                 "chars:",
                 "estimated tokens:",
-                "¿Cómo querés procesarlo?");
+                "¿Cómo querés procesarlo?",
+                "[Direct]",
+                "Asking main LLM without RCK context...",
+                "Respuesta:",
+                "Recorded State + Delta:");
 
             if (result.Stdout.Contains("Invalid mode. Choose 1, 2, 3, 4, /cancel, /exit, or /paste for long text.", StringComparison.Ordinal))
             {

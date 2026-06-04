@@ -134,6 +134,13 @@ await RunPromptIntentJsonCodecCaseAsync(
     expectedSummary: "Plan the next coverage phase.",
     failures: failures);
 
+await RunPromptIntentJsonCodecCaseAsync(
+    name: "prompt intent codec accepts trailing text after json",
+    json: "{\"intent\":\"planning\",\"summary\":\"Plan the next coverage phase.\",\"entities\":[\"coverage\"],\"constraints\":[\"stay read-only\"]}\nThanks for reading.",
+    expectedIntent: "planning",
+    expectedSummary: "Plan the next coverage phase.",
+    failures: failures);
+
 await RunPromptIntentJsonCodecFailureCaseAsync(
     name: "prompt intent codec rejects invalid json",
     json: "{\"intent\":\"implement-reset-board\",\"summary\":\"missing brace\"",

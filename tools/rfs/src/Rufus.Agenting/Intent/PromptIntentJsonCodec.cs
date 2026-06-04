@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Rufus.Agenting.Json;
 
 namespace Rufus.Agenting.Intent;
 
@@ -28,7 +29,11 @@ public static class PromptIntentJsonCodec
             return false;
         }
 
-        var normalizedJson = NormalizeJson(json);
+        if (!LlmJsonOutputNormalizer.TryNormalize(json, out var normalizedJson, out var normalizeError))
+        {
+            errorMessage = $"Invalid PromptIntent JSON: {normalizeError}";
+            return false;
+        }
 
         try
         {
@@ -142,20 +147,4 @@ public static class PromptIntentJsonCodec
         return false;
     }
 
-    private static string NormalizeJson(string json)
-    {
-        var trimmed = json.Trim();
-        if (!trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            return trimmed;
-        }
-
-        var lines = trimmed.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
-        if (lines.Length < 3 || !lines[0].StartsWith("```", StringComparison.Ordinal) || !string.Equals(lines[^1].Trim(), "```", StringComparison.Ordinal))
-        {
-            return trimmed;
-        }
-
-        return string.Join(Environment.NewLine, lines[1..^1]).Trim();
-    }
 }

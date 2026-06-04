@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Rufus.Agenting;
 using Rufus.Agenting.Intent;
-using Rufus.Cli.Json;
+using Rufus.Agenting.Json;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
@@ -111,6 +111,26 @@ public static class TraceSliceProposalLlmRunner
         builder.AppendLine("Return only a single JSON object and nothing else.");
         builder.AppendLine("Do not use markdown fences.");
         builder.AppendLine("Do not add commentary, labels, or explanations.");
+        builder.AppendLine("Output contract:");
+        builder.AppendLine("- Return ONLY one valid JSON object.");
+        builder.AppendLine("- Do not wrap the JSON in Markdown.");
+        builder.AppendLine("- Do not use ```json fences.");
+        builder.AppendLine("- Do not include explanations before or after the JSON.");
+        builder.AppendLine("- Do not include comments.");
+        builder.AppendLine("- Do not include trailing text.");
+        builder.AppendLine("- The response must start with { and end with }.");
+        builder.AppendLine("- The JSON must match this schema exactly:");
+        builder.AppendLine("{");
+        builder.AppendLine("  \"type\": \"rufus.trace-slice-proposal\",");
+        builder.AppendLine("  \"schemaVersion\": 1,");
+        builder.AppendLine("  \"prompt\": { \"text\": \"...\", \"isExcerpt\": false },");
+        builder.AppendLine("  \"intent\": { \"kind\": \"...\", \"summary\": \"...\", \"source\": \"...\" },");
+        builder.AppendLine("  \"requestedSelection\": { \"stateIds\": [], \"deltaIds\": [], \"anchorIds\": [], \"artifactRefs\": [] },");
+        builder.AppendLine("  \"requestedMaterializationPolicy\": { \"includeStatePayloads\": true, \"includeDeltaDecodedOps\": true, \"includeArtifactContents\": false, \"includeGitDiffs\": false, \"includeStdoutStderr\": false, \"includeJsonl\": false },");
+        builder.AppendLine("  \"rationale\": [],");
+        builder.AppendLine("  \"confidence\": 0.0,");
+        builder.AppendLine("  \"warnings\": []");
+        builder.AppendLine("}");
         builder.AppendLine("Return type rufus.trace-slice-proposal.");
         builder.AppendLine("RFS will validate all IDs and materialization policy fields.");
         builder.AppendLine("Do not invent IDs.");
@@ -146,7 +166,13 @@ public static class TraceSliceProposalLlmRunner
 
         try
         {
-            using var document = JsonDocument.Parse(LlmJsonOutputNormalizer.Normalize(intentOutputJson));
+            if (!LlmJsonOutputNormalizer.TryNormalize(intentOutputJson, out var normalizedIntentOutputJson, out var normalizeError))
+            {
+                errorMessage = $"rfs trace-slice-proposal-llm: failed to project intent result: {normalizeError}";
+                return false;
+            }
+
+            using var document = JsonDocument.Parse(normalizedIntentOutputJson);
             var root = document.RootElement;
             intentProjection = new RckTraceSliceProposalIntentProjection(
                 Kind: GetRequiredString(root, "Intent"),
@@ -168,7 +194,13 @@ public static class TraceSliceProposalLlmRunner
 
         try
         {
-            using var document = JsonDocument.Parse(LlmJsonOutputNormalizer.Normalize(proposalJson));
+            if (!LlmJsonOutputNormalizer.TryNormalize(proposalJson, out var normalizedProposalJsonValue, out var normalizeError))
+            {
+                errorMessage = $"rfs trace-slice-proposal-llm: invalid JSON from LLM: {normalizeError}";
+                return false;
+            }
+
+            using var document = JsonDocument.Parse(normalizedProposalJsonValue);
             var root = document.RootElement;
 
             if (!string.Equals(GetRequiredString(root, "type"), "rufus.trace-slice-proposal", StringComparison.Ordinal))

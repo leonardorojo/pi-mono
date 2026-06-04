@@ -128,28 +128,70 @@ internal static class RfsTuiRenderer
         WriteWarningLine(message);
     }
 
-    internal static void WritePiRunPromptSummary(RfsTuiPiPromptDraft draft, string workspaceModel)
+    internal static void WritePiRunPromptSummary(RfsTuiOperationalHandoffPromptDraft draft, string workspaceModel)
     {
-        WriteSectionTitle("Prompt operativo para Pi:");
+        WriteSectionTitle("Operational handoff prompt for Pi:");
         WriteKeyValue("model", string.IsNullOrWhiteSpace(workspaceModel) ? RfsTuiSessionState.DefaultSessionModel : workspaceModel.Trim());
         WriteKeyValue("repo root", draft.RepoRoot);
         WriteKeyValue("branch", draft.Branch);
         WriteKeyValue("dirty", draft.DirtyState);
         WriteKeyValue("mode", draft.Mode);
-        WriteKeyValue("prompt", RfsTuiText.TruncateInline(draft.OriginalPrompt));
-        WriteKeyValue("previous answer", RfsTuiText.TruncateInline(draft.PreviousAnswer));
+        Console.WriteLine();
+
+        WriteSectionTitle("Execution directive:");
+        Console.WriteLine(draft.ExecutionDirective);
+        Console.WriteLine();
+
+        WriteSectionTitle("Objective:");
+        Console.WriteLine(draft.Objective);
+        Console.WriteLine();
+
+        WriteSectionTitle("Operational instruction to execute:");
+        Console.WriteLine(draft.OperationalInstructionToExecute);
+        Console.WriteLine();
+
+        WriteSectionTitle("Original user request, for context only:");
+        Console.WriteLine(draft.OriginalUserRequestForContext);
+        Console.WriteLine();
+
+        WriteKeyValue("context pack", string.IsNullOrWhiteSpace(draft.ContextSummary) ? "none" : "available");
         if (!string.IsNullOrWhiteSpace(draft.ContextSummary))
         {
-            WriteKeyValue("context pack", "available");
-            foreach (var line in draft.ContextSummary.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (var line in draft.ContextSummary.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries))
             {
                 WriteMutedLine($"  {line}");
             }
+            Console.WriteLine();
         }
-        else
+
+        if (draft.RunnerNotes.Count > 0)
         {
-            WriteKeyValue("context pack", "none");
+            WriteSectionTitle("Runner-specific notes:");
+            foreach (var note in draft.RunnerNotes)
+            {
+                WriteMutedLine($"- {note}");
+            }
+            Console.WriteLine();
         }
+
+        WriteSectionTitle("Restrictions:");
+        foreach (var restriction in draft.Restrictions)
+        {
+            WriteMutedLine($"- {restriction}");
+        }
+        Console.WriteLine();
+
+        WriteSectionTitle("Evidence standard:");
+        foreach (var item in draft.EvidenceStandard)
+        {
+            WriteMutedLine($"- {item}");
+        }
+        Console.WriteLine();
+
+        WriteSectionTitle("Prompt text to send:");
+        Console.WriteLine("```");
+        Console.WriteLine(draft.PromptText);
+        Console.WriteLine("```");
         Console.WriteLine();
     }
 
@@ -729,35 +771,62 @@ internal static class RfsTuiRenderer
         WriteWarningLine(message);
     }
 
-    internal static void WriteHermesHandoffDraft(RfsTuiHermesHandoffDraft draft)
+    internal static void WriteHermesHandoffDraft(RfsTuiOperationalHandoffPromptDraft draft)
     {
-        WriteSectionTitle("Hermes handoff draft");
+        WriteSectionTitle("Operational handoff prompt for Hermes:");
         WriteKeyValue("repo", draft.RepoRoot);
         WriteKeyValue("branch", draft.Branch);
         WriteKeyValue("dirty", draft.DirtyState);
         WriteKeyValue("mode", draft.Mode);
         Console.WriteLine();
+
+        WriteSectionTitle("Execution directive:");
+        Console.WriteLine(draft.ExecutionDirective);
+        Console.WriteLine();
+
+        WriteSectionTitle("Objective:");
+        Console.WriteLine(draft.Objective);
+        Console.WriteLine();
+
+        WriteSectionTitle("Operational instruction to execute:");
+        Console.WriteLine(draft.OperationalInstructionToExecute);
+        Console.WriteLine();
+
+        WriteSectionTitle("Original user request, for context only:");
+        Console.WriteLine(draft.OriginalUserRequestForContext);
+        Console.WriteLine();
+
         WriteKeyValue("ContextPack", string.IsNullOrWhiteSpace(draft.ContextSummary) ? "(not available)" : "available");
         if (!string.IsNullOrWhiteSpace(draft.ContextSummary))
         {
             Console.WriteLine(draft.ContextSummary);
+            Console.WriteLine();
         }
-        Console.WriteLine();
-        WriteSectionTitle("Objetivo sugerido para Hermes:");
-        Console.WriteLine(draft.SuggestedObjective);
-        Console.WriteLine();
-        WriteSectionTitle("Restricciones:");
+
+        if (draft.RunnerNotes.Count > 0)
+        {
+            WriteSectionTitle("Runner-specific notes:");
+            foreach (var note in draft.RunnerNotes)
+            {
+                WriteMutedLine($"- {note}");
+            }
+            Console.WriteLine();
+        }
+
+        WriteSectionTitle("Restrictions:");
         foreach (var restriction in draft.Restrictions)
         {
-            Console.WriteLine($"- {restriction}");
+            WriteMutedLine($"- {restriction}");
         }
         Console.WriteLine();
-        WriteSectionTitle("Entrega esperada:");
-        for (var index = 0; index < draft.Deliverables.Count; index++)
+
+        WriteSectionTitle("Evidence standard:");
+        foreach (var item in draft.EvidenceStandard)
         {
-            Console.WriteLine($"{index + 1}. {draft.Deliverables[index]}");
+            WriteMutedLine($"- {item}");
         }
         Console.WriteLine();
+
         WriteSectionTitle("Prompt operativo para Hermes:");
         Console.WriteLine("```");
         Console.WriteLine(draft.PromptText);

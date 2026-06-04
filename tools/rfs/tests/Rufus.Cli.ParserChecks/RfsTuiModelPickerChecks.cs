@@ -13,6 +13,7 @@ RunSessionModelStateCases(failures);
 RunModelSelectionStateCases(failures);
 RunRendererAndPrincipalModelCases(failures);
 RunTuiPrincipalAnswerResolutionCases(failures);
+RunPiRunCases(failures);
 RunHermesDraftCases(failures);
 RunHermesRunCases(failures);
 RunHermesHealthCases(failures);
@@ -341,6 +342,93 @@ finally
 }
 }
 
+private static void RunPiRunCases(List<string> failures)
+{
+var status = new RckWorkspaceStatus(
+RepoRoot: "/tmp/rfs",
+WorkspaceExists: true,
+ConfigExists: true,
+RckExists: true,
+HeadExists: true,
+Head: "abcdef1234567890",
+StateCount: 1,
+DeltaCount: 1,
+AnchorCount: 1,
+GitContext: new GitWorkspaceContext("feature/rufus-cli-design", "abcdef1234567890", Dirty: true, Array.Empty<GitWorkspaceArtifactChange>()));
+
+var sessionState = new RfsTuiSessionState();
+sessionState.RecordComplete(
+new RfsTuiCompleteContextSummary(
+SelectionStrategy: "trace-slice",
+ValidationStatus: "validated",
+ContextPackScope: "repo",
+IntentSource: "llm",
+SelectedStateCount: 5,
+SelectedDeltaCount: 3,
+SelectedAnchorCount: 2,
+EstimatedChars: 1234,
+EstimatedTokens: 321,
+TransportRisk: "low",
+Truncated: false,
+Warnings: ["warning-1"],
+Omissions: ["omission-1"]),
+prompt: "Please inspect the last interaction and execute it with evidence.",
+answer: "Use read-only filesystem/git inspection, report evidence, and separate facts from inference.");
+
+var draftResult = RfsTuiPiPromptBuilder.TryBuild(status, sessionState);
+if (!draftResult.Success || draftResult.Draft is null)
+{
+failures.Add("[tui model picker] expected /pi run to build an operational handoff prompt once a prior response exists.");
+return;
+}
+
+var draft = draftResult.Draft;
+var promptText = draft.PromptText;
+var expectedFragments = new[]
+{
+    "Execution directive:",
+    "The operational instruction below is the main task you must execute now.",
+    "Do not rewrite it.",
+    "Do not summarize it.",
+    "Do not return the instruction as your answer.",
+    "Execute it using the available tools and runtime.",
+    "Use read-only filesystem/git inspection when the task requires repo evidence.",
+    "Return factual results backed by evidence.",
+    "If a requested action cannot be executed, explain why and report what evidence is missing.",
+    "Operational instruction to execute:",
+    "Original user request, for context only:",
+    "Objective:",
+    "Execute the operational instruction above under the restrictions below and return an evidence-based result.",
+    "Evidence standard:",
+    "1. Result",
+    "2. Evidence verified",
+    "3. Inferencias razonables",
+    "4. Limitations / uncertainties",
+    "5. Next suggested step",
+};
+
+foreach (var fragment in expectedFragments)
+{
+    if (!promptText.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected /pi run prompt text to include '{fragment}'.");
+    }
+}
+
+if (promptText.Contains("Respuesta previa del LLM principal:", StringComparison.Ordinal) ||
+    promptText.Contains("Objetivo sugerido para Pi:", StringComparison.Ordinal) ||
+    promptText.Contains("Revisar la última interacción útil", StringComparison.Ordinal))
+{
+    failures.Add("[tui model picker] expected /pi run to stop framing the previous answer as a review prompt.");
+}
+
+if (!promptText.Contains("Please inspect the last interaction and execute it with evidence.", StringComparison.Ordinal) ||
+    !promptText.Contains("Use read-only filesystem/git inspection, report evidence, and separate facts from inference.", StringComparison.Ordinal))
+{
+    failures.Add("[tui model picker] expected /pi run prompt text to preserve the previous user request and answer as operational context.");
+}
+}
+
 private static void RunHermesDraftCases(List<string> failures)
 {
 var status = new RckWorkspaceStatus(
@@ -396,15 +484,48 @@ if (!string.Equals(draft.RepoRoot, "/tmp/rfs", StringComparison.Ordinal) ||
 failures.Add("[tui model picker] expected /hermes draft metadata to include repo root, branch, and dirty state.");
 }
 
-if (!draft.PromptText.Contains("Hermes handoff draft", StringComparison.Ordinal) ||
-!draft.PromptText.Contains("Repo root: /tmp/rfs", StringComparison.Ordinal) ||
-!draft.PromptText.Contains("Branch: feature/rufus-cli-design", StringComparison.Ordinal) ||
-!draft.PromptText.Contains("Dirty state: dirty", StringComparison.Ordinal) ||
-!draft.PromptText.Contains("Respuesta previa del LLM principal:", StringComparison.Ordinal) ||
-!draft.PromptText.Contains("ContextPack summary:", StringComparison.Ordinal) ||
-!draft.PromptText.Contains("Entrega esperada:", StringComparison.Ordinal))
+var promptText = draft.PromptText;
+var expectedFragments = new[]
 {
-failures.Add("[tui model picker] expected /hermes prompt text to include the required handoff sections.");
+    "Execution directive:",
+    "The operational instruction below is the main task you must execute now.",
+    "Do not rewrite it.",
+    "Do not summarize it.",
+    "Do not return the instruction as your answer.",
+    "Execute it using the available tools and runtime.",
+    "Use read-only filesystem/git inspection when the task requires repo evidence.",
+    "Return factual results backed by evidence.",
+    "If a requested action cannot be executed, explain why and report what evidence is missing.",
+    "Operational instruction to execute:",
+    "Original user request, for context only:",
+    "Objective:",
+    "Execute the operational instruction above under the restrictions below and return an evidence-based result.",
+    "Evidence standard:",
+    "1. Result",
+    "2. Evidence verified",
+    "3. Inferencias razonables",
+    "4. Limitations / uncertainties",
+    "5. Next suggested step",
+};
+
+foreach (var fragment in expectedFragments)
+{
+    if (!promptText.Contains(fragment, StringComparison.Ordinal))
+    {
+        failures.Add($"[tui model picker] expected /hermes prompt text to include '{fragment}'.");
+    }
+}
+
+if (promptText.Contains("Respuesta previa del LLM principal:", StringComparison.Ordinal) ||
+    promptText.Contains("Objetivo sugerido para Hermes:", StringComparison.Ordinal) ||
+    promptText.Contains("Revisar la última respuesta de RFS", StringComparison.Ordinal))
+{
+    failures.Add("[tui model picker] expected /hermes run to stop framing the previous answer as a review prompt.");
+}
+
+if (!promptText.Contains("ContextPack summary:", StringComparison.Ordinal))
+{
+    failures.Add("[tui model picker] expected /hermes prompt text to keep the context pack summary when present.");
 }
 }
 

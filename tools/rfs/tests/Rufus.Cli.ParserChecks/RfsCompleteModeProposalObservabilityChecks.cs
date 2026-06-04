@@ -20,6 +20,7 @@ internal static class RfsCompleteModeProposalObservabilityChecks
     {
         await RunModelPrintedBeforeLlmCallAsync(failures);
         await RunQuestionIntentStillCallsAnchorSelectionAsync(failures);
+        await RunImpureAnchorSelectionOutputStillCompletesAsync(failures);
     }
 
     /// <summary>
@@ -173,6 +174,66 @@ internal static class RfsCompleteModeProposalObservabilityChecks
             if (result.SelectedAnchorIds.Count != 0)
             {
                 failures.Add($"[{name}] expected 0 selected anchors but got {result.SelectedAnchorIds.Count}.");
+            }
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
+    private static async Task RunImpureAnchorSelectionOutputStillCompletesAsync(List<string> failures)
+    {
+        const string name = "complete mode accepts impure anchor-selection output";
+
+        var originalOut = Console.Out;
+        using var stdout = new StringWriter();
+        try
+        {
+            Console.SetOut(stdout);
+
+            var intentAnswerJson = "{\"Intent\":\"code-change\",\"Summary\":\"Implement reset board action.\",\"Entities\":[\"reset board\"],\"Constraints\":[]}";
+            var intentTransport = new FakeIntentLlmTransport(success: true, answerJson: intentAnswerJson);
+            var intentAgent = new PiIntentInferenceAgent("/home/rufus/DEV/leonardorojo/ChessBoardApp", transport: intentTransport);
+
+            var impureAnchorSelectionAnswer = "Here is the anchor selection:\n" + BuildAnchorSelectionAnswer(
+                selectedAnchorIds: Array.Empty<string>(),
+                fallbackStrategy: "recent-chain",
+                rationale: new[] { ("recent-chain", "no relevant anchors") },
+                warnings: new[] { "no relevant anchors" },
+                confidence: 0.2,
+                schemaVersion: 1,
+                type: "rufus.anchor-selection") + "\nHope this helps.";
+
+            var anchorSelectionTransport = new FakeTraceSliceProposalLlmTransport(
+                success: true,
+                answerJson: impureAnchorSelectionAnswer);
+
+            var proposalAgent = new PiTraceSliceProposalAgent(
+                "/home/rufus/DEV/leonardorojo/ChessBoardApp",
+                transport: anchorSelectionTransport);
+
+            var result = await RfsCompleteModePipeline.BuildAsync(
+                "Implement reset board action",
+                "/home/rufus/DEV/leonardorojo/ChessBoardApp",
+                5,
+                intentAgent,
+                proposalAgent);
+
+            if (!result.Success)
+            {
+                failures.Add($"[{name}] expected Success=true but got false. Error: {result.ErrorMessage}");
+                return;
+            }
+
+            if (anchorSelectionTransport.CallCount != 1)
+            {
+                failures.Add($"[{name}] expected anchor selection transport to be called once but got {anchorSelectionTransport.CallCount} calls.");
+            }
+
+            if (result.SelectedAnchorIds.Count != 0)
+            {
+                failures.Add($"[{name}] expected 0 selected anchors for recent-chain fallback but got {result.SelectedAnchorIds.Count}.");
             }
         }
         finally

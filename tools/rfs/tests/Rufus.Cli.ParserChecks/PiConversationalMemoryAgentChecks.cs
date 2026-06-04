@@ -148,8 +148,8 @@ internal static class PiConversationalMemoryAgentChecks
 
     private static async Task RunMarkdownFencesCaseAsync(List<string> failures)
     {
-        const string name = "conversational memory agent markdown fences";
-        var answer = "```json\n{\"type\":\"rufus.conversational-memory\"}\n```";
+        const string name = "conversational memory agent markdown fences with trailing text";
+        var answer = "```json\n{\"type\":\"rufus.conversational-memory\",\"schemaVersion\":1,\"summary\":\"We are deciding how to derive conversational continuity from RCK.\",\"activeTopic\":\"Conversations over RCK logs\",\"openQuestions\":[\"Should warnings be surfaced?\"],\"recentDecisions\":[\"Use RckWorkspaceLogReader as the source.\"],\"continuityHints\":[\"The user is asking about continuity, not DAG slicing.\"],\"warnings\":[\"compact-summary\"]}\n```\nExtra trailing note.";
         var agent = new PiConversationalMemoryAgent("/tmp/conversational-memory-agent-check", transport: new FakeConversationalMemoryLlmTransport(success: true, answerJson: answer));
         var task = new AgentTask(
             id: "conversational-memory-agent-markdown-fences",
@@ -160,8 +160,10 @@ internal static class PiConversationalMemoryAgentChecks
 
         var result = await agent.ExecuteAsync(task);
 
-        Expect(result.Status == AgentTaskStatus.Failed, $"[{name}] expected Failed but got {result.Status}.", failures);
-        Expect(result.Errors.Count > 0, $"[{name}] expected at least one validation error.", failures);
+        Expect(result.Status == AgentTaskStatus.Succeeded, $"[{name}] expected Succeeded but got {result.Status}. Errors: {string.Join(" | ", result.Errors)}", failures);
+        var parsed = RckConversationalMemoryJsonCodec.Parse(result.Output!);
+        Expect(string.Equals(parsed.Type, "rufus.conversational-memory", StringComparison.Ordinal), $"[{name}] expected type.", failures);
+        Expect(parsed.Warnings.SequenceEqual(new[] { "compact-summary" }), $"[{name}] expected warnings.", failures);
     }
 
     private static async Task RunPromptGuardrailsCaseAsync(List<string> failures)

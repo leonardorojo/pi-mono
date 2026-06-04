@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text;
+using Rufus.Agenting.Json;
 
 namespace Rufus.RCK.Workspace;
 
@@ -46,7 +47,15 @@ public static class RckConversationalMemoryJsonCodec
 
         try
         {
-            using var document = JsonDocument.Parse(json);
+            if (!LlmJsonOutputNormalizer.TryNormalize(json, out var normalizedJson, out var normalizeError))
+            {
+                errorMessage = normalizeError is null
+                    ? "Invalid ConversationalMemory JSON from LLM."
+                    : $"Invalid ConversationalMemory JSON from LLM: {normalizeError}";
+                return false;
+            }
+
+            using var document = JsonDocument.Parse(normalizedJson);
             var root = document.RootElement;
 
             foreach (var property in root.EnumerateObject())

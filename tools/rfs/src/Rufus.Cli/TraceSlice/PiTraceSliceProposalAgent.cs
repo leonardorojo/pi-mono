@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Rufus.Agenting;
 using Rufus.Agenting.TraceSlice;
-using Rufus.Cli.Json;
+using Rufus.Agenting.Json;
 using Rufus.Cli.PiIntegration;
 using Rufus.Cli.Tui;
 using Rufus.RCK.Workspace;
@@ -281,6 +281,24 @@ public sealed class PiTraceSliceProposalAgent : IAgent
         builder.AppendLine("Return only a single JSON object and nothing else.");
         builder.AppendLine("Do not use markdown fences.");
         builder.AppendLine("Do not add commentary.");
+        builder.AppendLine("Output contract:");
+        builder.AppendLine("- Return ONLY one valid JSON object.");
+        builder.AppendLine("- Do not wrap the JSON in Markdown.");
+        builder.AppendLine("- Do not use ```json fences.");
+        builder.AppendLine("- Do not include explanations before or after the JSON.");
+        builder.AppendLine("- Do not include comments.");
+        builder.AppendLine("- Do not include trailing text.");
+        builder.AppendLine("- The response must start with { and end with }.");
+        builder.AppendLine("- The JSON must match this schema exactly:");
+        builder.AppendLine("{");
+        builder.AppendLine("  \"type\": \"rufus.anchor-selection\",");
+        builder.AppendLine("  \"schemaVersion\": 1,");
+        builder.AppendLine("  \"selectedAnchorIds\": [],");
+        builder.AppendLine("  \"fallbackStrategy\": \"none\",");
+        builder.AppendLine("  \"rationale\": [{ \"target\": \"...\", \"reason\": \"...\" }],");
+        builder.AppendLine("  \"warnings\": [],");
+        builder.AppendLine("  \"confidence\": 0.0");
+        builder.AppendLine("}");
         builder.AppendLine("This is structural DAG slicing, not semantic summarization.");
         builder.AppendLine("You select anchor entry points only.");
         builder.AppendLine("Do not select arbitrary states/deltas.");
@@ -329,7 +347,13 @@ public sealed class PiTraceSliceProposalAgent : IAgent
 
         try
         {
-            using var document = JsonDocument.Parse(LlmJsonOutputNormalizer.Normalize(selectionJson));
+            if (!LlmJsonOutputNormalizer.TryNormalize(selectionJson, out var normalizedSelectionJson, out var normalizeError))
+            {
+                errorMessage = $"rfs anchor-selection-llm: invalid JSON from LLM: {normalizeError}";
+                return false;
+            }
+
+            using var document = JsonDocument.Parse(normalizedSelectionJson);
             var root = document.RootElement;
 
             var type = GetRequiredString(root, "type");
@@ -482,6 +506,26 @@ public sealed class PiTraceSliceProposalAgent : IAgent
         builder.AppendLine("Return only a single JSON object and nothing else.");
         builder.AppendLine("Do not use markdown fences.");
         builder.AppendLine("Do not add commentary, labels, or explanations.");
+        builder.AppendLine("Output contract:");
+        builder.AppendLine("- Return ONLY one valid JSON object.");
+        builder.AppendLine("- Do not wrap the JSON in Markdown.");
+        builder.AppendLine("- Do not use ```json fences.");
+        builder.AppendLine("- Do not include explanations before or after the JSON.");
+        builder.AppendLine("- Do not include comments.");
+        builder.AppendLine("- Do not include trailing text.");
+        builder.AppendLine("- The response must start with { and end with }.");
+        builder.AppendLine("- The JSON must match this schema exactly:");
+        builder.AppendLine("{");
+        builder.AppendLine("  \"type\": \"rufus.trace-slice-proposal\",");
+        builder.AppendLine("  \"schemaVersion\": 1,");
+        builder.AppendLine("  \"prompt\": { \"text\": \"...\", \"isExcerpt\": false },");
+        builder.AppendLine("  \"intent\": { \"kind\": \"...\", \"summary\": \"...\", \"source\": \"...\" },");
+        builder.AppendLine("  \"requestedSelection\": { \"stateIds\": [], \"deltaIds\": [], \"anchorIds\": [], \"artifactRefs\": [] },");
+        builder.AppendLine("  \"requestedMaterializationPolicy\": { \"includeStatePayloads\": true, \"includeDeltaDecodedOps\": true, \"includeArtifactContents\": false, \"includeGitDiffs\": false, \"includeStdoutStderr\": false, \"includeJsonl\": false },");
+        builder.AppendLine("  \"rationale\": [{ \"target\": \"...\", \"reason\": \"...\" }],");
+        builder.AppendLine("  \"confidence\": 0.0,");
+        builder.AppendLine("  \"warnings\": []");
+        builder.AppendLine("}");
         builder.AppendLine("Respect schemaVersion = 1.");
         builder.AppendLine("Return type = rufus.trace-slice-proposal.");
         builder.AppendLine("Do not invent ids.");
@@ -526,7 +570,13 @@ public sealed class PiTraceSliceProposalAgent : IAgent
 
         try
         {
-            using var document = JsonDocument.Parse(LlmJsonOutputNormalizer.Normalize(proposalJson));
+            if (!LlmJsonOutputNormalizer.TryNormalize(proposalJson, out var normalizedProposalJsonCandidate, out var normalizeError))
+            {
+                errorMessage = $"rfs trace-slice-proposal-llm: invalid JSON from LLM: {normalizeError}";
+                return false;
+            }
+
+            using var document = JsonDocument.Parse(normalizedProposalJsonCandidate);
             var root = document.RootElement;
 
             var type = GetRequiredString(root, "type");

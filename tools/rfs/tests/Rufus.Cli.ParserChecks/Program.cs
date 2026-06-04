@@ -741,6 +741,7 @@ static async Task RunTuiDeterministicChecksAsync(List<string> failures)
     RfsTuiMarkdownLiteChecks.Run(failures);
     RfsTuiPiRunRuntimeChecks.Run(failures);
     await RfsTuiPiRunRecordingChecks.RunAsync(failures);
+    await RfsTuiHermesRunRecordingChecks.RunAsync(failures);
     await RfsTuiAnsiLeakChecks.Run(failures);
 
     await RunRfsTuiInitializedSessionCaseAsync(

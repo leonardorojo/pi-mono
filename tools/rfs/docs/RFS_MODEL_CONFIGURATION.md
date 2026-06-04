@@ -49,6 +49,7 @@ Location:
 ```
 
 This is the persisted workspace model configuration.
+It stores model ids and stage model ids, not provider-qualified values necessarily.
 The current code reads and writes it through `RckWorkspaceModelConfigStore` and `RckWorkspaceInitializer`.
 
 Relevant fields:
@@ -186,6 +187,12 @@ Important distinction:
 
 These are separate layers.
 Do not treat them as interchangeable.
+
+Key rule:
+
+- Profiles express intended model ids.
+- Execution must resolve and preserve provider before invoking Pi, using picker/catalog/session context when available.
+- Never fix provider ambiguity by changing the semantic profile definition.
 
 ## 3. Init
 
@@ -347,6 +354,7 @@ Use `/model`, `/pi run`, or Complete mode instead.
 
 RFS can display provider-aware models in the picker.
 The picker stores both the model id and provider when available.
+Execution uses that picker/catalog/session information when it is available, so provider preservation happens at runtime rather than in `.rfs/config.json`.
 
 Conceptual picker example:
 
@@ -389,7 +397,7 @@ Example table:
 | --- | --- | --- |
 | `deepseek-chat` | `deepseek` / `openrouter` | `test` profile |
 | `claude-haiku-4.5` | `github-copilot` | `intent` in `balanced` |
-| `gpt-5.4-mini` | `github-copilot` when selected from RFS picker/config | balanced main LLM |
+| `gpt-5.4-mini` | `github-copilot` when selected from RFS picker/session and provider is known | balanced main LLM |
 | `qwen3:1.7b` | `ollama` | local / Pi-default style use if exposed |
 
 Important distinction:

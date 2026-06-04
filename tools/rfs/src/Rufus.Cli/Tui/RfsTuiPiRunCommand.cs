@@ -74,9 +74,7 @@ internal static class RfsTuiPiRunCommand
             return true;
         }
 
-        Console.WriteLine("Recorded Pi run State + Delta:");
-        Console.WriteLine($"  state: {recordResult.StateId}");
-        Console.WriteLine($"  delta: {recordResult.DeltaId}");
+        RfsTuiRenderer.WriteRecordedStateDelta(recordResult.StateId?.ToString(), recordResult.DeltaId?.ToString());
         return true;
     }
 

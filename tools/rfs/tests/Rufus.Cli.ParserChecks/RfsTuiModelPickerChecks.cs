@@ -12,6 +12,7 @@ internal static void Run(List<string> failures)
 RunSessionModelStateCases(failures);
 RunModelSelectionStateCases(failures);
 RunRendererAndPrincipalModelCases(failures);
+RunRecordedStateDeltaRenderingCases(failures);
 RunTuiPrincipalAnswerResolutionCases(failures);
 RunPiRunCases(failures);
 RunHermesDraftCases(failures);
@@ -284,6 +285,44 @@ private static void RunRendererAndPrincipalModelCases(List<string> failures)
     if (!string.Equals(defaultExecutionModel.Model, RfsTuiSessionState.DefaultSessionModel, StringComparison.Ordinal))
     {
         failures.Add($"[tui model picker] expected empty session model to fall back to '{RfsTuiSessionState.DefaultSessionModel}' but got '{defaultExecutionModel.Model}'.");
+    }
+}
+
+private static void RunRecordedStateDeltaRenderingCases(List<string> failures)
+{
+    using var stdout = new StringWriter();
+    var originalOut = Console.Out;
+    try
+    {
+        Console.SetOut(stdout);
+        RfsTuiRenderer.WriteRecordedStateDelta(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210");
+    }
+    finally
+    {
+        Console.SetOut(originalOut);
+    }
+
+    var output = stdout.ToString();
+    if (!output.Contains("Recorded State + Delta:", StringComparison.Ordinal))
+    {
+        failures.Add("[tui model picker] expected recorded State + Delta renderer output.");
+    }
+
+    if (!output.Contains("state: 01234567", StringComparison.Ordinal))
+    {
+        failures.Add("[tui model picker] expected recorded State + Delta rendering to shorten the state id to eight characters.");
+    }
+
+    if (!output.Contains("delta: fedcba98", StringComparison.Ordinal))
+    {
+        failures.Add("[tui model picker] expected recorded State + Delta rendering to shorten the delta id to eight characters.");
+    }
+
+    if (System.Text.RegularExpressions.Regex.IsMatch(output, "\\b[0-9a-fA-F]{64}\\b"))
+    {
+        failures.Add("[tui model picker] expected recorded State + Delta rendering not to print 64-character hashes in UI output.");
     }
 }
 

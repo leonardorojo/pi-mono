@@ -31,6 +31,7 @@ internal static class RfsTuiPiRunRecordingChecks
             var output = await RunCommandAsync(tempRoot, string.Empty, statusBefore, sessionState, runner, failures, name);
             AssertNoStderr(name, output.Stderr, failures);
             AssertPromptVisibility(name, output.Stdout, expectPromptVisible: false, failures);
+            AssertCompactPromptSummary(name, output.Stdout, tempRoot, string.IsNullOrWhiteSpace(statusBefore.GitContext.Branch) ? "(detached)" : statusBefore.GitContext.Branch, statusBefore.GitContext.Dirty ? "dirty" : "clean", failures);
             AssertRecordedPromptOutcome(name, output.Stdout, expectRecorded: true, failures);
             AssertCountsIncreasedByOne(name, statusBefore, RckWorkspaceStatusReader.Read(tempRoot), failures);
             AssertRunnerInputs(name, runner, tempRoot, sessionState, "github-copilot/gpt-5.4-mini", failures);
@@ -67,6 +68,7 @@ internal static class RfsTuiPiRunRecordingChecks
             var output = await RunCommandAsync(tempRoot, input, statusBefore, sessionState, runner, failures, name);
             AssertNoStderr(name, output.Stderr, failures);
             AssertPromptVisibility(name, output.Stdout, expectPromptVisible: false, failures);
+            AssertCompactPromptSummary(name, output.Stdout, tempRoot, string.IsNullOrWhiteSpace(statusBefore.GitContext.Branch) ? "(detached)" : statusBefore.GitContext.Branch, statusBefore.GitContext.Dirty ? "dirty" : "clean", failures);
             AssertRecordedPromptOutcome(name, output.Stdout, expectRecorded: false, failures);
             AssertCountsUnchanged(name, statusBefore, RckWorkspaceStatusReader.Read(tempRoot), failures);
             AssertRunnerInputs(name, runner, tempRoot, sessionState, "github-copilot/gpt-5.4-mini", failures);
@@ -271,6 +273,47 @@ internal static class RfsTuiPiRunRecordingChecks
         if (!string.Equals(NormalizeWhitespace(actual), NormalizeWhitespace(expected), StringComparison.Ordinal))
         {
             failures.Add($"[{name}] expected JSON property '{propertyName}' to match normalized whitespace '{expected}' but got '{actual}'.");
+        }
+    }
+
+    private static void AssertCompactPromptSummary(string name, string stdout, string repoRoot, string branch, string dirtyState, List<string> failures)
+    {
+        foreach (var fragment in new[]
+        {
+            "Operational handoff prompt for Pi:",
+            "model: github-copilot/gpt-5.4-mini",
+            $"repo root: {repoRoot}",
+            $"branch: {branch}",
+            $"dirty: {dirtyState}",
+            "mode: complete",
+            "operational instruction: available",
+            "original request: available",
+            "context pack: available",
+        })
+        {
+            if (!stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected compact Pi run summary to contain '{fragment}'.");
+            }
+        }
+
+        foreach (var fragment in new[]
+        {
+            "Execution directive:",
+            "Objective:",
+            "Operational instruction to execute:",
+            "Original user request, for context only:",
+            "ContextPack summary:",
+            "Runner-specific notes:",
+            "Restrictions:",
+            "Evidence standard:",
+            "Prompt text to send:",
+        })
+        {
+            if (stdout.Contains(fragment, StringComparison.Ordinal))
+            {
+                failures.Add($"[{name}] expected compact Pi run summary to omit '{fragment}'.");
+            }
         }
     }
 

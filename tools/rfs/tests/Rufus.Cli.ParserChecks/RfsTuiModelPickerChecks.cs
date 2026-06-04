@@ -415,6 +415,11 @@ foreach (var fragment in expectedFragments)
     }
 }
 
+AssertSingleOccurrence(failures, "[tui model picker]", "Execution directive:", promptText);
+AssertSingleOccurrence(failures, "[tui model picker]", "Operational instruction to execute:", promptText);
+AssertSingleOccurrence(failures, "[tui model picker]", "Original user request, for context only:", promptText);
+AssertSingleOccurrence(failures, "[tui model picker]", "Evidence standard:", promptText);
+
 if (promptText.Contains("Respuesta previa del LLM principal:", StringComparison.Ordinal) ||
     promptText.Contains("Objetivo sugerido para Pi:", StringComparison.Ordinal) ||
     promptText.Contains("Revisar la última interacción útil", StringComparison.Ordinal))
@@ -516,6 +521,11 @@ foreach (var fragment in expectedFragments)
     }
 }
 
+AssertSingleOccurrence(failures, "[tui model picker]", "Execution directive:", promptText);
+AssertSingleOccurrence(failures, "[tui model picker]", "Operational instruction to execute:", promptText);
+AssertSingleOccurrence(failures, "[tui model picker]", "Original user request, for context only:", promptText);
+AssertSingleOccurrence(failures, "[tui model picker]", "Evidence standard:", promptText);
+
 if (promptText.Contains("Respuesta previa del LLM principal:", StringComparison.Ordinal) ||
     promptText.Contains("Objetivo sugerido para Hermes:", StringComparison.Ordinal) ||
     promptText.Contains("Revisar la última respuesta de RFS", StringComparison.Ordinal))
@@ -527,6 +537,34 @@ if (!promptText.Contains("ContextPack summary:", StringComparison.Ordinal))
 {
     failures.Add("[tui model picker] expected /hermes prompt text to keep the context pack summary when present.");
 }
+}
+
+private static void AssertSingleOccurrence(List<string> failures, string name, string fragment, string text)
+{
+    var count = CountOccurrences(text, fragment);
+    if (count != 1)
+    {
+        failures.Add($"{name} expected '{fragment}' to appear exactly once but found {count} occurrences.");
+    }
+}
+
+private static int CountOccurrences(string text, string fragment)
+{
+    var count = 0;
+    var index = 0;
+    while (true)
+    {
+        index = text.IndexOf(fragment, index, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            break;
+        }
+
+        count++;
+        index += fragment.Length == 0 ? 1 : fragment.Length;
+    }
+
+    return count;
 }
 
 private static void RunHermesRunCases(List<string> failures)

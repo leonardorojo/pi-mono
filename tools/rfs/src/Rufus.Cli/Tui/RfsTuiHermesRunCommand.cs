@@ -52,7 +52,8 @@ internal static class RfsTuiHermesRunCommand
             RfsTuiRenderer.WriteWarningLine("Warning: repository is already dirty before Hermes run. Proceeding with guarded execution. Changes after run may be harder to attribute.");
         }
 
-        RfsTuiRenderer.WriteModeBanner("Hermes run", "Executing Hermes CLI one-shot transport...");
+        RfsTuiRenderer.WriteModeBanner("Hermes run", "Executing Hermes handoff...");
+        RfsTuiRenderer.WriteHermesRunPromptSummary(draftResult.Draft);
         var result = await runner.RunAsync(
             status.RepoRoot,
             prompt,

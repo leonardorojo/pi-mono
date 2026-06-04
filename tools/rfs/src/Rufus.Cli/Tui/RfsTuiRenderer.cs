@@ -136,62 +136,9 @@ internal static class RfsTuiRenderer
         WriteKeyValue("branch", draft.Branch);
         WriteKeyValue("dirty", draft.DirtyState);
         WriteKeyValue("mode", draft.Mode);
-        Console.WriteLine();
-
-        WriteSectionTitle("Execution directive:");
-        Console.WriteLine(draft.ExecutionDirective);
-        Console.WriteLine();
-
-        WriteSectionTitle("Objective:");
-        Console.WriteLine(draft.Objective);
-        Console.WriteLine();
-
-        WriteSectionTitle("Operational instruction to execute:");
-        Console.WriteLine(draft.OperationalInstructionToExecute);
-        Console.WriteLine();
-
-        WriteSectionTitle("Original user request, for context only:");
-        Console.WriteLine(draft.OriginalUserRequestForContext);
-        Console.WriteLine();
-
+        WriteKeyValue("operational instruction", string.IsNullOrWhiteSpace(draft.OperationalInstructionToExecute) ? "missing" : "available");
+        WriteKeyValue("original request", string.IsNullOrWhiteSpace(draft.OriginalUserRequestForContext) ? "missing" : "available");
         WriteKeyValue("context pack", string.IsNullOrWhiteSpace(draft.ContextSummary) ? "none" : "available");
-        if (!string.IsNullOrWhiteSpace(draft.ContextSummary))
-        {
-            foreach (var line in draft.ContextSummary.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                WriteMutedLine($"  {line}");
-            }
-            Console.WriteLine();
-        }
-
-        if (draft.RunnerNotes.Count > 0)
-        {
-            WriteSectionTitle("Runner-specific notes:");
-            foreach (var note in draft.RunnerNotes)
-            {
-                WriteMutedLine($"- {note}");
-            }
-            Console.WriteLine();
-        }
-
-        WriteSectionTitle("Restrictions:");
-        foreach (var restriction in draft.Restrictions)
-        {
-            WriteMutedLine($"- {restriction}");
-        }
-        Console.WriteLine();
-
-        WriteSectionTitle("Evidence standard:");
-        foreach (var item in draft.EvidenceStandard)
-        {
-            WriteMutedLine($"- {item}");
-        }
-        Console.WriteLine();
-
-        WriteSectionTitle("Prompt text to send:");
-        Console.WriteLine("```");
-        Console.WriteLine(draft.PromptText);
-        Console.WriteLine("```");
         Console.WriteLine();
     }
 
@@ -771,10 +718,23 @@ internal static class RfsTuiRenderer
         WriteWarningLine(message);
     }
 
+    internal static void WriteHermesRunPromptSummary(RfsTuiOperationalHandoffPromptDraft draft)
+    {
+        WriteSectionTitle("Operational handoff prompt for Hermes:");
+        WriteKeyValue("repo root", draft.RepoRoot);
+        WriteKeyValue("branch", draft.Branch);
+        WriteKeyValue("dirty", draft.DirtyState);
+        WriteKeyValue("mode", draft.Mode);
+        WriteKeyValue("operational instruction", string.IsNullOrWhiteSpace(draft.OperationalInstructionToExecute) ? "missing" : "available");
+        WriteKeyValue("original request", string.IsNullOrWhiteSpace(draft.OriginalUserRequestForContext) ? "missing" : "available");
+        WriteKeyValue("context pack", string.IsNullOrWhiteSpace(draft.ContextSummary) ? "none" : "available");
+        Console.WriteLine();
+    }
+
     internal static void WriteHermesHandoffDraft(RfsTuiOperationalHandoffPromptDraft draft)
     {
         WriteSectionTitle("Operational handoff prompt for Hermes:");
-        WriteKeyValue("repo", draft.RepoRoot);
+        WriteKeyValue("repo root", draft.RepoRoot);
         WriteKeyValue("branch", draft.Branch);
         WriteKeyValue("dirty", draft.DirtyState);
         WriteKeyValue("mode", draft.Mode);

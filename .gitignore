@@ -46,6 +46,7 @@ syntax.jsonl
 out.jsonl
 pi-*.html
 out.html
+graphify-out/
 packages/coding-agent/binaries/
 todo.md
 plans/
